@@ -1,0 +1,36 @@
+{
+  "name": "@midnight-bank/bank-contract",
+  "version": "0.1.0",
+  "description": "Midnight Bank - Privacy-Preserving Banking Smart Contract",
+  "author": "Midnight Developer",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "rm -rf dist/ && rm -rf src/managed/",
+    "compile": "compact compile src/bank.compact ./src/managed/bank",
+    "build": "npm run compile && tsc",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "^0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.2.2",
+    "vitest": "^1.0.0"
+  },
+  "files": [
+    "dist/"
+  ]
+}

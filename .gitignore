@@ -1,0 +1,3 @@
+bank-contract/node_modules/*
+bank-contract/src/managed/*
+bank-contract/dist/*

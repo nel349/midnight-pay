@@ -1,0 +1,143 @@
+// Midnight Bank - Privacy-Preserving Banking DApp
+// Demonstrates: ZK Proofs, Private State, Confidential Contracts, Selective Disclosure
+
+pragma language_version >= 0.13.0;
+
+import CompactStandardLibrary;
+
+// Export types for external use
+export { CoinInfo };
+
+// Public ledger state (visible on blockchain)
+export ledger account_exists: Boolean;              // Whether account is created
+export ledger account_owner: Maybe<Bytes<32>>;      // Hash of account owner (for authentication)
+export ledger account_public_key: Maybe<ZswapCoinPublicKey>; // For receiving payments
+export ledger last_transaction: Bytes<32>;          // Hash of last transaction (no details revealed)
+export ledger transaction_count: Counter;           // Number of transactions (for activity proof)
+export ledger account_status: Bytes<32>;           // Account status hash (for verification)
+
+// Private data provided by account holder (never revealed publicly)
+witness account_pin_hash(): Bytes<32>;              // Hashed PIN for authentication
+witness account_balance(): Uint<64>;                // Current account balance (secret!)
+witness set_account_balance(balance: Uint<64>): []; // Update private balance
+
+// Constructor - Initialize empty bank
+constructor() {
+  account_exists = false;
+  last_transaction = pad(32, "no_transactions");
+  account_status = pad(32, "inactive");
+}
+
+// Circuit 1: Create Account (like join_p1 in battleship)
+// ZK Proof: Validates PIN format without revealing it
+export circuit create_account(initial_pin: Bytes<32>, deposit_amount: Uint<64>): [] {
+  assert (!account_exists, "Account already exists");
+  assert (deposit_amount >= 10 as Uint<64>, "Minimum deposit is 10 coins");
+  
+  // Validate PIN without revealing it (ZK proof)
+  assert (valid_pin_format(initial_pin), "PIN must be valid format");
+  
+  // Create account identity
+  const pin_hash = persistentHash<Bytes<32>>(initial_pin);
+  const owner_id = public_key(initial_pin); // Derive public identity from PIN
+  
+  // Public state updates (visible on blockchain)
+  account_exists = true;
+  account_owner = disclose(some<Bytes<32>>(owner_id));
+  account_public_key = some<ZswapCoinPublicKey>(ownPublicKey());
+  transaction_count.increment(1);
+  last_transaction = disclose(persistentHash<Bytes<32>>(pad(32, "account_created")));
+  account_status = disclose(pad(32, "active"));
+  
+  // Private state initialization (stored locally, never revealed)
+  set_account_balance(deposit_amount);
+}
+
+// Circuit 2: Deposit Funds (like turn_player1 in battleship)
+// ZK Proof: Authenticates user and processes deposit privately
+export circuit deposit(pin: Bytes<32>, amount: Uint<64>): [] {
+  assert (account_exists, "Account does not exist");
+  assert (amount > 0 as Uint<64>, "Deposit amount must be positive");
+  
+  // Authenticate user without revealing PIN (ZK proof)
+  const pin_hash = persistentHash<Bytes<32>>(pin);
+  const expected_owner = public_key(pin);
+  assert (account_owner.value == expected_owner, "Authentication failed");
+  
+  // Private computation: Update balance (confidential smart contract)
+  const current_balance = account_balance();
+  const new_balance = current_balance + amount;
+  set_account_balance(new_balance as Uint<64>);
+  
+  // Public updates (only metadata, no amounts revealed)
+  transaction_count.increment(1);
+  last_transaction = disclose(persistentHash<Bytes<32>>(pad(32, "deposit")));
+  account_status = disclose(pad(32, "active"));
+}
+
+// Circuit 3: Authenticate Balance Access (like battleship pattern)
+// Private State Management: Validates user can access their balance  
+export circuit authenticate_balance_access(pin: Bytes<32>): [] {
+  assert (account_exists, "Account does not exist");
+  
+  // Authenticate user (ZK proof)
+  const expected_owner = public_key(pin);
+  assert (account_owner.value == expected_owner, "Authentication failed");
+  
+  // Update last transaction to show balance was checked
+  last_transaction = disclose(persistentHash<Bytes<32>>(pad(32, "balance_check")));
+}
+
+// Circuit 4: Verify Account Status (selective disclosure)
+// Selective Disclosure: Proves account is valid without revealing balance/history
+export circuit verify_account_status(pin: Bytes<32>): [] {
+  assert (account_exists, "Account does not exist");
+  
+  // Authenticate user
+  const expected_owner = public_key(pin);
+  assert (account_owner.value == expected_owner, "Authentication failed");
+  
+  // Prove account properties without revealing sensitive data
+  const balance = account_balance();
+  
+  // Selective disclosure: Prove account is in good standing
+  assert (balance >= 5 as Uint<64>, "Account balance too low for verification");
+  assert (transaction_count >= 1, "Insufficient transaction history");
+  
+  // Public result: Only verification status (no balance/history revealed)
+  account_status = disclose(pad(32, "verified"));
+}
+
+// Circuit 5: Withdraw Funds
+// Confidential Smart Contract: Processes withdrawal privately
+export circuit withdraw(pin: Bytes<32>, amount: Uint<64>): [] {
+  assert (account_exists, "Account does not exist");
+  assert (amount > 0 as Uint<64>, "Withdrawal amount must be positive");
+  
+  // Authenticate user
+  const expected_owner = public_key(pin);
+  assert (account_owner.value == expected_owner, "Authentication failed");
+  
+  // Private computation: Check sufficient funds and update balance
+  const current_balance = account_balance();
+  assert (current_balance >= amount, "Insufficient funds");
+  const new_balance = current_balance - amount;
+  set_account_balance(new_balance as Uint<64>);
+  
+  // Public updates (only metadata)
+  transaction_count.increment(1);
+  last_transaction = disclose(persistentHash<Bytes<32>>(pad(32, "withdrawal")));
+}
+
+// Helper function: Validate PIN format (basic validation)
+pure circuit valid_pin_format(pin: Bytes<32>): Boolean {
+  // Simple validation: PIN should not be all zeros
+  const zero_pin = pad(32, "");
+  return pin != zero_pin;
+}
+
+// Helper function: Generate public key from secret key with domain separation
+export pure circuit public_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midnight:bank:pk:"), sk]);
+}
+
