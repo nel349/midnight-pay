@@ -171,5 +171,58 @@ describe('BankAPI', () => {
 
       sub.unsubscribe();
     }, 10 * 60_000);
+
+    test('should run full lifecycle: create, auth balance, deposit, withdraw, verify', async () => {
+      const accountId = `lifecycle-${Date.now()}`;
+
+      logger.info('Deploying Bank contract for lifecycle test…');
+      const bankAPI = await BankAPI.deploy(accountId, providers, logger);
+
+      let state = emptyBankState;
+      const sub = bankAPI.state$.subscribe((s) => {
+        state = s;
+        logger.info({
+          event: 'state',
+          accountExists: s.accountExists,
+          status: s.accountStatus,
+          txCount: s.transactionCount.toString(),
+          balance: s.balance.toString(),
+        });
+      });
+
+      // Create account with $50.00
+      await bankAPI.createAccount('1234', '50.00');
+      const afterCreate = await firstValueFrom(
+        bankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 5000n)),
+      );
+      expect(afterCreate.accountExists).toBe(true);
+      expect(afterCreate.balance).toBe(5000n);
+
+      // Authenticate balance access (no state changes expected)
+      await bankAPI.authenticateBalanceAccess('1234');
+
+      // Deposit $25.00 -> 7500
+      await bankAPI.deposit('1234', '25.00');
+      const afterDeposit = await firstValueFrom(
+        bankAPI.state$.pipe(filter((s) => s.balance === 7500n)),
+      );
+      expect(afterDeposit.balance).toBe(7500n);
+
+      // Withdraw $10.00 -> 6500
+      await bankAPI.withdraw('1234', '10.00');
+      const afterWithdraw = await firstValueFrom(
+        bankAPI.state$.pipe(filter((s) => s.balance === 6500n)),
+      );
+      expect(afterWithdraw.balance).toBe(6500n);
+
+      // Verify account status -> should become verified
+      await bankAPI.verifyAccountStatus('1234');
+      const afterVerify = await firstValueFrom(
+        bankAPI.state$.pipe(filter((s) => s.accountStatus === ACCOUNT_STATE.verified)),
+      );
+      expect(afterVerify.accountStatus).toBe(ACCOUNT_STATE.verified);
+
+      sub.unsubscribe();
+    }, 10 * 60_000);
   });
 });
