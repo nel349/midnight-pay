@@ -57,3 +57,4 @@ Thumbs.db
 .tmp/
 temp/
 bank-contract/src/managed/*
+bank-api/src/logs/*
