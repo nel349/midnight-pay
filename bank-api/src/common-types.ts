@@ -24,6 +24,13 @@ export type BankTransaction = {
   pin: string;
 };
 
+export type DetailedTransaction = {
+  readonly type: 'create' | 'deposit' | 'withdraw' | 'auth' | 'verify';
+  readonly amount?: bigint;
+  readonly balanceAfter: bigint;
+  readonly timestamp: Date;
+};
+
 export type UserAction = {
   transaction: BankTransaction | undefined;
   cancelledTransaction: BankTransaction | undefined;

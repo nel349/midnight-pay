@@ -222,6 +222,35 @@ describe('BankAPI', () => {
       );
       expect(afterVerify.accountStatus).toBe(ACCOUNT_STATE.verified);
 
+      logger.info('Fetching hex-encoded transaction history…');
+      // Fetch hex-encoded transaction history from convenience API
+      const historyHex = await bankAPI.getTransactionHistoryHex();
+      logger.info({ event: 'historyHex', recent: historyHex.slice(0, 3) });
+      expect(Array.isArray(historyHex)).toBe(true);
+      expect(historyHex.length).toBe(10);
+
+      logger.info('Fetching detailed transaction history…');
+      // Assert detailed client-side log order and fields
+      const detailed = await bankAPI.getDetailedTransactionHistory();
+      expect(Array.isArray(detailed)).toBe(true);
+      expect(detailed.length).toBeGreaterThanOrEqual(5);
+      const last5 = detailed.slice(-5);
+      expect(last5.map((d) => d.type)).toEqual(['create', 'auth', 'deposit', 'withdraw', 'verify']);
+
+      logger.info('Checking detailed transaction history…');
+      // Amount presence
+      expect(last5[0].amount).toBeDefined(); // create
+      expect(last5[1].amount).toBeUndefined(); // auth
+      expect(last5[2].amount).toBeDefined(); // deposit
+      expect(last5[3].amount).toBeDefined(); // withdraw
+      expect(last5[4].amount).toBeUndefined(); // verify
+      // Amount values (in cents)
+      expect(last5[0].amount).toBe(5000n); // create $50.00
+      expect(last5[2].amount).toBe(2500n); // deposit $25.00
+      expect(last5[3].amount).toBe(1000n); // withdraw $10.00
+      // balanceAfter recorded as bigint
+      expect(typeof last5[0].balanceAfter).toBe('bigint');
+
       sub.unsubscribe();
     }, 10 * 60_000);
   });

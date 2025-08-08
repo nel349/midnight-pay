@@ -22,9 +22,10 @@ import {
 } from '@midnight-bank/bank-contract';
 import * as utils from './utils/index.js';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
-import { combineLatest, concat, defer, from, map, type Observable, of, retry, scan, Subject } from 'rxjs';
+import { combineLatest, concat, defer, firstValueFrom, from, map, type Observable, of, retry, scan, Subject } from 'rxjs';
 import { toHex } from '@midnight-ntwrk/midnight-js-utils';
 import type { PrivateStateProvider } from '@midnight-ntwrk/midnight-js-types/dist/private-state-provider';
+import type { DetailedTransaction } from './common-types.js';
 
 const bankContract: BankContract = new Contract(bankWitnesses);
 
@@ -97,6 +98,10 @@ export class BankAPI implements DeployedBankAPI {
         delay: 500,
       }),
     );
+
+    // Build convenience observable for hex-encoded history
+    this.transactionHistoryHex$ = this.state$.pipe(map((s) => s.transactionHistory.map(toHex)));
+    this.detailedLogKey = `${this.accountId}:dlog`;
   }
 
   readonly deployedContractAddress: ContractAddress;
@@ -106,6 +111,12 @@ export class BankAPI implements DeployedBankAPI {
   readonly transactions$: Subject<UserAction>;
 
   readonly privateStates$: Subject<BankPrivateState>;
+
+  // Convenience stream of transaction history as hex-encoded strings
+  readonly transactionHistoryHex$!: Observable<string[]>;
+
+  // Client-owned detailed log key
+  private readonly detailedLogKey: string = '';
 
   async createAccount(pin: string, initialDeposit: string): Promise<void> {
     this.logger?.info({ createAccount: { initialDeposit } });
@@ -130,6 +141,12 @@ export class BankAPI implements DeployedBankAPI {
           txHash: txData.public.txHash,
           blockHeight: txData.public.blockHeight,
         },
+      });
+      await this.appendDetailedLog({
+        type: 'create',
+        amount: utils.parseAmount(initialDeposit),
+        balanceAfter: (await this.currentBalance()) + utils.parseAmount(initialDeposit),
+        timestamp: new Date(),
       });
     } catch (e) {
       this.transactions$.next({
@@ -169,6 +186,12 @@ export class BankAPI implements DeployedBankAPI {
           blockHeight: txData.public.blockHeight,
         },
       });
+      await this.appendDetailedLog({
+        type: 'deposit',
+        amount: utils.parseAmount(amount),
+        balanceAfter: (await this.currentBalance()) + utils.parseAmount(amount),
+        timestamp: new Date(),
+      });
     } catch (e) {
       this.transactions$.next({
         cancelledTransaction: {
@@ -207,6 +230,12 @@ export class BankAPI implements DeployedBankAPI {
           blockHeight: txData.public.blockHeight,
         },
       });
+      await this.appendDetailedLog({
+        type: 'withdraw',
+        amount: utils.parseAmount(amount),
+        balanceAfter: (await this.currentBalance()) - utils.parseAmount(amount),
+        timestamp: new Date(),
+      });
     } catch (e) {
       this.transactions$.next({
         cancelledTransaction: {
@@ -232,6 +261,11 @@ export class BankAPI implements DeployedBankAPI {
         blockHeight: txData.public.blockHeight,
       },
     });
+    await this.appendDetailedLog({
+      type: 'auth',
+      balanceAfter: await this.currentBalance(),
+      timestamp: new Date(),
+    });
   }
 
   async verifyAccountStatus(pin: string): Promise<void> {
@@ -245,6 +279,37 @@ export class BankAPI implements DeployedBankAPI {
         blockHeight: txData.public.blockHeight,
       },
     });
+    await this.appendDetailedLog({
+      type: 'verify',
+      balanceAfter: await this.currentBalance(),
+      timestamp: new Date(),
+    });
+  }
+
+  async getTransactionHistoryHex(): Promise<string[]> {
+    return await firstValueFrom(this.transactionHistoryHex$);
+  }
+
+  // Client-owned detailed log (persisted via privateStateProvider)
+  async getDetailedTransactionHistory(): Promise<DetailedTransaction[]> {
+    const raw = await this.providers.privateStateProvider.get(this.detailedLogKey as unknown as AccountId);
+    return (raw as unknown as DetailedTransaction[]) ?? [];
+  }
+
+  private async appendDetailedLog(entry: DetailedTransaction): Promise<void> {
+    try {
+      const current = await this.getDetailedTransactionHistory();
+      const updated = [...current, entry].slice(-100);
+      await this.providers.privateStateProvider.set(
+        this.detailedLogKey as unknown as AccountId,
+        updated as unknown as BankPrivateState,
+      );
+    } catch {}
+  }
+
+  private async currentBalance(): Promise<bigint> {
+    const st = await firstValueFrom(this.state$);
+    return st.balance;
   }
 
   static async deploy(
