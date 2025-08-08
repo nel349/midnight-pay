@@ -1,0 +1,68 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    ".prettierrc.json",
+    ".eslintrc.cjs"
+  ],
+  "pipeline": {
+    "typecheck": {
+      "dependsOn": ["^build", "compact"],
+      "inputs": ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json"],
+      "outputMode": "new-only",
+      "outputs": []
+    },
+    "compact": {
+      "dependsOn": ["^build"],
+      "env": ["COMPACT_HOME"],
+      "inputs": ["src/**/*.compact"],
+      "outputMode": "new-only",
+      "outputs": ["src/managed/**", "src/gen/**", "gen/**"]
+    },
+    "build": {
+      "dependsOn": ["^build", "compact", "typecheck"],
+      "outputMode": "new-only",
+      "inputs": [
+        "src/**/*.ts", 
+        "src/**/*.tsx", 
+        "!src/**/*.test.ts", 
+        "!tests/**/*.ts", 
+        "tsconfig.json", 
+        "tsconfig.build.json",
+        "package.json"
+      ],
+      "outputs": ["dist/**"]
+    },
+    "lint": {
+      "outputMode": "new-only",
+      "dependsOn": ["compact", "^build", "typecheck"],
+      "inputs": ["src/**/*.ts", "src/**/*.tsx", ".eslintrc.cjs", "package.json"]
+    },
+    "test": {
+      "outputMode": "new-only",
+      "dependsOn": ["^build", "compact", "typecheck"],
+      "inputs": [
+        "src/**/*.ts", 
+        "src/**/*.tsx", 
+        "vitest.config.ts", 
+        "tsconfig.json",
+        "package.json"
+      ],
+      "outputs": ["reports/**"]
+    },
+    "clean": {
+      "outputMode": "new-only",
+      "outputs": [],
+      "inputs": []
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^build", "compact"]
+    },
+    "start": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["build"]
+    }
+  }
+}
