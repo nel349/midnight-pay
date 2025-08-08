@@ -232,6 +232,26 @@ describe('Midnight Bank Contract Tests', () => {
   });
 
   describe('Privacy Properties', () => {
+    test('should maintain transaction history in private state', () => {
+      bank.createAccount('1234', 100n);
+      bank.deposit('1234', 50n);
+      bank.withdraw('1234', 25n);
+
+      const privateState = bank.getPrivateState();
+
+      // Private state should contain transaction history (10 slots)
+      expect(privateState.transactionHistory).toHaveLength(10);
+      
+      // First entry should be most recent transaction (withdrawal)
+      expect(privateState.transactionHistory[0]).not.toEqual(new Uint8Array(32));
+      
+      // Should have account balance
+      expect(privateState.accountBalance).toBe(125n);
+      
+      // Should have PIN hash
+      expect(privateState.accountPinHash).toBeTruthy();
+    });
+
     test('should keep balance private in ledger state', () => {
         bank.createAccount('1234', 100n);
       bank.deposit('1234', 50n);

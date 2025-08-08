@@ -13,7 +13,7 @@ export type Contract<T, W extends Witnesses<T> = Witnesses<T>> = ContractType<T,
 export type BankPrivateState = {
   readonly accountPinHash: Uint8Array;         // Hashed PIN for authentication
   readonly accountBalance: bigint;             // Current balance (secret!)
-  readonly transactionHistory: Uint8Array[];  // Array of transaction hashes (private)
+  readonly transactionHistory: Uint8Array[];  // Array of transaction hashes (private, max 10)
 };
 
 // Create initial private state for new account
@@ -23,7 +23,7 @@ export const createBankPrivateState = (
 ): BankPrivateState => ({
   accountPinHash: pinHash,
   accountBalance: initialBalance,
-  transactionHistory: [new Uint8Array(32)] // Start with one empty transaction
+  transactionHistory: Array(10).fill(new Uint8Array(32)) // Start with 10 empty transaction slots
 });
 
 // Witness Functions - provide private data to circuits
@@ -45,12 +45,14 @@ export const bankWitnesses = {
     privateState.accountBalance
   ],
 
-  // Witness 3: Provides transaction history (private)
+  // Witness 3: Provides transaction history (private) - exactly 10 entries
   transaction_history: ({ 
     privateState 
   }: WitnessContext<Ledger, BankPrivateState>): [BankPrivateState, Uint8Array[]] => [
     privateState,
-    privateState.transactionHistory || [new Uint8Array(32)]
+    privateState.transactionHistory.length === 10 ? 
+      privateState.transactionHistory : 
+      Array(10).fill(new Uint8Array(32)) // Ensure exactly 10 entries
   ],
 
   // Witness 4: Updates account balance in private state
@@ -65,14 +67,14 @@ export const bankWitnesses = {
     []
   ],
 
-  // Witness 5: Updates transaction history in private state
+  // Witness 5: Updates transaction history in private state (exactly 10 entries)
   set_transaction_history: (
     { privateState }: WitnessContext<Ledger, BankPrivateState>,
     newHistory: Uint8Array[]
   ): [BankPrivateState, []] => [
     {
       ...privateState,
-      transactionHistory: newHistory
+      transactionHistory: newHistory.slice(0, 10) // Ensure max 10 entries
     },
     []
   ]
@@ -95,7 +97,7 @@ export function hashPin(pin: string): Uint8Array {
 
 export function generateAccountId(): string {
   // Generate a unique account ID
-  return 'ACC' + Math.random().toString(36).substr(2, 9).toUpperCase();
+  return 'ACC' + Math.random().toString(36).substring(2, 11).toUpperCase();
 }
 
 // Transaction types for better UX

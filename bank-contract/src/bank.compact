@@ -19,7 +19,9 @@ export ledger account_status: Bytes<32>;           // Account status hash (for v
 // Private data provided by account holder (never revealed publicly)
 witness account_pin_hash(): Bytes<32>;              // Hashed PIN for authentication
 witness account_balance(): Uint<64>;                // Current account balance (secret!)
+witness transaction_history(): Vector<10, Bytes<32>>; // Private transaction history (up to 10 entries)
 witness set_account_balance(balance: Uint<64>): []; // Update private balance
+witness set_transaction_history(history: Vector<10, Bytes<32>>): []; // Update transaction history
 
 // Constructor - Initialize empty bank
 constructor() {
@@ -51,6 +53,13 @@ export circuit create_account(initial_pin: Bytes<32>, deposit_amount: Uint<64>):
   
   // Private state initialization (stored locally, never revealed)
   set_account_balance(deposit_amount);
+  
+  // Initialize transaction history with account creation
+  const tx_hash = persistentHash<Bytes<32>>(pad(32, "account_created"));
+  const empty_tx = pad(32, "");
+  const initial_history = [tx_hash, empty_tx, empty_tx, empty_tx, empty_tx, 
+                          empty_tx, empty_tx, empty_tx, empty_tx, empty_tx];
+  set_transaction_history(initial_history);
 }
 
 // Circuit 2: Deposit Funds (like turn_player1 in battleship)
@@ -68,6 +77,14 @@ export circuit deposit(pin: Bytes<32>, amount: Uint<64>): [] {
   const current_balance = account_balance();
   const new_balance = current_balance + amount;
   set_account_balance(new_balance as Uint<64>);
+  
+  // Update transaction history
+  const tx_hash = persistentHash<Bytes<32>>(pad(32, "deposit"));
+  const current_history = transaction_history();
+  // Shift history and add new transaction at front
+  const updated_history = [tx_hash, current_history[0], current_history[1], current_history[2], current_history[3],
+                          current_history[4], current_history[5], current_history[6], current_history[7], current_history[8]];
+  set_transaction_history(updated_history);
   
   // Public updates (only metadata, no amounts revealed)
   transaction_count.increment(1);
@@ -123,6 +140,14 @@ export circuit withdraw(pin: Bytes<32>, amount: Uint<64>): [] {
   assert (current_balance >= amount, "Insufficient funds");
   const new_balance = current_balance - amount;
   set_account_balance(new_balance as Uint<64>);
+  
+  // Update transaction history
+  const tx_hash = persistentHash<Bytes<32>>(pad(32, "withdrawal"));
+  const current_history = transaction_history();
+  // Shift history and add new transaction at front
+  const updated_history = [tx_hash, current_history[0], current_history[1], current_history[2], current_history[3],
+                          current_history[4], current_history[5], current_history[6], current_history[7], current_history[8]];
+  set_transaction_history(updated_history);
   
   // Public updates (only metadata)
   transaction_count.increment(1);
