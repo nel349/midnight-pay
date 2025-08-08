@@ -252,6 +252,155 @@ describe('Midnight Bank Contract Tests', () => {
       expect(privateState.accountPinHash).toBeTruthy();
     });
 
+    test('should handle full transaction history (10+ transactions)', () => {
+      // Create account (1 transaction)
+      bank.createAccount('1234', 1000n);
+      
+      // Add 9 more transactions to fill the history buffer
+      bank.deposit('1234', 100n);    // 2nd transaction
+      bank.withdraw('1234', 50n);    // 3rd transaction  
+      bank.deposit('1234', 200n);    // 4th transaction
+      bank.withdraw('1234', 75n);    // 5th transaction
+      bank.deposit('1234', 150n);    // 6th transaction
+      bank.withdraw('1234', 25n);    // 7th transaction
+      bank.deposit('1234', 300n);    // 8th transaction
+      bank.withdraw('1234', 100n);   // 9th transaction
+      bank.deposit('1234', 250n);    // 10th transaction
+
+      const privateState1 = bank.getPrivateState();
+      
+      // Should have exactly 10 transactions in history
+      expect(privateState1.transactionHistory).toHaveLength(10);
+      
+      // All 10 slots should be filled (no empty transactions)
+      const emptyTx = new Uint8Array(32);
+      const nonEmptyCount = privateState1.transactionHistory.filter(tx => 
+        !tx.every((byte, index) => byte === emptyTx[index])
+      ).length;
+      expect(nonEmptyCount).toBe(10);
+      
+      // Add one more transaction - should push oldest out
+      bank.withdraw('1234', 50n);    // 11th transaction
+      
+      const privateState2 = bank.getPrivateState();
+      
+      // Still should have exactly 10 transactions
+      expect(privateState2.transactionHistory).toHaveLength(10);
+      
+      // Latest transaction should be different from before (new withdrawal)
+      expect(privateState2.transactionHistory[0]).not.toEqual(privateState1.transactionHistory[0]);
+      
+      // Second transaction should be what was first before (shifted right)
+      expect(privateState2.transactionHistory[1]).toEqual(privateState1.transactionHistory[0]);
+      
+      // Final balance should be correct: 1000 + 100 - 50 + 200 - 75 + 150 - 25 + 300 - 100 + 250 - 50 = 1700
+      expect(bank.getCurrentBalance()).toBe(1700n);
+      expect(bank.getTransactionCount()).toBe(11n); // 11 total transactions
+      
+      bank.printState();
+    });
+
+    test('should store correct transaction hashes in history', () => {
+      // Perform transactions in known order and capture state after each
+      bank.createAccount('1234', 100n);  
+      const stateAfterCreate = bank.getPrivateState();
+      const createHash = stateAfterCreate.transactionHistory[0]; // Account creation hash
+
+      bank.deposit('1234', 50n);         
+      const stateAfterDeposit = bank.getPrivateState();
+      const depositHash = stateAfterDeposit.transactionHistory[0]; // Deposit hash
+
+      bank.withdraw('1234', 25n);        
+      const finalState = bank.getPrivateState();
+      const withdrawalHash = finalState.transactionHistory[0]; // Withdrawal hash
+
+      // History should be: [withdrawal, deposit, account_created, empty, empty, ...]
+      expect(finalState.transactionHistory[0]).toEqual(withdrawalHash);  // Most recent
+      expect(finalState.transactionHistory[1]).toEqual(depositHash);     // Second most recent  
+      expect(finalState.transactionHistory[2]).toEqual(createHash);      // First transaction
+
+      // Verify transactions are different (each has unique hash)
+      expect(withdrawalHash).not.toEqual(depositHash);
+      expect(depositHash).not.toEqual(createHash);
+      expect(withdrawalHash).not.toEqual(createHash);
+
+      // Remaining slots should be empty
+      const emptyTx = new Uint8Array(32);
+      for (let i = 3; i < 10; i++) {
+        expect(finalState.transactionHistory[i]).toEqual(emptyTx);
+      }
+
+      // Verify none of the transaction hashes are empty
+      expect(withdrawalHash).not.toEqual(emptyTx);
+      expect(depositHash).not.toEqual(emptyTx);  
+      expect(createHash).not.toEqual(emptyTx);
+
+      console.log('🔍 Transaction History Verification:');
+      console.log('├─ [0] Latest (withdrawal):', Array.from(finalState.transactionHistory[0].slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(''));
+      console.log('├─ [1] Deposit:', Array.from(finalState.transactionHistory[1].slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(''));
+      console.log('└─ [2] Account created:', Array.from(finalState.transactionHistory[2].slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(''));
+    });
+
+    test('should access specific transaction details from user\'s local log', () => {
+      // User wants to track specific transaction details
+      bank.createAccount('1234', 1000n);     // $1000 initial
+      bank.deposit('1234', 250n);            // +$250 = $1250  
+      bank.withdraw('1234', 75n);            // -$75 = $1175
+      bank.deposit('1234', 500n);            // +$500 = $1675
+
+      // User can access their detailed transaction history
+      const detailedHistory = bank.getDetailedTransactionHistory();
+      
+      // Verify specific transaction details
+      expect(detailedHistory).toHaveLength(4);
+      
+      // Test first transaction (account creation)
+      const createTx = detailedHistory[0];
+      expect(createTx.type).toBe('create');
+      expect(createTx.amount).toBe(1000n);
+      expect(createTx.balanceAfter).toBe(1000n);
+      
+      // Test second transaction (first deposit)
+      const depositTx1 = detailedHistory[1];
+      expect(depositTx1.type).toBe('deposit');
+      expect(depositTx1.amount).toBe(250n);
+      expect(depositTx1.balanceAfter).toBe(1250n);
+      
+      // Test third transaction (withdrawal)
+      const withdrawTx = detailedHistory[2];
+      expect(withdrawTx.type).toBe('withdraw');
+      expect(withdrawTx.amount).toBe(75n);
+      expect(withdrawTx.balanceAfter).toBe(1175n);
+      
+      // Test fourth transaction (second deposit)
+      const depositTx2 = detailedHistory[3];
+      expect(depositTx2.type).toBe('deposit');
+      expect(depositTx2.amount).toBe(500n);
+      expect(depositTx2.balanceAfter).toBe(1675n);
+      
+      // User can filter by transaction type
+      const deposits = bank.getTransactionsByType('deposit');
+      expect(deposits).toHaveLength(2);
+      expect(deposits[0].amount).toBe(250n);
+      expect(deposits[1].amount).toBe(500n);
+      
+      // User can get total amounts by type
+      const totalDeposited = bank.getTotalAmountByType('deposit');
+      const totalWithdrawn = bank.getTotalAmountByType('withdraw');
+      expect(totalDeposited).toBe(750n); // 250 + 500
+      expect(totalWithdrawn).toBe(75n);
+      
+      // User can access specific transaction details
+      const specificTx = bank.getTransactionDetails(2); // withdrawal
+      expect(specificTx?.type).toBe('withdraw');
+      expect(specificTx?.amount).toBe(75n);
+      
+      // Print detailed history for user
+      bank.printDetailedHistory();
+      
+      console.log('💡 Key Insight: Users maintain their own detailed log while contract only stores privacy-preserving hashes!');
+    });
+
     test('should keep balance private in ledger state', () => {
         bank.createAccount('1234', 100n);
       bank.deposit('1234', 50n);

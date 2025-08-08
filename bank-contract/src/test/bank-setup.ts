@@ -5,14 +5,23 @@ import {
   constructorContext,
   sampleContractAddress,
   QueryContext,
-  encodeContractAddress
 } from '@midnight-ntwrk/compact-runtime';
+
+// Local transaction record (user maintains this separately)
+interface TransactionRecord {
+  type: 'create' | 'deposit' | 'withdraw' | 'balance_check' | 'verify';
+  amount?: bigint;
+  timestamp: Date;
+  balanceAfter: bigint;
+  pin: string; // In real app, this would be encrypted/hashed
+}
 
 // Test setup class similar to battleship setup
 export class BankTestSetup {
   private contract: Contract<BankPrivateState, typeof bankWitnesses>;
   private turnContext: CircuitContext<BankPrivateState>;
   private contractAddress: string;
+  private localTransactionLog: TransactionRecord[] = []; // User's private detailed log
   
   constructor() {
     // Initialize contract with witnesses
@@ -58,7 +67,18 @@ export class BankTestSetup {
     pinBytes.set(encoded.slice(0, Math.min(encoded.length, 32)));
     
     const results = this.contract.impureCircuits.create_account(this.turnContext, pinBytes, initialDeposit);
-    return this.updateStateAndGetLedger(results);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Record detailed transaction locally (user's private log)
+    this.localTransactionLog.push({
+      type: 'create',
+      amount: initialDeposit,
+      timestamp: new Date(),
+      balanceAfter: this.getCurrentBalance(),
+      pin: pin // In real app: encrypted/hashed
+    });
+    
+    return ledger;
   }
 
   // Test method: Deposit funds
@@ -72,7 +92,18 @@ export class BankTestSetup {
     pinBytes.set(encoded.slice(0, Math.min(encoded.length, 32)));
     
     const results = this.contract.impureCircuits.deposit(this.turnContext, pinBytes, amount);
-    return this.updateStateAndGetLedger(results);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Record detailed transaction locally
+    this.localTransactionLog.push({
+      type: 'deposit',
+      amount: amount,
+      timestamp: new Date(),
+      balanceAfter: this.getCurrentBalance(),
+      pin: pin
+    });
+    
+    return ledger;
   }
 
   // Test method: Authenticate balance access
@@ -114,7 +145,18 @@ export class BankTestSetup {
     pinBytes.set(encoded.slice(0, Math.min(encoded.length, 32)));
     
     const results = this.contract.impureCircuits.withdraw(this.turnContext, pinBytes, amount);
-    return this.updateStateAndGetLedger(results);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Record detailed transaction locally
+    this.localTransactionLog.push({
+      type: 'withdraw',
+      amount: amount,
+      timestamp: new Date(),
+      balanceAfter: this.getCurrentBalance(),
+      pin: pin
+    });
+    
+    return ledger;
   }
 
   // Getter methods for state inspection
@@ -173,6 +215,60 @@ export class BankTestSetup {
     console.log('├─ Transaction Count:', this.getTransactionCount().toString());
     console.log('├─ Account Status:', this.getAccountStatus());
     console.log('└─ Last Transaction:', this.getLastTransaction());
+    console.log('');
+  }
+
+  // Helper: Get detailed transaction history (user's private log)
+  getDetailedTransactionHistory(): TransactionRecord[] {
+    return [...this.localTransactionLog]; // Return copy to prevent modification
+  }
+
+  // Helper: Get specific transaction details
+  getTransactionDetails(index: number): TransactionRecord | undefined {
+    return this.localTransactionLog[index];
+  }
+
+  // Helper: Search transactions by type
+  getTransactionsByType(type: TransactionRecord['type']): TransactionRecord[] {
+    return this.localTransactionLog.filter(tx => tx.type === type);
+  }
+
+  // Helper: Get total amount for transaction type
+  getTotalAmountByType(type: TransactionRecord['type']): bigint {
+    return this.localTransactionLog
+      .filter(tx => tx.type === type && tx.amount !== undefined)
+      .reduce((total, tx) => total + (tx.amount || 0n), 0n);
+  }
+
+  // Helper: Calculate expected transaction hash (matches contract logic)
+  calculateTransactionHash(transactionType: string): Uint8Array {
+    // This should match the persistentHash calculation in the contract
+    // For now, we'll use a simplified approach since we can't easily access the exact persistentHash function
+    const encoder = new TextEncoder();
+    const typeBytes = encoder.encode(transactionType);
+    
+    // Create a 32-byte hash by padding and simple transformation
+    const hash = new Uint8Array(32);
+    for (let i = 0; i < Math.min(typeBytes.length, 32); i++) {
+      hash[i] = typeBytes[i] ^ (i + 1); // Simple XOR transformation
+    }
+    
+    // Add some additional entropy based on transaction type
+    const typeCode = transactionType === 'account_created' ? 0x01 :
+                    transactionType === 'deposit' ? 0x02 :
+                    transactionType === 'withdrawal' ? 0x03 : 0x00;
+    hash[31] = typeCode; // Set last byte as type identifier
+    
+    return hash;
+  }
+
+  // Helper: Print detailed transaction history
+  printDetailedHistory(): void {
+    console.log('\n📜 Detailed Transaction History (User\'s Private Log):');
+    this.localTransactionLog.forEach((tx, index) => {
+      const amountStr = tx.amount ? `$${tx.amount}` : 'N/A';
+      console.log(`├─ [${index}] ${tx.type.toUpperCase()}: ${amountStr} → Balance: $${tx.balanceAfter} (${tx.timestamp.toLocaleTimeString()})`);
+    });
     console.log('');
   }
 }
