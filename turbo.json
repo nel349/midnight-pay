@@ -24,6 +24,11 @@
       "inputs": [
         "src/**/*.ts", 
         "src/**/*.tsx", 
+        "src/**/*.css",
+        "index.html",
+        "vite.config.ts",
+        "public/**",
+        ".nginx/**",
         "!src/**/*.test.ts", 
         "!tests/**/*.ts", 
         "tsconfig.json", 
@@ -53,11 +58,6 @@
       "outputMode": "new-only",
       "outputs": [],
       "inputs": []
-    },
-    "dev": {
-      "cache": false,
-      "persistent": true,
-      "dependsOn": ["^build", "compact"]
     },
     "start": {
       "cache": false,
