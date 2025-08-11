@@ -51,7 +51,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ logger, onComplete }) => {
     <Card sx={{ backgroundColor: 'transparent' }}>
       <CardContent>
         <Typography variant="h1" color="primary.dark" align="center" gutterBottom>
-          Onboard Bank Account
+          Midnight Bank
         </Typography>
         <Grid container spacing={2} direction="column" alignItems="center">
           {!isConnected && (
