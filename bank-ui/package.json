@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "http-server --port 8080 ./dist --proxy 'http://127.0.0.1:8080?' --history-api-fallback",
-    "dev": "vite",
+    "dev": "npm run dev:prepare && vite --host",
+    "dev:prepare": "rimraf public/keys public/zkir || true && mkdir -p public/keys public/zkir && cp -f /Users/norman/Development/midnight/midnight-bank/bank-contract/src/managed/bank/keys/* public/keys/ 2>/dev/null || true && cp -f /Users/norman/Development/midnight/midnight-bank/bank-contract/src/managed/bank/zkir/* public/zkir/ 2>/dev/null || true",
     "build": "vite build && npm run copy-bank-keys",
     "copy-bank-keys": "mkdir -p ./dist/keys ./dist/zkir && cp -r ../bank-contract/src/managed/bank/keys/* ./dist/keys || true && cp -r ../bank-contract/src/managed/bank/zkir/* ./dist/zkir || true",
     "preview": "vite preview",
@@ -22,6 +23,7 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "rimraf": "^5.0.5",
     "@originjs/vite-plugin-commonjs": "^1.0.3",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",

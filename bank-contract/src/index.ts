@@ -1,6 +1,7 @@
 import { WitnessContext } from '@midnight-ntwrk/compact-runtime';
 import type { Contract as ContractType, Witnesses } from './managed/bank/contract/index.cjs';
-import ContractModule, { Ledger } from './managed/bank/contract/index.cjs';
+import * as ContractModule from './managed/bank/contract/index.cjs';
+type Ledger = ContractModule.Ledger;
 
 // Re-export contract types and functions
 export * from './managed/bank/contract/index.cjs';
