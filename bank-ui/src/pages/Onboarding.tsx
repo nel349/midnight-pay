@@ -4,6 +4,7 @@ import type { Logger } from 'pino';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { firstValueFrom, filter } from 'rxjs';
 import { useBankWallet } from '../components/BankWallet';
+import { saveAccount } from '../utils/AccountsLocalState';
 
 export interface OnboardingProps { logger: Logger; onComplete: (contractAddress: string) => void }
 
@@ -27,6 +28,12 @@ const Onboarding: React.FC<OnboardingProps> = ({ logger, onComplete }) => {
       const ready = await firstValueFrom(api.state$.pipe(filter((s) => s.accountExists === true)));
       logger.info({ event: 'onboard_ready', address: api.deployedContractAddress, balance: ready.balance.toString() });
       await api.verifyAccountStatus(pin);
+      saveAccount({
+        address: api.deployedContractAddress,
+        label: label || undefined,
+        createdAt: new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+      });
       onComplete(api.deployedContractAddress);
     } catch (e) {
       logger.error(e, 'Failed to create bank account');

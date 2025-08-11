@@ -107,6 +107,27 @@ export const BankWalletProvider: React.FC<{ logger: Logger; children: React.Reac
     logger.info({ event: 'bank_wallet_provider_ready' });
   }, [logger]);
 
+  // Auto-connect silently if Lace previously authorized this origin
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const api: any = (window as any)?.midnight?.mnLace;
+        if (api && typeof api.isEnabled === 'function') {
+          const enabled = await api.isEnabled();
+          if (enabled && !cancelled && !isConnected) {
+            await connect();
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, 'lace_auto_connect_failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connect, isConnected, logger]);
+
   return <BankWalletContext.Provider value={state}>{children}</BankWalletContext.Provider>;
 };
 
