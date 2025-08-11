@@ -6,7 +6,8 @@
   "scripts": {
     "start": "http-server --port 8080 ./dist --proxy 'http://127.0.0.1:8080?'",
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && npm run copy-bank-keys",
+    "copy-bank-keys": "mkdir -p ./dist/keys ./dist/zkir && cp -r ../bank-contract/src/managed/bank/keys/* ./dist/keys || true && cp -r ../bank-contract/src/managed/bank/zkir/* ./dist/zkir || true",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

@@ -15,7 +15,7 @@ const defaultConfig: RuntimeConfig = {
   PROOF_SERVER: 'http://127.0.0.1:6300',
   PUBLIC_URL: '/',
   LOGGING_LEVEL: 'info',
-  NETWORK_ID: 'undeployed',
+  NETWORK_ID: 'Undeployed',
 };
 
 const RuntimeConfigurationContext = createContext<RuntimeConfig>(defaultConfig);
