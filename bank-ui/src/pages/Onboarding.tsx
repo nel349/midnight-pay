@@ -18,6 +18,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ providers, logger, onComplete }
   const pinValid = useMemo(() => pin.length >= 4 && pin.length <= 8 && /^\d+$/.test(pin), [pin]);
 
   const onDeploy = useCallback(async () => {
+    logger.info('onDeploy: Starting…');
     try {
       setWorking(true);
       const accountId = crypto.randomUUID();
