@@ -7,16 +7,15 @@ This document tracks the features for the Bank UI onboarding, account management
 - [x] Vite config for WASM/top-level-await/commonjs
 - [x] Dockerfile + Nginx runtime config
 - [x] Onboarding page scaffold (deploy → create → verify)
-- [ ] Wallet/provider context (BankWalletProvider)
-- [ ] Local SQL DB bootstrap (Drizzle + sql.js)
-- [ ] PIN prompt dialog (4–8 digits, validation)
-- [ ] React-query mutations (deploy/create/verify)
-- [ ] Persist account + recents in DB
+- [x] Wallet/provider context (BankWalletProvider, connect button)
+- [x] Local persistence via localStorage (swap to Drizzle later)
+- [x] Create Account flow (deploy + create + verify)
+- [ ] Session policy (10‑min) for mask/unmask later
 
 ## 2. Accounts Home
-- [ ] List saved accounts
+- [x] List saved accounts (local)
 - [ ] Add existing account by address
-- [ ] Mark recent; rename/label accounts
+- [ ] Rename/label accounts
 
 ## 3. Account View (Phase 2)
 - [ ] Masked balance (unmask on fresh session)
@@ -37,9 +36,9 @@ This document tracks the features for the Bank UI onboarding, account management
 - [ ] Optional encryption hooks
 
 ## 6. Wallet & Providers
-- [ ] Provider construction (indexer, zk-config, proof, wallet, midnight)
+- [x] Provider construction (indexer, zk-config, proof, wallet, midnight)
 - [ ] Snackbars for proving/submission
-- [ ] Public config ingestion (config.json)
+- [x] Public config ingestion (config.json)
 
 ## 7. Build & Dev Infra
 - [x] Vite build (wasm bundles) + preview

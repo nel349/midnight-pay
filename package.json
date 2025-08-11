@@ -18,7 +18,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "dev": "turbo run dev",
-    "bank-ui": "turbo run start --filter=bank-ui",
+    "bank-ui": "npm run build && turbo run start --filter=bank-ui",
     "clean": "turbo run clean"
   },
   "dependencies": {

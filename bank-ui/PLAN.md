@@ -4,21 +4,20 @@ This plan mirrors the Battleship UI where useful and replaces ad-hoc subscriptio
 
 ## Tech choices
 - UI: React + Vite + MUI
-- Data/state: TanStack Query (react-query) for queries/mutations, retries, cache
+- Data/state: TanStack Query (react-query) for queries/mutations, retries, cache (later)
 - RxJS interop: minimal adapter to sync `state$` → Query Cache; use `firstValueFrom` for milestone waits
-- Local DB (browser): Drizzle ORM + sql.js (SQLite in WASM)
-  - Alt: Dexie (IndexedDB) if preferred
+- Local persistence (Phase 1): simple localStorage repo abstraction (swap to Drizzle/sql.js later if needed)
 - Logging: pino (env-controlled)
 
-## Local DB schema
-- `accounts`: id (pk), contract_address (unique), label?, created_at, last_used_at
-- `recent_contracts`: contract_address (pk), seen_at
-- `sessions`: contract_address (pk), last_auth_at
-- `tx_detailed`: id (pk), contract_address (idx), type ('create'|'auth'|'deposit'|'withdraw'|'verify'), amount?, balance_after, timestamp
+## Local persistence (Phase 1)
+- accounts: contract_address (unique), label?, created_at, last_used_at
+- sessions: contract_address, last_auth_at (for mask/unmask)
+- recent: optional list of recently opened contracts
+Note: implemented via localStorage behind a small repo; can be migrated to Drizzle/sql.js in Phase 3 if richer queries are needed.
 
 ## Routes
-- `/accounts`: list saved accounts + recent
-- `/accounts/onboard`: onboarding wizard (deploy + create)
+- `/accounts`: welcome + list saved accounts (local)
+- `/accounts/create`: create account (deploy + create in one step)
 - `/account/:contract`: account view
 
 ## Shared providers
@@ -30,18 +29,17 @@ This plan mirrors the Battleship UI where useful and replaces ad-hoc subscriptio
 ## Phase 1: Onboarding (now)
 
 ### Goals
-1) Deploy contract; persist mapping locally
-2) Prompt PIN + initial deposit (modal)
-3) Call `createAccount` then `verifyAccountStatus`
-4) Persist to `accounts` and `recent_contracts`
-5) Navigate to `/account/:contract`
+1) Connect Lace; set network id from config
+2) Create account (deploy + create_account + verify) in one click
+3) Persist account (address/label/timestamps) locally (localStorage repo)
+4) Navigate to `/account/:contract`
 
 ### Deliverables
-- DB bootstrap (Drizzle + sql.js): `db/index.ts`, `db/schema.ts`, `db/repo.ts`, `hooks/useDB.ts`
-- `BrowserDeployedAccountManager`
+- Local repo: accounts/sessions via localStorage (swap-in later)
+- `DeployedAccountProvider` for deploy/subscribe
 - Pages: `AccountsHome.tsx`, `Onboarding.tsx`
-- `PinPromptDialog.tsx` (10‑min session policy recorded in `sessions`)
-- React Query mutations: deploy/create/verify; queries: list accounts/recent
+- Connect Lace button; network id init
+- Copy bank keys into dist on build
 
 ### Data flow
 - Mutations for tx flows; progress and error states
@@ -49,9 +47,9 @@ This plan mirrors the Battleship UI where useful and replaces ad-hoc subscriptio
 - Optionally mirror detailed tx entries to `tx_detailed` after each action
 
 ### Acceptance
-- Deploy → create → verify → navigate works end-to-end
-- Account visible in `/accounts` and recent
-- PIN via modal; no raw PIN stored (only session timestamp)
+- Connect → create (deploy+create+verify) → navigate works end-to-end
+- Account visible in `/accounts` list (local)
+- PIN entered inline; no raw PIN stored (only session timestamp later)
 
 ---
 
@@ -62,7 +60,7 @@ This plan mirrors the Battleship UI where useful and replaces ad-hoc subscriptio
 
 ## Phase 3: History views
 - On-chain metadata: `transactionHistoryHex$` + `transactionCount`
-- Client-side detailed: `tx_detailed` queries; filters/totals; CSV/JSON export
+- Client-side detailed: optional move to Drizzle/sql.js for filters/totals; CSV/JSON export
 
 ## Phase 4: Backup/restore (optional)
 - Encrypt-and-export DB + private state; import flow

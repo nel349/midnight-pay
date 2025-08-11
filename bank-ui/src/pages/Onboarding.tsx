@@ -10,42 +10,30 @@ export interface OnboardingProps { logger: Logger; onComplete: (contractAddress:
 const Onboarding: React.FC<OnboardingProps> = ({ logger, onComplete }) => {
   const { providers, isConnected, connect } = useBankWallet();
   const [contractAddress, setContractAddress] = useState<string | undefined>(undefined);
+  const [label, setLabel] = useState('');
   const [pin, setPin] = useState('');
   const [initialDeposit, setInitialDeposit] = useState('50.00');
   const [working, setWorking] = useState(false);
   const pinValid = useMemo(() => pin.length >= 4 && pin.length <= 8 && /^\d+$/.test(pin), [pin]);
 
-  const onDeploy = useCallback(async () => {
-    logger.info('onDeploy: Starting…');
+  const onCreateAccount = useCallback(async () => {
+    logger.info('onCreateAccount: Starting…');
     try {
       setWorking(true);
       const accountId = crypto.randomUUID();
       const api = await BankAPI.deploy(accountId, providers, logger);
       setContractAddress(api.deployedContractAddress);
-    } catch (e) {
-      logger.error(e, 'Failed to deploy bank contract');
-    } finally {
-      setWorking(false);
-    }
-  }, [providers, logger]);
-
-  const onCreate = useCallback(async () => {
-    if (!contractAddress) return;
-    try {
-      setWorking(true);
-      const accountId = crypto.randomUUID();
-      const api = await BankAPI.subscribe(accountId, providers, contractAddress, logger);
       await api.createAccount(pin, initialDeposit);
       const ready = await firstValueFrom(api.state$.pipe(filter((s) => s.accountExists === true)));
-      logger.info({ event: 'onboard_ready', address: contractAddress, balance: ready.balance.toString() });
+      logger.info({ event: 'onboard_ready', address: api.deployedContractAddress, balance: ready.balance.toString() });
       await api.verifyAccountStatus(pin);
-      onComplete(contractAddress);
+      onComplete(api.deployedContractAddress);
     } catch (e) {
       logger.error(e, 'Failed to create bank account');
     } finally {
       setWorking(false);
     }
-  }, [contractAddress, providers, logger, pin, initialDeposit, onComplete]);
+  }, [providers, logger, pin, initialDeposit, onComplete]);
 
   return (
     <Card sx={{ backgroundColor: 'transparent' }}>
@@ -62,34 +50,28 @@ const Onboarding: React.FC<OnboardingProps> = ({ logger, onComplete }) => {
             </Grid>
           )}
           <Grid item>
-            <Button variant="outlined" onClick={onDeploy} disabled={working}>
-              {working && !contractAddress ? <CircularProgress size={16} /> : 'Deploy Contract'}
+            <TextField label="Label (optional)" value={label} onChange={(e) => setLabel(e.target.value)} />
+          </Grid>
+          <Grid item>
+            <TextField
+              label="PIN (4-8 digits)"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+            />
+          </Grid>
+          <Grid item>
+            <TextField
+              label="Initial Deposit (e.g. 50.00)"
+              value={initialDeposit}
+              onChange={(e) => setInitialDeposit(e.target.value)}
+            />
+          </Grid>
+          <Grid item>
+            <Button variant="contained" onClick={onCreateAccount} disabled={!pinValid || !isConnected || working}>
+              {working ? <CircularProgress size={16} /> : 'Create Account'}
             </Button>
           </Grid>
-          {contractAddress && (
-            <>
-              <Grid item>
-                <TextField
-                  label="PIN (4-8 digits)"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
-                />
-              </Grid>
-              <Grid item>
-                <TextField
-                  label="Initial Deposit (e.g. 50.00)"
-                  value={initialDeposit}
-                  onChange={(e) => setInitialDeposit(e.target.value)}
-                />
-              </Grid>
-              <Grid item>
-                <Button variant="contained" onClick={onCreate} disabled={!pinValid || working}>
-                  {working ? <CircularProgress size={16} /> : 'Create Account'}
-                </Button>
-              </Grid>
-            </>
-          )}
         </Grid>
       </CardContent>
     </Card>

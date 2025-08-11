@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "http-server --port 8080 ./dist --proxy 'http://127.0.0.1:8080?'",
+    "start": "http-server --port 8080 ./dist --proxy 'http://127.0.0.1:8080?' --history-api-fallback",
     "dev": "vite",
     "build": "vite build && npm run copy-bank-keys",
     "copy-bank-keys": "mkdir -p ./dist/keys ./dist/zkir && cp -r ../bank-contract/src/managed/bank/keys/* ./dist/keys || true && cp -r ../bank-contract/src/managed/bank/zkir/* ./dist/zkir || true",
@@ -16,6 +16,7 @@
     "@emotion/styled": "^11.11.5",
     "@midnight-bank/bank-api": "file:../bank-api",
     "@mui/material": "^5.15.0",
+    "react-router-dom": "^6.26.2",
     "pino": "^8.16.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
