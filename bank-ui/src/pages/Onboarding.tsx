@@ -1,16 +1,14 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Button, Card, CardContent, CircularProgress, Grid, TextField, Typography } from '@mui/material';
 import type { Logger } from 'pino';
-import { BankAPI, type BankProviders } from '@midnight-bank/bank-api';
+import { BankAPI } from '@midnight-bank/bank-api';
 import { firstValueFrom, filter } from 'rxjs';
+import { useBankWallet } from '../components/BankWallet';
 
-export interface OnboardingProps {
-  providers: BankProviders;
-  logger: Logger;
-  onComplete: (contractAddress: string) => void;
-}
+export interface OnboardingProps { logger: Logger; onComplete: (contractAddress: string) => void }
 
-const Onboarding: React.FC<OnboardingProps> = ({ providers, logger, onComplete }) => {
+const Onboarding: React.FC<OnboardingProps> = ({ logger, onComplete }) => {
+  const { providers, isConnected, connect } = useBankWallet();
   const [contractAddress, setContractAddress] = useState<string | undefined>(undefined);
   const [pin, setPin] = useState('');
   const [initialDeposit, setInitialDeposit] = useState('50.00');
@@ -56,6 +54,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ providers, logger, onComplete }
           Onboard Bank Account
         </Typography>
         <Grid container spacing={2} direction="column" alignItems="center">
+          {!isConnected && (
+            <Grid item>
+              <Button variant="outlined" onClick={() => void connect()} disabled={working}>
+                {working ? <CircularProgress size={16} /> : 'Connect Lace Wallet'}
+              </Button>
+            </Grid>
+          )}
           <Grid item>
             <Button variant="outlined" onClick={onDeploy} disabled={working}>
               {working && !contractAddress ? <CircularProgress size={16} /> : 'Deploy Contract'}

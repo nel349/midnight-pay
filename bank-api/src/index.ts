@@ -4,6 +4,7 @@ export {
   type DeployedBankAPI,
   type BankDerivedState,
   type BankProviders,
+  type BankCircuitKeys,
   type AccountId,
   type UserAction,
   type BankTransaction,
