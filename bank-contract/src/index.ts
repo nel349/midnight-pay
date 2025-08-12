@@ -11,74 +11,114 @@ export const { Contract } = ContractModule;
 export type Contract<T, W extends Witnesses<T> = Witnesses<T>> = ContractType<T, W>;
 
 // Bank Private State - stored locally in browser, never revealed publicly
+// For shared contract: Maps user_id -> user's private data
 export type BankPrivateState = {
-  readonly accountPinHash: Uint8Array;         // Hashed PIN for authentication
-  readonly accountBalance: bigint;             // Current balance (secret!)
-  readonly transactionHistory: Uint8Array[];  // Array of transaction hashes (private, max 10)
+  readonly userPinHashes: Map<string, Uint8Array>;        // user_id -> PIN hash
+  readonly userBalances: Map<string, bigint>;             // user_id -> balance
+  readonly userTransactionHistories: Map<string, Uint8Array[]>; // user_id -> transaction history
 };
 
-// Create initial private state for new account
-export const createBankPrivateState = (
-  pinHash: Uint8Array, 
-  initialBalance: bigint
-): BankPrivateState => ({
-  accountPinHash: pinHash,
-  accountBalance: initialBalance,
-  transactionHistory: Array(10).fill(new Uint8Array(32)) // Start with 10 empty transaction slots
+// Create initial private state for shared bank (empty)
+export const createBankPrivateState = (): BankPrivateState => ({
+  userPinHashes: new Map(),
+  userBalances: new Map(),
+  userTransactionHistories: new Map()
 });
 
-// Witness Functions - provide private data to circuits
+// Helper to add a new user to private state
+export const addUserToPrivateState = (
+  state: BankPrivateState,
+  userId: string,
+  pinHash: Uint8Array,
+  initialBalance: bigint
+): BankPrivateState => ({
+  userPinHashes: new Map(state.userPinHashes).set(userId, pinHash),
+  userBalances: new Map(state.userBalances).set(userId, initialBalance),
+  userTransactionHistories: new Map(state.userTransactionHistories).set(userId, Array(10).fill(new Uint8Array(32)))
+});
+
+// Witness Functions - provide private data to circuits (Proper Multi-User Implementation)
 // These functions are called when circuits need private inputs
 export const bankWitnesses = {
-  // Witness 1: Provides account PIN hash for authentication
-  account_pin_hash: ({ 
+  // Witness 1: Provides user's PIN hash for authentication (user-specific)
+  user_pin_hash: ({ 
     privateState 
-  }: WitnessContext<Ledger, BankPrivateState>): [BankPrivateState, Uint8Array] => [
-    privateState,
-    privateState.accountPinHash
-  ],
+  }: WitnessContext<Ledger, BankPrivateState>, 
+    userId: Uint8Array
+  ): [BankPrivateState, Uint8Array] => {
+    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
+    const pinHash = privateState.userPinHashes.get(userIdStr);
+    if (!pinHash) {
+      throw new Error(`User ${userIdStr} not found in private state`);
+    }
+    return [privateState, pinHash];
+  },
 
-  // Witness 2: Provides current account balance (never revealed publicly)
-  account_balance: ({ 
+  // Witness 2: Provides user's current balance (user-specific, never revealed publicly)
+  user_balance: ({ 
     privateState 
-  }: WitnessContext<Ledger, BankPrivateState>): [BankPrivateState, bigint] => [
-    privateState,
-    privateState.accountBalance
-  ],
+  }: WitnessContext<Ledger, BankPrivateState>, 
+    userId: Uint8Array
+  ): [BankPrivateState, bigint] => {
+    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
+    const balance = privateState.userBalances.get(userIdStr);
+    if (balance === undefined) {
+      throw new Error(`User ${userIdStr} balance not found in private state`);
+    }
+    return [privateState, balance];
+  },
 
-  // Witness 3: Provides transaction history (private) - exactly 10 entries
-  transaction_history: ({ 
+  // Witness 3: Provides user's transaction history (user-specific, private) - exactly 10 entries
+  user_transaction_history: ({ 
     privateState 
-  }: WitnessContext<Ledger, BankPrivateState>): [BankPrivateState, Uint8Array[]] => [
-    privateState,
-    privateState.transactionHistory.length === 10 ? 
-      privateState.transactionHistory : 
-      Array(10).fill(new Uint8Array(32)) // Ensure exactly 10 entries
-  ],
+  }: WitnessContext<Ledger, BankPrivateState>, 
+    userId: Uint8Array
+  ): [BankPrivateState, Uint8Array[]] => {
+    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
+    const history = privateState.userTransactionHistories.get(userIdStr);
+    if (!history) {
+      throw new Error(`User ${userIdStr} transaction history not found in private state`);
+    }
+    return [privateState, history.length === 10 ? history : Array(10).fill(new Uint8Array(32))];
+  },
 
-  // Witness 4: Updates account balance in private state
-  set_account_balance: (
+  // Witness 4: Updates user's balance in private state (user-specific)
+  set_user_balance: (
     { privateState }: WitnessContext<Ledger, BankPrivateState>,
+    userId: Uint8Array,
     newBalance: bigint
-  ): [BankPrivateState, []] => [
-    {
-      ...privateState,
-      accountBalance: newBalance
-    },
-    []
-  ],
+  ): [BankPrivateState, []] => {
+    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
+    const newUserBalances = new Map(privateState.userBalances);
+    newUserBalances.set(userIdStr, newBalance);
+    
+    return [
+      {
+        ...privateState,
+        userBalances: newUserBalances
+      },
+      []
+    ];
+  },
 
-  // Witness 5: Updates transaction history in private state (exactly 10 entries)
-  set_transaction_history: (
+  // Witness 5: Updates user's transaction history in private state (user-specific, exactly 10 entries)
+  set_user_transaction_history: (
     { privateState }: WitnessContext<Ledger, BankPrivateState>,
+    userId: Uint8Array,
     newHistory: Uint8Array[]
-  ): [BankPrivateState, []] => [
-    {
-      ...privateState,
-      transactionHistory: newHistory.slice(0, 10) // Ensure max 10 entries
-    },
-    []
-  ]
+  ): [BankPrivateState, []] => {
+    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
+    const newUserHistories = new Map(privateState.userTransactionHistories);
+    newUserHistories.set(userIdStr, newHistory.slice(0, 10)); // Ensure max 10 entries
+    
+    return [
+      {
+        ...privateState,
+        userTransactionHistories: newUserHistories
+      },
+      []
+    ];
+  }
 };
 
 // Utility functions for PIN handling

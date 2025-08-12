@@ -1,5 +1,5 @@
 import { type Ledger, ledger } from '../managed/bank/contract/index.cjs';
-import { Contract, type BankPrivateState, createBankPrivateState, hashPin, bankWitnesses } from '../index.js';
+import { Contract, type BankPrivateState, createBankPrivateState, addUserToPrivateState, hashPin, bankWitnesses } from '../index.js';
 import { 
   CircuitContext, 
   constructorContext,
@@ -9,30 +9,30 @@ import {
 
 // Local transaction record (user maintains this separately)
 interface TransactionRecord {
-  type: 'create' | 'deposit' | 'withdraw' | 'balance_check' | 'verify';
+  type: 'create' | 'deposit' | 'withdraw' | 'balance_check' | 'verify' | 'transfer_out' | 'transfer_in';
   amount?: bigint;
   timestamp: Date;
   balanceAfter: bigint;
   pin: string; // In real app, this would be encrypted/hashed
+  counterparty?: string; // For transfers, the other user_id
 }
 
-// Test setup class similar to battleship setup
+// Test setup class for shared bank contract architecture
 export class BankTestSetup {
   private contract: Contract<BankPrivateState, typeof bankWitnesses>;
   private turnContext: CircuitContext<BankPrivateState>;
   private contractAddress: string;
-  private localTransactionLog: TransactionRecord[] = []; // User's private detailed log
+  private localTransactionLogs: Map<string, TransactionRecord[]> = new Map(); // Per-user transaction logs
   
   constructor() {
-    // Initialize contract with witnesses
+    // Initialize shared contract with witnesses
     this.contract = new Contract(bankWitnesses);
     this.contractAddress = sampleContractAddress();
     
-    // Initialize with empty private state
-    const initialPin = hashPin('1234');
-    const initialPrivateState = createBankPrivateState(initialPin, 0n);
+    // Initialize with empty shared private state
+    const initialPrivateState = createBankPrivateState();
     
-    // Get initial state from contract
+    // Get initial state from contract (empty shared bank)
     const { currentPrivateState, currentContractState, currentZswapLocalState } = this.contract.initialState(
       constructorContext(initialPrivateState, '0'.repeat(64)),
     );
@@ -45,7 +45,16 @@ export class BankTestSetup {
       transactionContext: new QueryContext(currentContractState.data, sampleContractAddress()),
     };
     
-    console.log('🏦 Bank initialized with empty state');
+    console.log('🏦 Shared Bank initialized with empty state');
+  }
+
+  // Helper to convert string to Bytes<32>
+  private stringToBytes32(str: string): Uint8Array {
+    const bytes = new Uint8Array(32);
+    const encoder = new TextEncoder();
+    const encoded = encoder.encode(str);
+    bytes.set(encoded.slice(0, Math.min(encoded.length, 32)));
+    return bytes;
   }
 
   // Helper to update state and get ledger
@@ -56,107 +65,133 @@ export class BankTestSetup {
     return ledger(this.turnContext.transactionContext.state);
   }
 
-  // Test method: Create Account
-  createAccount(pin: string, initialDeposit: bigint): Ledger {
-    console.log(`🔑 Creating account with PIN and initial deposit: $${initialDeposit}`);
+  // Helper to record transaction in user's local log
+  private recordTransaction(userId: string, record: TransactionRecord): void {
+    if (!this.localTransactionLogs.has(userId)) {
+      this.localTransactionLogs.set(userId, []);
+    }
+    this.localTransactionLogs.get(userId)!.push(record);
+  }
+
+  // Test method: Create Account in Shared Bank
+  createAccount(userId: string, pin: string, initialDeposit: bigint): Ledger {
+    console.log(`🔑 Creating account for user ${userId} with PIN and initial deposit: $${initialDeposit}`);
     
-    // Convert PIN to Bytes<32> (simplified for testing)
-    const pinBytes = new Uint8Array(32);
-    const encoder = new TextEncoder();
-    const encoded = encoder.encode(pin);
-    pinBytes.set(encoded.slice(0, Math.min(encoded.length, 32)));
+    const userIdBytes = this.stringToBytes32(userId);
+    const pinBytes = this.stringToBytes32(pin);
     
-    const results = this.contract.impureCircuits.create_account(this.turnContext, pinBytes, initialDeposit);
+    const results = this.contract.impureCircuits.create_account(this.turnContext, userIdBytes, pinBytes, initialDeposit);
     const ledger = this.updateStateAndGetLedger(results);
     
     // Record detailed transaction locally (user's private log)
-    this.localTransactionLog.push({
+    this.recordTransaction(userId, {
       type: 'create',
       amount: initialDeposit,
       timestamp: new Date(),
-      balanceAfter: this.getCurrentBalance(),
-      pin: pin // In real app: encrypted/hashed
+      balanceAfter: this.getUserBalance(userId),
+      pin: pin
     });
     
     return ledger;
   }
 
   // Test method: Deposit funds
-  deposit(pin: string, amount: bigint): Ledger {
-    console.log(`💰 Depositing $${amount}`);
+  deposit(userId: string, pin: string, amount: bigint): Ledger {
+    console.log(`💰 User ${userId} depositing $${amount}`);
     
-    // Convert PIN to Bytes<32>
-    const pinBytes = new Uint8Array(32);
-    const encoder = new TextEncoder();
-    const encoded = encoder.encode(pin);
-    pinBytes.set(encoded.slice(0, Math.min(encoded.length, 32)));
+    const userIdBytes = this.stringToBytes32(userId);
+    const pinBytes = this.stringToBytes32(pin);
     
-    const results = this.contract.impureCircuits.deposit(this.turnContext, pinBytes, amount);
+    const results = this.contract.impureCircuits.deposit(this.turnContext, userIdBytes, pinBytes, amount);
     const ledger = this.updateStateAndGetLedger(results);
     
     // Record detailed transaction locally
-    this.localTransactionLog.push({
+    this.recordTransaction(userId, {
       type: 'deposit',
       amount: amount,
       timestamp: new Date(),
-      balanceAfter: this.getCurrentBalance(),
+      balanceAfter: this.getUserBalance(userId),
       pin: pin
+    });
+    
+    return ledger;
+  }
+
+  // Test method: Withdraw funds
+  withdraw(userId: string, pin: string, amount: bigint): Ledger {
+    console.log(`💸 User ${userId} withdrawing $${amount}`);
+    
+    const userIdBytes = this.stringToBytes32(userId);
+    const pinBytes = this.stringToBytes32(pin);
+    
+    const results = this.contract.impureCircuits.withdraw(this.turnContext, userIdBytes, pinBytes, amount);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Record detailed transaction locally
+    this.recordTransaction(userId, {
+      type: 'withdraw',
+      amount: amount,
+      timestamp: new Date(),
+      balanceAfter: this.getUserBalance(userId),
+      pin: pin
+    });
+    
+    return ledger;
+  }
+
+  // Test method: Transfer between users (NEW!)
+  transferBetweenUsers(senderId: string, pin: string, recipientId: string, amount: bigint): Ledger {
+    console.log(`💸 User ${senderId} transferring $${amount} to user ${recipientId}`);
+    
+    const senderIdBytes = this.stringToBytes32(senderId);
+    const pinBytes = this.stringToBytes32(pin);
+    const recipientIdBytes = this.stringToBytes32(recipientId);
+    
+    const results = this.contract.impureCircuits.transfer_between_users(this.turnContext, senderIdBytes, pinBytes, recipientIdBytes, amount);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Record detailed transaction locally for both users
+    this.recordTransaction(senderId, {
+      type: 'transfer_out',
+      amount: amount,
+      timestamp: new Date(),
+      balanceAfter: this.getUserBalance(senderId),
+      pin: pin,
+      counterparty: recipientId
+    });
+    
+    this.recordTransaction(recipientId, {
+      type: 'transfer_in',
+      amount: amount,
+      timestamp: new Date(),
+      balanceAfter: this.getUserBalance(recipientId),
+      pin: '', // Recipient doesn't need PIN
+      counterparty: senderId
     });
     
     return ledger;
   }
 
   // Test method: Authenticate balance access
-  authenticateBalanceAccess(pin: string): Ledger {
-    console.log(`👁️ Checking balance access`);
+  authenticateBalanceAccess(userId: string, pin: string): Ledger {
+    console.log(`👁️ User ${userId} checking balance access`);
     
-    // Convert PIN to Bytes<32>
-    const pinBytes = new Uint8Array(32);
-    const encoder = new TextEncoder();
-    const encoded = encoder.encode(pin);
-    pinBytes.set(encoded.slice(0, Math.min(encoded.length, 32)));
+    const userIdBytes = this.stringToBytes32(userId);
+    const pinBytes = this.stringToBytes32(pin);
     
-    const results = this.contract.impureCircuits.authenticate_balance_access(this.turnContext, pinBytes);
+    const results = this.contract.impureCircuits.authenticate_balance_access(this.turnContext, userIdBytes, pinBytes);
     return this.updateStateAndGetLedger(results);
   }
 
   // Test method: Verify account status
-  verifyAccountStatus(pin: string): Ledger {
-    console.log(`✅ Verifying account status`);
+  verifyAccountStatus(userId: string, pin: string): Ledger {
+    console.log(`✅ Verifying account status for user ${userId}`);
     
-    // Convert PIN to Bytes<32>
-    const pinBytes = new Uint8Array(32);
-    const encoder = new TextEncoder();
-    const encoded = encoder.encode(pin);
-    pinBytes.set(encoded.slice(0, Math.min(encoded.length, 32)));
+    const userIdBytes = this.stringToBytes32(userId);
+    const pinBytes = this.stringToBytes32(pin);
     
-    const results = this.contract.impureCircuits.verify_account_status(this.turnContext, pinBytes);
+    const results = this.contract.impureCircuits.verify_account_status(this.turnContext, userIdBytes, pinBytes);
     return this.updateStateAndGetLedger(results);
-  }
-
-  // Test method: Withdraw funds
-  withdraw(pin: string, amount: bigint): Ledger {
-    console.log(`💸 Withdrawing $${amount}`);
-    
-    // Convert PIN to Bytes<32>
-    const pinBytes = new Uint8Array(32);
-    const encoder = new TextEncoder();
-    const encoded = encoder.encode(pin);
-    pinBytes.set(encoded.slice(0, Math.min(encoded.length, 32)));
-    
-    const results = this.contract.impureCircuits.withdraw(this.turnContext, pinBytes, amount);
-    const ledger = this.updateStateAndGetLedger(results);
-    
-    // Record detailed transaction locally
-    this.localTransactionLog.push({
-      type: 'withdraw',
-      amount: amount,
-      timestamp: new Date(),
-      balanceAfter: this.getCurrentBalance(),
-      pin: pin
-    });
-    
-    return ledger;
   }
 
   // Getter methods for state inspection
@@ -168,107 +203,109 @@ export class BankTestSetup {
     return this.turnContext.currentPrivateState;
   }
 
-  // Helper: Get current balance (directly from private state)
-  getCurrentBalance(): bigint {
-    return this.turnContext.currentPrivateState.accountBalance;
+  // Helper: Get user's current balance (from private state)
+  getUserBalance(userId: string): bigint {
+    // Get balance from the shared private state
+    const balance = this.turnContext.currentPrivateState.userBalances.get(userId);
+    return balance ?? 0n;
   }
 
-  // Helper: Check if account exists
-  isAccountCreated(): boolean {
-    return this.getLedgerState().account_exists;
+  // Helper: Check if account exists for user in shared bank
+  hasAccount(userId: string): boolean {
+    // In shared contract, we'd check all_accounts.member(user_id)
+    // For testing, we'll check if user has transaction history
+    return this.localTransactionLogs.has(userId) && this.localTransactionLogs.get(userId)!.length > 0;
   }
 
-  // Helper: Get transaction count
-  getTransactionCount(): bigint {
-    return this.getLedgerState().transaction_count;
+  // Helper: Get total accounts in shared bank
+  getTotalAccounts(): bigint {
+    return this.getLedgerState().total_accounts;
   }
 
-  // Helper: Get account status
-  getAccountStatus(): string {
-    // Convert Bytes<32> to string for readability
-    const decoder = new TextDecoder();
-    return decoder.decode(this.getLedgerState().account_status).replace(/\0/g, '');
-  }
-
-  // Helper: Get last transaction type
-  getLastTransaction(): string {
-    const txBytes = this.getLedgerState().last_transaction;
+  // Helper: Get last global transaction
+  getLastGlobalTransaction(): string {
+    const txBytes = this.getLedgerState().last_global_transaction;
     if (!txBytes) return '';
     
     try {
-      // Try to decode as UTF-8, handling null bytes
       const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
       const decoded = decoder.decode(txBytes);
-      // Clean up null bytes and non-printable characters
       return decoded.replace(/\0+/g, '').replace(/[^\x20-\x7E]/g, '');
     } catch {
-      // If decoding fails, return a hash representation
       return `tx_${Array.from(txBytes.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}`;
     }
   }
 
-  // Debug helper: Print current state
-  printState(): void {
-    console.log('\n📊 Current Bank State:');
-    console.log('├─ Account Exists:', this.isAccountCreated());
-    console.log('├─ Private Balance: $' + this.getCurrentBalance().toString());
-    console.log('├─ Transaction Count:', this.getTransactionCount().toString());
-    console.log('├─ Account Status:', this.getAccountStatus());
-    console.log('└─ Last Transaction:', this.getLastTransaction());
+  // Debug helper: Print current shared bank state
+  printSharedBankState(): void {
+    console.log('\n📊 Shared Bank State:');
+    console.log('├─ Total Accounts:', this.getTotalAccounts().toString());
+    console.log('├─ Last Global Transaction:', this.getLastGlobalTransaction());
+    console.log('└─ Active Users:', Array.from(this.localTransactionLogs.keys()).join(', '));
     console.log('');
   }
 
-  // Helper: Get detailed transaction history (user's private log)
-  getDetailedTransactionHistory(): TransactionRecord[] {
-    return [...this.localTransactionLog]; // Return copy to prevent modification
+  // Debug helper: Print specific user state
+  printUserState(userId: string): void {
+    console.log(`\n📊 User ${userId} State:`);
+    console.log('├─ Has Account:', this.hasAccount(userId));
+    console.log('├─ Balance: $' + this.getUserBalance(userId).toString());
+    console.log('├─ Transactions:', this.localTransactionLogs.get(userId)?.length || 0);
+    console.log('');
   }
 
-  // Helper: Get specific transaction details
-  getTransactionDetails(index: number): TransactionRecord | undefined {
-    return this.localTransactionLog[index];
+  // Helper: Get user's detailed transaction history
+  getUserTransactionHistory(userId: string): TransactionRecord[] {
+    return [...(this.localTransactionLogs.get(userId) || [])];
   }
 
-  // Helper: Search transactions by type
-  getTransactionsByType(type: TransactionRecord['type']): TransactionRecord[] {
-    return this.localTransactionLog.filter(tx => tx.type === type);
+  // Helper: Get specific user transaction details
+  getUserTransactionDetails(userId: string, index: number): TransactionRecord | undefined {
+    return this.localTransactionLogs.get(userId)?.[index];
   }
 
-  // Helper: Get total amount for transaction type
-  getTotalAmountByType(type: TransactionRecord['type']): bigint {
-    return this.localTransactionLog
+  // Helper: Search user transactions by type
+  getUserTransactionsByType(userId: string, type: TransactionRecord['type']): TransactionRecord[] {
+    return (this.localTransactionLogs.get(userId) || []).filter(tx => tx.type === type);
+  }
+
+  // Helper: Get total amount for transaction type (for specific user)
+  getUserTotalAmountByType(userId: string, type: TransactionRecord['type']): bigint {
+    return (this.localTransactionLogs.get(userId) || [])
       .filter(tx => tx.type === type && tx.amount !== undefined)
       .reduce((total, tx) => total + (tx.amount || 0n), 0n);
   }
 
-  // Helper: Calculate expected transaction hash (matches contract logic)
-  calculateTransactionHash(transactionType: string): Uint8Array {
-    // This should match the persistentHash calculation in the contract
-    // For now, we'll use a simplified approach since we can't easily access the exact persistentHash function
-    const encoder = new TextEncoder();
-    const typeBytes = encoder.encode(transactionType);
-    
-    // Create a 32-byte hash by padding and simple transformation
-    const hash = new Uint8Array(32);
-    for (let i = 0; i < Math.min(typeBytes.length, 32); i++) {
-      hash[i] = typeBytes[i] ^ (i + 1); // Simple XOR transformation
-    }
-    
-    // Add some additional entropy based on transaction type
-    const typeCode = transactionType === 'account_created' ? 0x01 :
-                    transactionType === 'deposit' ? 0x02 :
-                    transactionType === 'withdrawal' ? 0x03 : 0x00;
-    hash[31] = typeCode; // Set last byte as type identifier
-    
-    return hash;
+  // Helper: Print user's detailed transaction history
+  printUserDetailedHistory(userId: string): void {
+    const history = this.localTransactionLogs.get(userId) || [];
+    console.log(`\n📜 User ${userId} Transaction History:`);
+    history.forEach((tx, index) => {
+      const amountStr = tx.amount ? `$${tx.amount}` : 'N/A';
+      const counterpartyStr = tx.counterparty ? ` (${tx.counterparty})` : '';
+      console.log(`├─ [${index}] ${tx.type.toUpperCase()}: ${amountStr}${counterpartyStr} → Balance: $${tx.balanceAfter} (${tx.timestamp.toLocaleTimeString()})`);
+    });
+    console.log('');
   }
 
-  // Helper: Print detailed transaction history
-  printDetailedHistory(): void {
-    console.log('\n📜 Detailed Transaction History (User\'s Private Log):');
-    this.localTransactionLog.forEach((tx, index) => {
-      const amountStr = tx.amount ? `$${tx.amount}` : 'N/A';
-      console.log(`├─ [${index}] ${tx.type.toUpperCase()}: ${amountStr} → Balance: $${tx.balanceAfter} (${tx.timestamp.toLocaleTimeString()})`);
-    });
+  // Helper: Get all users with accounts
+  getAllUsers(): string[] {
+    return Array.from(this.localTransactionLogs.keys());
+  }
+
+  // Helper: Print all users and their balances
+  printAllUsersOverview(): void {
+    console.log('\n👥 All Users Overview:');
+    const users = this.getAllUsers();
+    if (users.length === 0) {
+      console.log('├─ No users with accounts');
+    } else {
+      users.forEach((userId, index) => {
+        const isLast = index === users.length - 1;
+        const prefix = isLast ? '└─' : '├─';
+        console.log(`${prefix} ${userId}: $${this.getUserBalance(userId)} (${this.getUserTransactionHistory(userId).length} txs)`);
+      });
+    }
     console.log('');
   }
 }

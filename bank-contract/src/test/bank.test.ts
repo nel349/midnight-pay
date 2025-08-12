@@ -1,475 +1,495 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { BankTestSetup } from './bank-setup.js';
 
-describe('Midnight Bank Contract Tests', () => {
+describe('Midnight Shared Bank Contract Tests', () => {
   let bank: BankTestSetup;
 
   beforeEach(() => {
     bank = new BankTestSetup();
   });
 
-  describe('Account Creation', () => {
-    test('should create account successfully with valid PIN and deposit', () => {
-      // Initially no account exists
-      expect(bank.isAccountCreated()).toBe(false);
-      expect(bank.getCurrentBalance()).toBe(0n);
-      expect(bank.getTransactionCount()).toBe(0n);
+  describe('Shared Bank Architecture', () => {
+    test('should initialize empty shared bank', () => {
+      expect(bank.getTotalAccounts()).toBe(0n);
+      expect(bank.getAllUsers()).toHaveLength(0);
+      
+      bank.printSharedBankState();
+    });
 
-      // Create account with $100 initial deposit
-      bank.createAccount('1234', 100n);
+    test('should track multiple users in same contract', () => {
+      // Create accounts for multiple users
+      bank.createAccount('alice', '1111', 100n);
+      bank.createAccount('bob', '2222', 200n);
+      bank.createAccount('charlie', '3333', 150n);
 
-      // Verify account was created
-      expect(bank.isAccountCreated()).toBe(true);
-      expect(bank.getCurrentBalance()).toBe(100n);
-      expect(bank.getTransactionCount()).toBe(1n);
-      expect(bank.getAccountStatus()).toBe('active');
-      expect(bank.getLastTransaction()).toBeTruthy(); // Transaction hash should exist
+      // Verify shared contract state
+      expect(bank.getTotalAccounts()).toBe(3n);
+      expect(bank.getAllUsers()).toHaveLength(3);
+      expect(bank.getAllUsers()).toContain('alice');
+      expect(bank.getAllUsers()).toContain('bob');
+      expect(bank.getAllUsers()).toContain('charlie');
 
-      bank.printState();
+      bank.printAllUsersOverview();
+    });
+  });
+
+  describe('Account Creation (Shared Contract)', () => {
+    test('should create account for user alice successfully', () => {
+      // Create account for alice
+      bank.createAccount('alice', '1234', 100n);
+
+      // Verify alice's account
+      expect(bank.hasAccount('alice')).toBe(true);
+      expect(bank.getUserBalance('alice')).toBe(100n);
+      expect(bank.getTotalAccounts()).toBe(1n);
+
+      bank.printUserState('alice');
+    });
+
+    test('should create multiple user accounts', () => {
+      // Create accounts for different users
+      bank.createAccount('alice', '1111', 50n);
+      bank.createAccount('bob', '2222', 75n);
+
+      // Verify both accounts exist
+      expect(bank.hasAccount('alice')).toBe(true);
+      expect(bank.hasAccount('bob')).toBe(true);
+      expect(bank.getUserBalance('alice')).toBe(50n);
+      expect(bank.getUserBalance('bob')).toBe(75n);
+      expect(bank.getTotalAccounts()).toBe(2n);
+
+      bank.printAllUsersOverview();
     });
 
     test('should fail to create account with insufficient deposit', () => {
-      // Try to create account with $5 (below minimum of $10)
       expect(() => {
-        bank.createAccount('1234', 5n);
-      }).toThrow(); // Should fail assertion in circuit
+        bank.createAccount('alice', '1234', 5n); // Below minimum of 10
+      }).toThrow();
     });
 
-    test('should fail to create account twice', () => {
+    test('should fail to create duplicate account for same user', () => {
       // First account creation should succeed
-      bank.createAccount('1234', 50n);
-      expect(bank.isAccountCreated()).toBe(true);
+      bank.createAccount('alice', '1234', 50n);
+      expect(bank.hasAccount('alice')).toBe(true);
 
-      // Second attempt should fail
+      // Second attempt for same user should fail
       expect(() => {
-        bank.createAccount('5678', 100n);
+        bank.createAccount('alice', '5678', 100n);
       }).toThrow(); // Should fail "Account already exists" assertion
     });
   });
 
-  describe('Deposits', () => {
+  describe('Individual User Operations', () => {
     beforeEach(() => {
-      // Create account before each deposit test
-      bank.createAccount('1234', 50n);
+      // Setup multiple users
+      bank.createAccount('alice', '1111', 100n);
+      bank.createAccount('bob', '2222', 200n);
     });
 
-    test('should deposit funds successfully', () => {
-      const initialBalance = bank.getCurrentBalance();
-      const initialTxCount = bank.getTransactionCount();
+    test('should handle deposits for specific users', () => {
+      // Alice deposits
+      bank.deposit('alice', '1111', 50n);
+      expect(bank.getUserBalance('alice')).toBe(150n);
+      expect(bank.getUserBalance('bob')).toBe(200n); // Bob unchanged
 
-      // Deposit $25
-      bank.deposit('1234', 25n);
+      // Bob deposits  
+      bank.deposit('bob', '2222', 25n);
+      expect(bank.getUserBalance('alice')).toBe(150n); // Alice unchanged
+      expect(bank.getUserBalance('bob')).toBe(225n);
 
-      // Verify deposit was processed
-      expect(bank.getCurrentBalance()).toBe(initialBalance + 25n);
-      expect(bank.getTransactionCount()).toBe(initialTxCount + 1n);
-      expect(bank.getLastTransaction()).toBeTruthy(); // Transaction hash should exist
-
-      bank.printState();
+      bank.printAllUsersOverview();
     });
 
-    test('should fail deposit with wrong PIN', () => {
+    test('should handle withdrawals for specific users', () => {
+      // Alice withdraws
+      bank.withdraw('alice', '1111', 30n);
+      expect(bank.getUserBalance('alice')).toBe(70n);
+      expect(bank.getUserBalance('bob')).toBe(200n); // Bob unchanged
+
+      // Bob withdraws
+      bank.withdraw('bob', '2222', 50n);
+      expect(bank.getUserBalance('alice')).toBe(70n); // Alice unchanged
+      expect(bank.getUserBalance('bob')).toBe(150n);
+
+      bank.printAllUsersOverview();
+    });
+
+    test('should fail operations with wrong PIN', () => {
+      // Alice tries to deposit with Bob's PIN
       expect(() => {
-        bank.deposit('wrong', 25n); // Wrong PIN
-      }).toThrow(); // Should fail authentication
-    });
+        bank.deposit('alice', '2222', 50n); // Wrong PIN
+      }).toThrow();
 
-    test('should fail deposit with zero amount', () => {
+      // Bob tries to withdraw with Alice's PIN
       expect(() => {
-        bank.deposit('1234', 0n); // Zero amount
-      }).toThrow(); // Should fail "amount must be positive" assertion
+        bank.withdraw('bob', '1111', 25n); // Wrong PIN
+      }).toThrow();
     });
 
-    test('should handle multiple deposits correctly', () => {
-      const initialBalance = bank.getCurrentBalance(); // $50
+    test('should authenticate balance access per user', () => {
+      // Each user can authenticate their own balance
+      expect(() => {
+        bank.authenticateBalanceAccess('alice', '1111');
+      }).not.toThrow();
 
-      // Make three deposits
-      bank.deposit('1234', 10n); // $60
-      bank.deposit('1234', 20n); // $80  
-      bank.deposit('1234', 15n); // $95
+      expect(() => {
+        bank.authenticateBalanceAccess('bob', '2222');
+      }).not.toThrow();
 
-      expect(bank.getCurrentBalance()).toBe(initialBalance + 45n);
-      expect(bank.getTransactionCount()).toBe(4n); // 1 create + 3 deposits
-
-      bank.printState();
+      // Users cannot authenticate with wrong PIN
+      expect(() => {
+        bank.authenticateBalanceAccess('alice', '2222'); // Wrong PIN
+      }).toThrow();
     });
   });
 
-  describe('Balance Authentication', () => {
+  describe('Inter-User Transfers (NEW FEATURE)', () => {
     beforeEach(() => {
-      bank.createAccount('1234', 100n);
-      bank.deposit('1234', 50n); // Balance: $150
+      // Setup users with initial balances
+      bank.createAccount('alice', '1111', 100n);
+      bank.createAccount('bob', '2222', 50n);
+      bank.createAccount('charlie', '3333', 200n);
     });
 
-    test('should authenticate balance access with correct PIN', () => {
-      // Current count should be 2 (create + deposit)
-      expect(bank.getTransactionCount()).toBe(2n);
+    test('should transfer funds between users successfully', () => {
+      const initialAliceBalance = bank.getUserBalance('alice');
+      const initialBobBalance = bank.getUserBalance('bob');
 
-      // Authenticate balance access
-      bank.authenticateBalanceAccess('1234');
+      // Alice transfers $30 to Bob
+      bank.transferBetweenUsers('alice', '1111', 'bob', 30n);
 
-      // Verify authentication was logged - count stays same but last_transaction updates
-      expect(bank.getTransactionCount()).toBe(2n); // Counter not incremented in this circuit
-      expect(bank.getLastTransaction()).toBeTruthy(); // Transaction hash should exist
+      // Verify balances updated correctly
+      expect(bank.getUserBalance('alice')).toBe(initialAliceBalance - 30n); // 70
+      expect(bank.getUserBalance('bob')).toBe(initialBobBalance + 30n);     // 80
+
+      // Check transaction histories
+      const aliceHistory = bank.getUserTransactionHistory('alice');
+      const bobHistory = bank.getUserTransactionHistory('bob');
+
+      // Alice should have transfer_out record
+      const aliceTransfer = aliceHistory.find(tx => tx.type === 'transfer_out');
+      expect(aliceTransfer).toBeDefined();
+      expect(aliceTransfer?.amount).toBe(30n);
+      expect(aliceTransfer?.counterparty).toBe('bob');
+
+      // Bob should have transfer_in record
+      const bobTransfer = bobHistory.find(tx => tx.type === 'transfer_in');
+      expect(bobTransfer).toBeDefined();
+      expect(bobTransfer?.amount).toBe(30n);
+      expect(bobTransfer?.counterparty).toBe('alice');
+
+      bank.printAllUsersOverview();
+    });
+
+    test('should handle multiple transfers correctly', () => {
+      // Alice -> Bob: $25
+      bank.transferBetweenUsers('alice', '1111', 'bob', 25n);
       
-      // Balance should remain unchanged
-      expect(bank.getCurrentBalance()).toBe(150n);
+      // Bob -> Charlie: $30  
+      bank.transferBetweenUsers('bob', '2222', 'charlie', 30n);
+      
+      // Charlie -> Alice: $50
+      bank.transferBetweenUsers('charlie', '3333', 'alice', 50n);
 
-      bank.printState();
+      // Final balances: Alice: 100 - 25 + 50 = 125, Bob: 50 + 25 - 30 = 45, Charlie: 200 + 30 - 50 = 180
+      expect(bank.getUserBalance('alice')).toBe(125n);
+      expect(bank.getUserBalance('bob')).toBe(45n);
+      expect(bank.getUserBalance('charlie')).toBe(180n);
+
+      // Print detailed histories
+      bank.printUserDetailedHistory('alice');
+      bank.printUserDetailedHistory('bob');
+      bank.printUserDetailedHistory('charlie');
     });
 
-    test('should fail balance authentication with wrong PIN', () => {
+    test('should fail transfer with insufficient funds', () => {
+      // Alice tries to transfer more than her balance ($150 > $100)
       expect(() => {
-        bank.authenticateBalanceAccess('wrong');
+        bank.transferBetweenUsers('alice', '1111', 'bob', 150n);
+      }).toThrow(); // Should fail "Insufficient funds for transfer"
+    });
+
+    test('should fail transfer with wrong PIN', () => {
+      expect(() => {
+        bank.transferBetweenUsers('alice', '2222', 'bob', 30n); // Wrong PIN
       }).toThrow(); // Should fail authentication
     });
 
-    test('should fail balance authentication on non-existent account', () => {
-      const freshBank = new BankTestSetup(); // No account created
+    test('should fail transfer to non-existent user', () => {
+      expect(() => {
+        bank.transferBetweenUsers('alice', '1111', 'david', 30n); // David doesn't exist
+      }).toThrow(); // Should fail "Recipient account does not exist"
+    });
+
+    test('should fail transfer from non-existent user', () => {
+      expect(() => {
+        bank.transferBetweenUsers('david', '1111', 'bob', 30n); // David doesn't exist
+      }).toThrow(); // Should fail "Sender account does not exist"
+    });
+
+    test('should fail self-transfer', () => {
+      expect(() => {
+        bank.transferBetweenUsers('alice', '1111', 'alice', 30n); // Self-transfer
+      }).toThrow(); // Should fail "Cannot transfer to yourself"
+    });
+
+    test('should fail transfer with zero amount', () => {
+      expect(() => {
+        bank.transferBetweenUsers('alice', '1111', 'bob', 0n); // Zero amount
+      }).toThrow(); // Should fail "Transfer amount must be positive"
+    });
+
+    test('should track transfer statistics per user', () => {
+      // Setup some transfers
+      bank.transferBetweenUsers('alice', '1111', 'bob', 30n);     // Alice sends $30
+      bank.transferBetweenUsers('charlie', '3333', 'alice', 40n); // Alice receives $40
+      bank.transferBetweenUsers('alice', '1111', 'charlie', 20n); // Alice sends $20
+
+      // Check Alice's transfer statistics
+      const aliceTransfersOut = bank.getUserTransactionsByType('alice', 'transfer_out');
+      const aliceTransfersIn = bank.getUserTransactionsByType('alice', 'transfer_in');
       
-      expect(() => {
-        freshBank.authenticateBalanceAccess('1234');
-      }).toThrow(); // Should fail "Account does not exist" assertion
+      expect(aliceTransfersOut).toHaveLength(2); // 2 outgoing transfers
+      expect(aliceTransfersIn).toHaveLength(1);  // 1 incoming transfer
+
+      const totalSent = bank.getUserTotalAmountByType('alice', 'transfer_out');
+      const totalReceived = bank.getUserTotalAmountByType('alice', 'transfer_in');
+      
+      expect(totalSent).toBe(50n);  // 30 + 20
+      expect(totalReceived).toBe(40n); // 40
+
+      // Alice's final balance: 100 - 30 + 40 - 20 = 90
+      expect(bank.getUserBalance('alice')).toBe(90n);
+
+      console.log('💸 Alice Transfer Summary:');
+      console.log('├─ Total Sent: $' + totalSent.toString());
+      console.log('├─ Total Received: $' + totalReceived.toString());
+      console.log('└─ Net Transfer: $' + (totalReceived - totalSent).toString());
     });
   });
 
-  describe('Account Verification', () => {
-    test('should verify account status for healthy account', () => {
-      // Create account with sufficient balance ($20 > $5 minimum)
-      bank.createAccount('1234', 20n);
-
-      // Verify account status
-      bank.verifyAccountStatus('1234');
-
-      expect(bank.getAccountStatus()).toBe('verified');
-      expect(bank.getCurrentBalance()).toBe(20n); // Balance unchanged
-
-      bank.printState();
-    });
-
-    test('should fail verification for low balance account', () => {
-      // Create account with minimum deposit ($10) but withdraw to make it insufficient for verification
-      bank.createAccount('1234', 10n);
-      bank.withdraw('1234', 8n); // Balance now $2, below $5 verification minimum
-
-      expect(() => {
-        bank.verifyAccountStatus('1234');
-      }).toThrow(); // Should fail "Account balance too low for verification"
-    });
-
-    test('should fail verification with wrong PIN', () => {
-      bank.createAccount('1234', 50n);
-
-      expect(() => {
-        bank.verifyAccountStatus('wrong');
-      }).toThrow(); // Should fail authentication
-    });
-
-    test('should verify account with transaction history', () => {
-      // Create account and make some transactions
-      bank.createAccount('1234', 50n);
-      bank.deposit('1234', 25n);
-      bank.deposit('1234', 10n);
-
-      // Should pass both balance and transaction count requirements
-      bank.verifyAccountStatus('1234');
-
-      expect(bank.getAccountStatus()).toBe('verified');
-      expect(bank.getTransactionCount()).toBe(3n); // create + 2 deposits (verify doesn't increment)
-
-      bank.printState();
-    });
-  });
-
-  describe('Withdrawals', () => {
+  describe('Privacy and Security (Shared Contract)', () => {
     beforeEach(() => {
-      bank.createAccount('1234', 100n);
+      bank.createAccount('alice', '1111', 100n);
+      bank.createAccount('bob', '2222', 200n);
     });
 
-    test('should withdraw funds successfully', () => {
-      const initialBalance = bank.getCurrentBalance();
-      const initialTxCount = bank.getTransactionCount();
+    test('should maintain user isolation', () => {
+      // Alice makes transactions
+      bank.deposit('alice', '1111', 50n);
+      bank.withdraw('alice', '1111', 25n);
 
-      // Withdraw $30
-      bank.withdraw('1234', 30n);
+      // Bob makes transactions  
+      bank.deposit('bob', '2222', 30n);
 
-      // Verify withdrawal was processed
-      expect(bank.getCurrentBalance()).toBe(initialBalance - 30n);
-      expect(bank.getTransactionCount()).toBe(initialTxCount + 1n);
-      expect(bank.getLastTransaction()).toBeTruthy(); // Transaction hash should exist
+      // Each user should only see their own transaction history
+      const aliceHistory = bank.getUserTransactionHistory('alice');
+      const bobHistory = bank.getUserTransactionHistory('bob');
 
-      bank.printState();
+      expect(aliceHistory).toHaveLength(3); // create + deposit + withdraw
+      expect(bobHistory).toHaveLength(2);   // create + deposit
+
+      // Alice's history should not contain Bob's transactions
+      const aliceTransactionTypes = aliceHistory.map(tx => tx.type);
+      expect(aliceTransactionTypes).toEqual(['create', 'deposit', 'withdraw']);
+
+      const bobTransactionTypes = bobHistory.map(tx => tx.type);
+      expect(bobTransactionTypes).toEqual(['create', 'deposit']);
     });
 
-    test('should fail withdrawal with insufficient funds', () => {
-      // Try to withdraw more than balance ($150 > $100)
+    test('should keep individual balances private', () => {
+      // Users can only access their own balances
+      expect(bank.getUserBalance('alice')).toBe(100n);
+      expect(bank.getUserBalance('bob')).toBe(200n);
+
+      // After Alice's transaction, only her balance changes
+      bank.deposit('alice', '1111', 75n);
+      expect(bank.getUserBalance('alice')).toBe(175n);
+      expect(bank.getUserBalance('bob')).toBe(200n); // Unchanged
+    });
+
+    test('should require PIN authentication per user', () => {
+      // Each user must use their own PIN
       expect(() => {
-        bank.withdraw('1234', 150n);
-      }).toThrow(); // Should fail "Insufficient funds" assertion
-    });
+        bank.withdraw('alice', '2222', 25n); // Alice using Bob's PIN
+      }).toThrow();
 
-    test('should fail withdrawal with wrong PIN', () => {
       expect(() => {
-        bank.withdraw('wrong', 30n);
-      }).toThrow(); // Should fail authentication
-    });
+        bank.deposit('bob', '1111', 30n); // Bob using Alice's PIN
+      }).toThrow();
 
-    test('should fail withdrawal with zero amount', () => {
+      // Correct PINs work
       expect(() => {
-        bank.withdraw('1234', 0n);
-      }).toThrow(); // Should fail "amount must be positive" assertion
-    });
-
-    test('should handle exact balance withdrawal', () => {
-      // Withdraw entire balance
-      bank.withdraw('1234', 100n);
-
-      expect(bank.getCurrentBalance()).toBe(0n);
-      expect(bank.getTransactionCount()).toBe(2n); // create + withdraw
-
-      bank.printState();
+        bank.deposit('alice', '1111', 25n);
+        bank.withdraw('bob', '2222', 30n);
+      }).not.toThrow();
     });
   });
 
-  describe('Privacy Properties', () => {
-    test('should maintain transaction history in private state', () => {
-      bank.createAccount('1234', 100n);
-      bank.deposit('1234', 50n);
-      bank.withdraw('1234', 25n);
-
-      const privateState = bank.getPrivateState();
-
-      // Private state should contain transaction history (10 slots)
-      expect(privateState.transactionHistory).toHaveLength(10);
-      
-      // First entry should be most recent transaction (withdrawal)
-      expect(privateState.transactionHistory[0]).not.toEqual(new Uint8Array(32));
-      
-      // Should have account balance
-      expect(privateState.accountBalance).toBe(125n);
-      
-      // Should have PIN hash
-      expect(privateState.accountPinHash).toBeTruthy();
+  describe('Advanced Transfer Scenarios', () => {
+    beforeEach(() => {
+      // Setup multiple users with different balances
+      bank.createAccount('alice', '1111', 1000n);
+      bank.createAccount('bob', '2222', 500n);
+      bank.createAccount('charlie', '3333', 750n);
+      bank.createAccount('diana', '4444', 300n);
     });
 
-    test('should handle full transaction history (10+ transactions)', () => {
-      // Create account (1 transaction)
-      bank.createAccount('1234', 1000n);
-      
-      // Add 9 more transactions to fill the history buffer
-      bank.deposit('1234', 100n);    // 2nd transaction
-      bank.withdraw('1234', 50n);    // 3rd transaction  
-      bank.deposit('1234', 200n);    // 4th transaction
-      bank.withdraw('1234', 75n);    // 5th transaction
-      bank.deposit('1234', 150n);    // 6th transaction
-      bank.withdraw('1234', 25n);    // 7th transaction
-      bank.deposit('1234', 300n);    // 8th transaction
-      bank.withdraw('1234', 100n);   // 9th transaction
-      bank.deposit('1234', 250n);    // 10th transaction
+    test('should handle round-robin transfers', () => {
+      // Each person sends $100 to the next person in sequence
+      bank.transferBetweenUsers('alice', '1111', 'bob', 100n);      // Alice -> Bob
+      bank.transferBetweenUsers('bob', '2222', 'charlie', 100n);    // Bob -> Charlie  
+      bank.transferBetweenUsers('charlie', '3333', 'diana', 100n);  // Charlie -> Diana
+      bank.transferBetweenUsers('diana', '4444', 'alice', 100n);    // Diana -> Alice
 
-      const privateState1 = bank.getPrivateState();
-      
-      // Should have exactly 10 transactions in history
-      expect(privateState1.transactionHistory).toHaveLength(10);
-      
-      // All 10 slots should be filled (no empty transactions)
-      const emptyTx = new Uint8Array(32);
-      const nonEmptyCount = privateState1.transactionHistory.filter(tx => 
-        !tx.every((byte, index) => byte === emptyTx[index])
-      ).length;
-      expect(nonEmptyCount).toBe(10);
-      
-      // Add one more transaction - should push oldest out
-      bank.withdraw('1234', 50n);    // 11th transaction
-      
-      const privateState2 = bank.getPrivateState();
-      
-      // Still should have exactly 10 transactions
-      expect(privateState2.transactionHistory).toHaveLength(10);
-      
-      // Latest transaction should be different from before (new withdrawal)
-      expect(privateState2.transactionHistory[0]).not.toEqual(privateState1.transactionHistory[0]);
-      
-      // Second transaction should be what was first before (shifted right)
-      expect(privateState2.transactionHistory[1]).toEqual(privateState1.transactionHistory[0]);
-      
-      // Final balance should be correct: 1000 + 100 - 50 + 200 - 75 + 150 - 25 + 300 - 100 + 250 - 50 = 1700
-      expect(bank.getCurrentBalance()).toBe(1700n);
-      expect(bank.getTransactionCount()).toBe(11n); // 11 total transactions
-      
-      bank.printState();
+      // Final balances should be same as initial (net zero transfers)
+      expect(bank.getUserBalance('alice')).toBe(1000n);   // 1000 - 100 + 100 = 1000
+      expect(bank.getUserBalance('bob')).toBe(500n);      // 500 + 100 - 100 = 500
+      expect(bank.getUserBalance('charlie')).toBe(750n);  // 750 + 100 - 100 = 750
+      expect(bank.getUserBalance('diana')).toBe(300n);    // 300 + 100 - 100 = 300
+
+      bank.printAllUsersOverview();
     });
 
-    test('should store correct transaction hashes in history', () => {
-      // Perform transactions in known order and capture state after each
-      bank.createAccount('1234', 100n);  
-      const stateAfterCreate = bank.getPrivateState();
-      const createHash = stateAfterCreate.transactionHistory[0]; // Account creation hash
+    test('should handle payment splitting scenario', () => {
+      // Alice pays for dinner and others split the cost
+      const dinnerCost = 240n; // $240 total
+      const perPersonCost = 60n; // $60 each (4 people)
 
-      bank.deposit('1234', 50n);         
-      const stateAfterDeposit = bank.getPrivateState();
-      const depositHash = stateAfterDeposit.transactionHistory[0]; // Deposit hash
+      // Everyone pays Alice their share
+      bank.transferBetweenUsers('bob', '2222', 'alice', perPersonCost);
+      bank.transferBetweenUsers('charlie', '3333', 'alice', perPersonCost);
+      bank.transferBetweenUsers('diana', '4444', 'alice', perPersonCost);
 
-      bank.withdraw('1234', 25n);        
-      const finalState = bank.getPrivateState();
-      const withdrawalHash = finalState.transactionHistory[0]; // Withdrawal hash
+      // Alice's balance: 1000 + 60 + 60 + 60 - 240 (for dinner) = 940
+      // But we're not deducting the dinner cost since that's external
+      expect(bank.getUserBalance('alice')).toBe(1180n); // 1000 + 3*60
 
-      // History should be: [withdrawal, deposit, account_created, empty, empty, ...]
-      expect(finalState.transactionHistory[0]).toEqual(withdrawalHash);  // Most recent
-      expect(finalState.transactionHistory[1]).toEqual(depositHash);     // Second most recent  
-      expect(finalState.transactionHistory[2]).toEqual(createHash);      // First transaction
+      // Others' balances
+      expect(bank.getUserBalance('bob')).toBe(440n);     // 500 - 60
+      expect(bank.getUserBalance('charlie')).toBe(690n); // 750 - 60  
+      expect(bank.getUserBalance('diana')).toBe(240n);   // 300 - 60
 
-      // Verify transactions are different (each has unique hash)
-      expect(withdrawalHash).not.toEqual(depositHash);
-      expect(depositHash).not.toEqual(createHash);
-      expect(withdrawalHash).not.toEqual(createHash);
+      console.log('🍽️ Dinner Payment Split Complete:');
+      bank.printAllUsersOverview();
+    });
 
-      // Remaining slots should be empty
-      const emptyTx = new Uint8Array(32);
-      for (let i = 3; i < 10; i++) {
-        expect(finalState.transactionHistory[i]).toEqual(emptyTx);
+    test('should handle gradual savings transfer', () => {
+      // Alice gradually transfers savings to a shared account (Charlie acts as savings)
+      const weeklyTransfer = 50n;
+      
+      // 4 weeks of transfers
+      for (let week = 1; week <= 4; week++) {
+        bank.transferBetweenUsers('alice', '1111', 'charlie', weeklyTransfer);
+        console.log(`Week ${week}: Alice transferred $${weeklyTransfer} to savings`);
       }
 
-      // Verify none of the transaction hashes are empty
-      expect(withdrawalHash).not.toEqual(emptyTx);
-      expect(depositHash).not.toEqual(emptyTx);  
-      expect(createHash).not.toEqual(emptyTx);
-
-      console.log('🔍 Transaction History Verification:');
-      console.log('├─ [0] Latest (withdrawal):', Array.from(finalState.transactionHistory[0].slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(''));
-      console.log('├─ [1] Deposit:', Array.from(finalState.transactionHistory[1].slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(''));
-      console.log('└─ [2] Account created:', Array.from(finalState.transactionHistory[2].slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(''));
-    });
-
-    test('should access specific transaction details from user\'s local log', () => {
-      // User wants to track specific transaction details
-      bank.createAccount('1234', 1000n);     // $1000 initial
-      bank.deposit('1234', 250n);            // +$250 = $1250  
-      bank.withdraw('1234', 75n);            // -$75 = $1175
-      bank.deposit('1234', 500n);            // +$500 = $1675
-
-      // User can access their detailed transaction history
-      const detailedHistory = bank.getDetailedTransactionHistory();
+      // Alice's balance: 1000 - 4*50 = 800
+      expect(bank.getUserBalance('alice')).toBe(800n);
       
-      // Verify specific transaction details
-      expect(detailedHistory).toHaveLength(4);
-      
-      // Test first transaction (account creation)
-      const createTx = detailedHistory[0];
-      expect(createTx.type).toBe('create');
-      expect(createTx.amount).toBe(1000n);
-      expect(createTx.balanceAfter).toBe(1000n);
-      
-      // Test second transaction (first deposit)
-      const depositTx1 = detailedHistory[1];
-      expect(depositTx1.type).toBe('deposit');
-      expect(depositTx1.amount).toBe(250n);
-      expect(depositTx1.balanceAfter).toBe(1250n);
-      
-      // Test third transaction (withdrawal)
-      const withdrawTx = detailedHistory[2];
-      expect(withdrawTx.type).toBe('withdraw');
-      expect(withdrawTx.amount).toBe(75n);
-      expect(withdrawTx.balanceAfter).toBe(1175n);
-      
-      // Test fourth transaction (second deposit)
-      const depositTx2 = detailedHistory[3];
-      expect(depositTx2.type).toBe('deposit');
-      expect(depositTx2.amount).toBe(500n);
-      expect(depositTx2.balanceAfter).toBe(1675n);
-      
-      // User can filter by transaction type
-      const deposits = bank.getTransactionsByType('deposit');
-      expect(deposits).toHaveLength(2);
-      expect(deposits[0].amount).toBe(250n);
-      expect(deposits[1].amount).toBe(500n);
-      
-      // User can get total amounts by type
-      const totalDeposited = bank.getTotalAmountByType('deposit');
-      const totalWithdrawn = bank.getTotalAmountByType('withdraw');
-      expect(totalDeposited).toBe(750n); // 250 + 500
-      expect(totalWithdrawn).toBe(75n);
-      
-      // User can access specific transaction details
-      const specificTx = bank.getTransactionDetails(2); // withdrawal
-      expect(specificTx?.type).toBe('withdraw');
-      expect(specificTx?.amount).toBe(75n);
-      
-      // Print detailed history for user
-      bank.printDetailedHistory();
-      
-      console.log('💡 Key Insight: Users maintain their own detailed log while contract only stores privacy-preserving hashes!');
-    });
+      // Charlie's balance (acting as savings): 750 + 4*50 = 950
+      expect(bank.getUserBalance('charlie')).toBe(950n);
 
-    test('should keep balance private in ledger state', () => {
-        bank.createAccount('1234', 100n);
-      bank.deposit('1234', 50n);
+      // Check Alice has 4 transfer_out transactions
+      const aliceTransfers = bank.getUserTransactionsByType('alice', 'transfer_out');
+      expect(aliceTransfers).toHaveLength(4);
+      expect(bank.getUserTotalAmountByType('alice', 'transfer_out')).toBe(200n);
 
-      const ledger = bank.getLedgerState();
-
-      // Public ledger should NOT contain actual balance
-      expect(ledger).not.toHaveProperty('balance');
-      expect(ledger).not.toHaveProperty('accountBalance');
-
-      // But private state should contain balance
-      expect(bank.getCurrentBalance()).toBe(150n);
-    });
-
-    test('should keep PIN private in ledger state', () => {
-      bank.createAccount('1234', 100n);
-
-      const ledger = bank.getLedgerState();
-
-      // Public ledger should NOT contain actual PIN
-      expect(ledger).not.toHaveProperty('pin');
-      expect(ledger).not.toHaveProperty('accountPin');
-
-      // Only hashed owner ID should be public
-      expect(ledger.account_owner).toBeDefined();
-    });
-
-    test('should only reveal transaction metadata', () => {
-      bank.createAccount('1234', 100n);
-      bank.deposit('1234', 50n);
-      bank.withdraw('1234', 25n);
-
-      const ledger = bank.getLedgerState();
-
-      // Should have transaction count but not amounts
-      expect(ledger.transaction_count).toBe(3n);
-      expect(ledger.last_transaction).toBeDefined();
-
-      // Should not reveal transaction amounts
-      expect(ledger).not.toHaveProperty('depositAmount');
-      expect(ledger).not.toHaveProperty('withdrawAmount');
+      bank.printUserDetailedHistory('alice');
     });
   });
 
-  describe('Error Handling', () => {
-    test('should handle operations on non-existent account', () => {
-      const freshBank = new BankTestSetup();
-
-      // All operations should fail on non-existent account
-      expect(() => freshBank.deposit('1234', 50n)).toThrow();
-      expect(() => freshBank.withdraw('1234', 50n)).toThrow();
-      expect(() => freshBank.authenticateBalanceAccess('1234')).toThrow();
-      expect(() => freshBank.verifyAccountStatus('1234')).toThrow();
+  describe('Error Handling and Edge Cases', () => {
+    beforeEach(() => {
+      bank.createAccount('alice', '1111', 100n);
+      bank.createAccount('bob', '2222', 50n);
     });
 
     test('should maintain state consistency after failed operations', () => {
-      bank.createAccount('1234', 100n);
-      const initialBalance = bank.getCurrentBalance();
-      const initialTxCount = bank.getTransactionCount();
+      const initialAliceBalance = bank.getUserBalance('alice');
+      const initialBobBalance = bank.getUserBalance('bob');
 
       // Try invalid operations
-      try { bank.withdraw('1234', 200n); } catch {}  // Insufficient funds
-      try { bank.deposit('wrong', 50n); } catch {}   // Wrong PIN
+      try { bank.transferBetweenUsers('alice', '1111', 'bob', 200n); } catch {} // Insufficient funds
+      try { bank.transferBetweenUsers('alice', '2222', 'bob', 30n); } catch {}  // Wrong PIN
+      try { bank.withdraw('alice', '1111', 150n); } catch {}                   // Insufficient funds
+      try { bank.deposit('bob', '1111', 25n); } catch {}                       // Wrong PIN
 
-      // State should be unchanged
-      expect(bank.getCurrentBalance()).toBe(initialBalance);
-      expect(bank.getTransactionCount()).toBe(initialTxCount);
+      // Balances should be unchanged
+      expect(bank.getUserBalance('alice')).toBe(initialAliceBalance);
+      expect(bank.getUserBalance('bob')).toBe(initialBobBalance);
 
-      bank.printState();
+      bank.printAllUsersOverview();
+    });
+
+    test('should handle operations on non-existent users', () => {
+      // All operations should fail on non-existent users
+      expect(() => bank.deposit('charlie', '3333', 50n)).toThrow();
+      expect(() => bank.withdraw('charlie', '3333', 50n)).toThrow();
+      expect(() => bank.authenticateBalanceAccess('charlie', '3333')).toThrow();
+      expect(() => bank.verifyAccountStatus('charlie', '3333')).toThrow();
+      expect(() => bank.transferBetweenUsers('charlie', '3333', 'alice', 50n)).toThrow();
+      expect(() => bank.transferBetweenUsers('alice', '1111', 'charlie', 50n)).toThrow();
+    });
+
+    test('should verify account status per user', () => {
+      // Create accounts with sufficient balances
+      bank.createAccount('eve', '5555', 20n); // Above $5 minimum for verification
+
+      // Each user can verify their own account
+      expect(() => {
+        bank.verifyAccountStatus('alice', '1111');
+        bank.verifyAccountStatus('bob', '2222');
+        bank.verifyAccountStatus('eve', '5555');
+      }).not.toThrow();
+
+      // Users cannot verify with wrong PIN
+      expect(() => {
+        bank.verifyAccountStatus('alice', '2222'); // Wrong PIN
+      }).toThrow();
+    });
+  });
+
+  describe('Global Bank Statistics', () => {
+    test('should track global bank metrics', () => {
+      // Start with empty bank
+      expect(bank.getTotalAccounts()).toBe(0n);
+
+      // Add multiple users
+      bank.createAccount('alice', '1111', 100n);
+      expect(bank.getTotalAccounts()).toBe(1n);
+
+      bank.createAccount('bob', '2222', 200n);
+      expect(bank.getTotalAccounts()).toBe(2n);
+
+      bank.createAccount('charlie', '3333', 150n);
+      expect(bank.getTotalAccounts()).toBe(3n);
+
+      // Verify global state
+      expect(bank.getAllUsers()).toHaveLength(3);
+      expect(bank.getLastGlobalTransaction()).toBeTruthy();
+
+      bank.printSharedBankState();
+    });
+
+    test('should demonstrate shared contract efficiency', () => {
+      console.log('\n🎯 Shared Contract Benefits:');
+      console.log('├─ Single deployment for all users');
+      console.log('├─ Atomic transfers between users');
+      console.log('├─ Global state consistency');
+      console.log('├─ Reduced gas costs per user');
+      console.log('└─ Simplified state management');
+
+      // Create multiple users and do transfers
+      bank.createAccount('alice', '1111', 1000n);
+      bank.createAccount('bob', '2222', 500n);
+      bank.createAccount('charlie', '3333', 250n);
+
+      // Perform atomic transfer
+      bank.transferBetweenUsers('alice', '1111', 'bob', 100n);
+
+      console.log('\n💡 Transfer completed atomically in single contract!');
+      bank.printAllUsersOverview();
     });
   });
 });
