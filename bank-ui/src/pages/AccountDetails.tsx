@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, CardContent, Typography, Box, Chip } from '@mui/material';
 import { ArrowBack, Visibility, VisibilityOff } from '@mui/icons-material';
 import { useBankWallet } from '../components/BankWallet';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
-import { firstValueFrom } from 'rxjs';
 import { touchAccount } from '../utils/AccountsLocalState';
-import type { BankAPI } from '@midnight-bank/bank-api';
+import type { BankAPI, BankDerivedState } from '@midnight-bank/bank-api';
+import { utils } from '@midnight-bank/bank-api';
 
 export const AccountDetails: React.FC = () => {
   const { addr } = useParams<{ addr: string }>();
@@ -17,11 +17,17 @@ export const AccountDetails: React.FC = () => {
   const [bankAPI, setBankAPI] = useState<BankAPI | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [balance, setBalance] = useState<string>('***');
+  const [accountState, setAccountState] = useState<BankDerivedState | null>(null);
   const [showBalance, setShowBalance] = useState(false);
+  const lastAuthRef = useRef<number | null>(null);
+  
+  const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
   useEffect(() => {
     if (!addr) return;
+    
+    // Clear session storage debug data after use
+    sessionStorage.removeItem('lastAccountCreation');
     
     // Touch account to update last used timestamp
     touchAccount(addr);
@@ -48,30 +54,61 @@ export const AccountDetails: React.FC = () => {
     return () => subscription.unsubscribe();
   }, [addr, providers, addAccount]);
 
+  // Subscribe to account state updates when bankAPI is available
+  useEffect(() => {
+    if (!bankAPI) return;
+    
+    const stateSubscription = bankAPI.state$.subscribe({
+      next: (state) => {
+        setAccountState(state);
+      },
+      error: (err) => {
+        console.error('State subscription error:', err);
+        setError(err.message);
+      }
+    });
+
+    // Check for session timeout
+    const timeoutCheck = setInterval(() => {
+      if (lastAuthRef.current && Date.now() - lastAuthRef.current > SESSION_TIMEOUT_MS) {
+        setShowBalance(false);
+        lastAuthRef.current = null;
+      }
+    }, 5000);
+
+    return () => {
+      stateSubscription.unsubscribe();
+      clearInterval(timeoutCheck);
+    };
+  }, [bankAPI, SESSION_TIMEOUT_MS]);
+
   const handleShowBalance = async () => {
     if (!bankAPI || !isConnected) return;
     
     try {
       setLoading(true);
+      setError(null);
+      
       // Ask for PIN and authenticate balance access
       const pinInput = prompt('Enter your PIN to reveal balance:') ?? '';
-      if (!pinInput) { setLoading(false); return; }
+      if (!pinInput) { 
+        setLoading(false); 
+        return; 
+      }
+      
+      // This creates an audit trail but doesn't change the balance value
       await bankAPI.authenticateBalanceAccess(pinInput);
       
-      // Get the balance from state
-      const state = await firstValueFrom(bankAPI.state$);
-      setBalance(state?.balance?.toString() || '0');
+      // Update auth timestamp and show balance
+      lastAuthRef.current = Date.now();
       setShowBalance(true);
       setLoading(false);
       
-      // Auto-hide after 10 minutes
-      setTimeout(() => {
-        setBalance('***');
-        setShowBalance(false);
-      }, 10 * 60 * 1000);
+      // Balance authentication completed successfully
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to authenticate balance');
       setLoading(false);
+      setShowBalance(false);
     }
   };
 
@@ -159,6 +196,7 @@ export const AccountDetails: React.FC = () => {
               <Typography variant="h6">Balance</Typography>
               {loading && <Chip label="Loading..." size="small" />}
               {error && <Chip label="Error" color="error" size="small" />}
+              {accountState && <Chip label={`Account Exists: ${accountState.accountExists}`} size="small" variant="outlined" />}
             </Box>
             
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -169,7 +207,10 @@ export const AccountDetails: React.FC = () => {
                   color: showBalance ? 'text.primary' : 'text.secondary'
                 }}
               >
-                {balance}
+                {showBalance && accountState?.balance !== undefined 
+                  ? utils.formatBalance(accountState.balance)
+                  : '***'
+                }
               </Typography>
               
               {!showBalance && (
@@ -187,8 +228,8 @@ export const AccountDetails: React.FC = () => {
                 <Button
                   startIcon={<VisibilityOff />}
                   onClick={() => {
-                    setBalance('***');
                     setShowBalance(false);
+                    lastAuthRef.current = null;
                   }}
                   size="small"
                 >

@@ -91,7 +91,7 @@ export const BankWalletProvider: React.FC<{ logger: Logger; children: React.Reac
           },
         });
         setIsConnected(true);
-        logger.info({ event: 'lace_connected', uris });
+        logger.info(`lace_connected coin=${state.coinPublicKey.slice(0,8)}...`);
       },
     [logger],
   );
@@ -104,7 +104,7 @@ export const BankWalletProvider: React.FC<{ logger: Logger; children: React.Reac
   const state: BankWalletState = { isConnected, providers: bankProviders, widget: undefined, connect };
 
   useEffect(() => {
-    logger.info({ event: 'bank_wallet_provider_ready' });
+    logger.info('bank_wallet_provider_ready');
   }, [logger]);
 
   // Auto-connect silently if Lace previously authorized this origin
@@ -120,7 +120,7 @@ export const BankWalletProvider: React.FC<{ logger: Logger; children: React.Reac
           }
         }
       } catch (err) {
-        logger.warn({ err }, 'lace_auto_connect_failed');
+        logger.warn(`lace_auto_connect_failed: ${(err as Error)?.message}`);
       }
     })();
     return () => {

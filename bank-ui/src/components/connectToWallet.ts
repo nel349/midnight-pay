@@ -12,7 +12,7 @@ export const connectToWallet = (
 
   const obs = (interval(100).pipe(
     map((): DAppConnectorAPI | undefined => (window as any)?.midnight?.mnLace),
-      tap((api) => logger.info(api, 'Check for wallet connector API')),
+      tap((api) => logger.debug(`check_wallet_api: hasApi=${Boolean(api)}`)),
       filter((api): api is DAppConnectorAPI => !!api),
       concatMap((api) =>
         semver.satisfies(api.apiVersion, COMPATIBLE_CONNECTOR_API_VERSION)
@@ -24,12 +24,12 @@ export const connectToWallet = (
       concatMap(async (api) => ({ api, enabled: await api.isEnabled() })),
       timeout({ first: 5_000, with: () => throwError(() => new Error('Wallet connector API timeout')) }),
       concatMap(async ({ api }) => {
-      const wallet = await api.enable();
-      const uris = await api.serviceUriConfig();
-      const result: ConnectToWalletResult = { wallet, uris };
-      return result;
+        const wallet = await api.enable();
+        const uris = await api.serviceUriConfig();
+        const result: ConnectToWalletResult = { wallet, uris };
+        return result;
       }),
-      tap(() => logger.info('Connected to Midnight Lace wallet')),
+      tap(() => logger.info('lace_connected')),
   ) as unknown) as Observable<ConnectToWalletResult>;
   return firstValueFrom(obs);
 };

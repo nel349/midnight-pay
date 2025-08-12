@@ -71,7 +71,7 @@ export class BankAPI implements DeployedBankAPI {
           .contractStateObservable(this.deployedContractAddress, { type: 'all' })
           .pipe(map((contractState) => ledger(contractState.data))),
         concat(
-          from(defer(() => providers.privateStateProvider.get(accountId) as Promise<BankPrivateState>)),
+          from(defer(() => providers.privateStateProvider.get(this.deployedContractAddress) as Promise<BankPrivateState>)),
           this.privateStates$,
         ),
         concat(of<UserAction>({ transaction: undefined, cancelledTransaction: undefined }), this.transactions$),
@@ -142,10 +142,20 @@ export class BankAPI implements DeployedBankAPI {
           blockHeight: txData.public.blockHeight,
         },
       });
+      // Manually create and sync the updated private state using contract address
+      const contractAddress = this.deployedContractAddress;
+      const pinHash = utils.pad(pin, 32);
+      const depositAmount = utils.parseAmount(initialDeposit);
+      const updatedState = createBankPrivateState(pinHash, depositAmount);
+      
+      // Persist using contract address as key and notify observers
+      await this.providers.privateStateProvider.set(contractAddress, updatedState);
+      this.privateStates$.next(updatedState);
+      
       await this.appendDetailedLog({
         type: 'create',
         amount: utils.parseAmount(initialDeposit),
-        balanceAfter: (await this.currentBalance()) + utils.parseAmount(initialDeposit),
+        balanceAfter: updatedState.accountBalance,
         timestamp: new Date(),
       });
     } catch (e) {
@@ -186,10 +196,21 @@ export class BankAPI implements DeployedBankAPI {
           blockHeight: txData.public.blockHeight,
         },
       });
+      // Manually update the private state with new balance using contract address
+      const contractAddress = this.deployedContractAddress;
+      const currentState = await this.providers.privateStateProvider.get(contractAddress) ??
+        createBankPrivateState(utils.pad(pin, 32), 0n);
+      const newBalance = currentState.accountBalance + utils.parseAmount(amount);
+      const updatedState = createBankPrivateState(currentState.accountPinHash, newBalance);
+      
+      // Persist the updated state and notify observers
+      await this.providers.privateStateProvider.set(contractAddress, updatedState);
+      this.privateStates$.next(updatedState);
+      
       await this.appendDetailedLog({
         type: 'deposit',
         amount: utils.parseAmount(amount),
-        balanceAfter: (await this.currentBalance()) + utils.parseAmount(amount),
+        balanceAfter: updatedState.accountBalance,
         timestamp: new Date(),
       });
     } catch (e) {
@@ -230,10 +251,21 @@ export class BankAPI implements DeployedBankAPI {
           blockHeight: txData.public.blockHeight,
         },
       });
+      // Manually update the private state with new balance using contract address
+      const contractAddress = this.deployedContractAddress;
+      const currentState = await this.providers.privateStateProvider.get(contractAddress) ??
+        createBankPrivateState(utils.pad(pin, 32), 0n);
+      const newBalance = currentState.accountBalance - utils.parseAmount(amount);
+      const updatedState = createBankPrivateState(currentState.accountPinHash, newBalance);
+      
+      // Persist the updated state and notify observers
+      await this.providers.privateStateProvider.set(contractAddress, updatedState);
+      this.privateStates$.next(updatedState);
+      
       await this.appendDetailedLog({
         type: 'withdraw',
         amount: utils.parseAmount(amount),
-        balanceAfter: (await this.currentBalance()) - utils.parseAmount(amount),
+        balanceAfter: updatedState.accountBalance,
         timestamp: new Date(),
       });
     } catch (e) {
@@ -255,15 +287,21 @@ export class BankAPI implements DeployedBankAPI {
     const txData = await this.deployedContract.callTx.authenticate_balance_access(
       utils.pad(pin, 32)
     );
+        
     this.logger?.trace({
       balanceAccessAuthenticated: {
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
       },
     });
+
+    const updated = await this.refreshPrivateState();
+    const balance = updated.accountBalance;
+
+    this.logger?.info(`balanceAccessAuthenticated: ${balance}`);
     await this.appendDetailedLog({
       type: 'auth',
-      balanceAfter: await this.currentBalance(),
+      balanceAfter: balance,
       timestamp: new Date(),
     });
   }
@@ -279,9 +317,10 @@ export class BankAPI implements DeployedBankAPI {
         blockHeight: txData.public.blockHeight,
       },
     });
+    const updated = await this.refreshPrivateState();
     await this.appendDetailedLog({
       type: 'verify',
-      balanceAfter: await this.currentBalance(),
+      balanceAfter: updated.accountBalance,
       timestamp: new Date(),
     });
   }
@@ -308,8 +347,16 @@ export class BankAPI implements DeployedBankAPI {
   }
 
   private async currentBalance(): Promise<bigint> {
-    const st = await firstValueFrom(this.state$);
-    return st.balance;
+    const st = await this.providers.privateStateProvider.get(this.accountId);
+    return st?.accountBalance ?? 0n;
+  }
+
+  private async refreshPrivateState(): Promise<BankPrivateState> {
+    const contractAddress = this.deployedContractAddress;
+    const st = (await this.providers.privateStateProvider.get(contractAddress)) ??
+      createBankPrivateState(new Uint8Array(32), 0n);
+    this.privateStates$.next(st);
+    return st;
   }
 
   static async deploy(
@@ -344,12 +391,12 @@ export class BankAPI implements DeployedBankAPI {
     contractAddress: ContractAddress,
     logger: Logger,
   ): Promise<BankAPI> {
-    logger.info({
-      subscribeBankContract: {
-        accountId,
-        contractAddress,
-      },
-    });
+    // logger.info({
+    //   subscribeBankContract: {
+    //     accountId,
+    //     contractAddress,
+    //   },
+    // });
 
     const deployedBankContract = await findDeployedContract(providers, {
       contractAddress,
@@ -358,12 +405,12 @@ export class BankAPI implements DeployedBankAPI {
       initialPrivateState: await BankAPI.getPrivateState(accountId, providers.privateStateProvider),
     });
 
-    logger.trace({
-      bankContractSubscribed: {
-        accountId,
-        finalizedDeployTxData: deployedBankContract.deployTxData.public,
-      },
-    });
+    // logger.trace({
+    //   bankContractSubscribed: {
+    //     accountId,
+    //     finalizedDeployTxData: deployedBankContract.deployTxData.public,
+    //   },
+    // });
 
     return new BankAPI(accountId, deployedBankContract, providers, logger);
   }

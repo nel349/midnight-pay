@@ -34,6 +34,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ logger, onComplete }) => {
         createdAt: new Date().toISOString(),
         lastUsedAt: new Date().toISOString(),
       });
+      // Store account creation info for debugging if needed
+      sessionStorage.setItem('lastAccountCreation', JSON.stringify({
+        balance: ready.balance.toString(),
+        contractAddress: api.deployedContractAddress,
+        timestamp: new Date().toISOString()
+      }));
+      
       onComplete(api.deployedContractAddress);
     } catch (e) {
       logger.error(e, 'Failed to create bank account');
