@@ -1,5 +1,5 @@
-// Midnight Bank - Privacy-Preserving Banking DApp
-// Demonstrates: ZK Proofs, Private State, Confidential Contracts, Selective Disclosure
+// Midnight Bank - Privacy-Preserving Banking DApp (Shared Contract Architecture)
+// Demonstrates: ZK Proofs, Private State, Confidential Contracts, Inter-Account Transfers
 
 pragma language_version >= 0.13.0;
 
@@ -8,161 +8,272 @@ import CompactStandardLibrary;
 // Export types for external use
 export { CoinInfo };
 
-// Public ledger state (visible on blockchain)
-export ledger account_exists: Boolean;              // Whether account is created
-export ledger account_owner: Maybe<Bytes<32>>;      // Hash of account owner (for authentication)
-export ledger account_public_key: Maybe<ZswapCoinPublicKey>; // For receiving payments
-export ledger last_transaction: Bytes<32>;          // Hash of last transaction (no details revealed)
-export ledger transaction_count: Counter;           // Number of transactions (for activity proof)
-export ledger account_status: Bytes<32>;           // Account status hash (for verification)
-
-// Private data provided by account holder (never revealed publicly)
-witness account_pin_hash(): Bytes<32>;              // Hashed PIN for authentication
-witness account_balance(): Uint<64>;                // Current account balance (secret!)
-witness transaction_history(): Vector<10, Bytes<32>>; // Private transaction history (up to 10 entries)
-witness set_account_balance(balance: Uint<64>): []; // Update private balance
-witness set_transaction_history(history: Vector<10, Bytes<32>>): []; // Update transaction history
-
-// Constructor - Initialize empty bank
-constructor() {
-  account_exists = false;
-  last_transaction = pad(32, "no_transactions");
-  account_status = pad(32, "inactive");
+// Bank Account structure for the shared ledger
+struct BankAccount {
+  exists: Boolean,
+  owner_hash: Bytes<32>,
+  public_key: ZswapCoinPublicKey,
+  transaction_count: Uint<32>,
+  last_transaction: Bytes<32>,
+  status: Bytes<32>,
+  created_at: Uint<32>
 }
 
-// Circuit 1: Create Account (like join_p1 in battleship)
-// ZK Proof: Validates PIN format without revealing it
-export circuit create_account(initial_pin: Bytes<32>, deposit_amount: Uint<64>): [] {
-  assert (!account_exists, "Account already exists");
-  assert (deposit_amount >= 10 as Uint<64>, "Minimum deposit is 10 coins");
+// Public ledger state - ALL ACCOUNTS IN ONE CONTRACT
+export ledger all_accounts: Map<Bytes<32>, BankAccount>;  // Maps user_id -> account info
+export ledger total_accounts: Counter;                    // Total number of accounts
+export ledger last_global_transaction: Bytes<32>;         // Latest transaction hash
+
+// Private data (user-specific, stored per user)
+witness user_pin_hash(user_id: Bytes<32>): Bytes<32>;
+witness user_balance(user_id: Bytes<32>): Uint<64>;
+witness user_transaction_history(user_id: Bytes<32>): Vector<10, Bytes<32>>;
+witness set_user_balance(user_id: Bytes<32>, balance: Uint<64>): [];
+witness set_user_transaction_history(user_id: Bytes<32>, history: Vector<10, Bytes<32>>): [];
+
+// Constructor - Initialize empty shared bank
+constructor() {
+  last_global_transaction = pad(32, "bank_initialized");
+}
+
+// Circuit 1: Create Account in Shared Bank
+export circuit create_account(user_id: Bytes<32>, initial_pin: Bytes<32>, deposit_amount: Uint<64>): [] {
+  // Check account doesn't already exist
+  assert (!all_accounts.member(disclose(user_id)), "Account already exists");
   
-  // Validate PIN without revealing it (ZK proof)
+  assert (deposit_amount >= 10 as Uint<64>, "Minimum deposit is 10 coins");
   assert (valid_pin_format(initial_pin), "PIN must be valid format");
   
   // Create account identity
-  const pin_hash = persistentHash<Bytes<32>>(initial_pin);
-  const owner_id = public_key(initial_pin); // Derive public identity from PIN
+  const owner_id = disclose(public_key(initial_pin));
   
-  // Public state updates (visible on blockchain)
-  account_exists = true;
-  account_owner = disclose(some<Bytes<32>>(owner_id));
-  account_public_key = some<ZswapCoinPublicKey>(ownPublicKey());
-  transaction_count.increment(1);
-  last_transaction = disclose(persistentHash<Bytes<32>>(pad(32, "account_created")));
-  account_status = disclose(pad(32, "active"));
+  // Create new account in shared ledger
+  const new_account = BankAccount {
+    exists: true,
+    owner_hash: owner_id,
+    public_key: ownPublicKey(),
+    transaction_count: 1 as Uint<32>,
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "account_created")),
+    status: pad(32, "active"),
+    created_at: 1 as Uint<32> // Would be block timestamp in real implementation
+  };
   
-  // Private state initialization (stored locally, never revealed)
-  set_account_balance(deposit_amount);
+  all_accounts.insert(disclose(user_id), new_account);
+  total_accounts.increment(1);
+  last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "account_created"), user_id]));
   
-  // Initialize transaction history with account creation
+  // Initialize private state for this user
+  set_user_balance(user_id, deposit_amount);
+  
+  // Initialize transaction history
   const tx_hash = persistentHash<Bytes<32>>(pad(32, "account_created"));
   const empty_tx = pad(32, "");
   const initial_history = [tx_hash, empty_tx, empty_tx, empty_tx, empty_tx, 
                           empty_tx, empty_tx, empty_tx, empty_tx, empty_tx];
-  set_transaction_history(initial_history);
+  set_user_transaction_history(user_id, initial_history);
 }
 
-// Circuit 2: Deposit Funds (like turn_player1 in battleship)
-// ZK Proof: Authenticates user and processes deposit privately
-export circuit deposit(pin: Bytes<32>, amount: Uint<64>): [] {
-  assert (account_exists, "Account does not exist");
+// Circuit 2: Deposit to User Account
+export circuit deposit(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): [] {
   assert (amount > 0 as Uint<64>, "Deposit amount must be positive");
   
-  // Authenticate user without revealing PIN (ZK proof)
-  const pin_hash = persistentHash<Bytes<32>>(pin);
-  const expected_owner = public_key(pin);
-  assert (account_owner.value == expected_owner, "Authentication failed");
+  // Get account from shared ledger
+  assert (all_accounts.member(disclose(user_id)), "Account does not exist");
+  const account = all_accounts.lookup(disclose(user_id));
   
-  // Private computation: Update balance (confidential smart contract)
-  const current_balance = account_balance();
+  // Authenticate user
+  const expected_owner = public_key(pin);
+  assert (account.owner_hash == expected_owner, "Authentication failed");
+  
+  // Update private balance
+  const current_balance = user_balance(user_id);
   const new_balance = current_balance + amount;
-  set_account_balance(new_balance as Uint<64>);
+  set_user_balance(user_id, new_balance as Uint<64>);
   
   // Update transaction history
   const tx_hash = persistentHash<Bytes<32>>(pad(32, "deposit"));
-  const current_history = transaction_history();
-  // Shift history and add new transaction at front
+  const current_history = user_transaction_history(user_id);
   const updated_history = [tx_hash, current_history[0], current_history[1], current_history[2], current_history[3],
                           current_history[4], current_history[5], current_history[6], current_history[7], current_history[8]];
-  set_transaction_history(updated_history);
+  set_user_transaction_history(user_id, updated_history);
   
-  // Public updates (only metadata, no amounts revealed)
-  transaction_count.increment(1);
-  last_transaction = disclose(persistentHash<Bytes<32>>(pad(32, "deposit")));
-  account_status = disclose(pad(32, "active"));
+  // Update public account state
+  const updated_account = BankAccount {
+    exists: account.exists,
+    owner_hash: account.owner_hash,
+    public_key: account.public_key,
+    transaction_count: (account.transaction_count + 1) as Uint<32>,
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "deposit")),
+    status: pad(32, "active"),
+    created_at: account.created_at
+  };
+  all_accounts.insert(disclose(user_id), updated_account);
+  
+  last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "deposit"), user_id]));
 }
 
-// Circuit 3: Authenticate Balance Access (like battleship pattern)
-// Private State Management: Validates user can access their balance  
-export circuit authenticate_balance_access(pin: Bytes<32>): [] {
-  assert (account_exists, "Account does not exist");
-  
-  // Authenticate user (ZK proof)
-  const expected_owner = public_key(pin);
-  assert (account_owner.value == expected_owner, "Authentication failed");
-  
-  // Update last transaction to show balance was checked
-  last_transaction = disclose(persistentHash<Bytes<32>>(pad(32, "balance_check")));
-}
-
-// Circuit 4: Verify Account Status (selective disclosure)
-// Selective Disclosure: Proves account is valid without revealing balance/history
-export circuit verify_account_status(pin: Bytes<32>): [] {
-  assert (account_exists, "Account does not exist");
-  
-  // Authenticate user
-  const expected_owner = public_key(pin);
-  assert (account_owner.value == expected_owner, "Authentication failed");
-  
-  // Prove account properties without revealing sensitive data
-  const balance = account_balance();
-  
-  // Selective disclosure: Prove account is in good standing
-  assert (balance >= 5 as Uint<64>, "Account balance too low for verification");
-  assert (transaction_count >= 1, "Insufficient transaction history");
-  
-  // Public result: Only verification status (no balance/history revealed)
-  account_status = disclose(pad(32, "verified"));
-}
-
-// Circuit 5: Withdraw Funds
-// Confidential Smart Contract: Processes withdrawal privately
-export circuit withdraw(pin: Bytes<32>, amount: Uint<64>): [] {
-  assert (account_exists, "Account does not exist");
+// Circuit 3: Withdraw from User Account  
+export circuit withdraw(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): [] {
   assert (amount > 0 as Uint<64>, "Withdrawal amount must be positive");
   
+  // Get account from shared ledger
+  assert (all_accounts.member(disclose(user_id)), "Account does not exist");
+  const account = all_accounts.lookup(disclose(user_id));
+  
   // Authenticate user
   const expected_owner = public_key(pin);
-  assert (account_owner.value == expected_owner, "Authentication failed");
+  assert (account.owner_hash == expected_owner, "Authentication failed");
   
-  // Private computation: Check sufficient funds and update balance
-  const current_balance = account_balance();
+  // Check and update private balance
+  const current_balance = user_balance(user_id);
   assert (current_balance >= amount, "Insufficient funds");
   const new_balance = current_balance - amount;
-  set_account_balance(new_balance as Uint<64>);
+  set_user_balance(user_id, new_balance as Uint<64>);
   
   // Update transaction history
   const tx_hash = persistentHash<Bytes<32>>(pad(32, "withdrawal"));
-  const current_history = transaction_history();
-  // Shift history and add new transaction at front
+  const current_history = user_transaction_history(user_id);
   const updated_history = [tx_hash, current_history[0], current_history[1], current_history[2], current_history[3],
                           current_history[4], current_history[5], current_history[6], current_history[7], current_history[8]];
-  set_transaction_history(updated_history);
+  set_user_transaction_history(user_id, updated_history);
   
-  // Public updates (only metadata)
-  transaction_count.increment(1);
-  last_transaction = disclose(persistentHash<Bytes<32>>(pad(32, "withdrawal")));
+  // Update public account state
+  const updated_account = BankAccount {
+    exists: account.exists,
+    owner_hash: account.owner_hash,
+    public_key: account.public_key,
+    transaction_count: (account.transaction_count + 1) as Uint<32>,
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "withdrawal")),
+    status: account.status,
+    created_at: account.created_at
+  };
+  all_accounts.insert(disclose(user_id), updated_account);
+  
+  last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "withdrawal"), user_id]));
 }
 
-// Helper function: Validate PIN format (basic validation)
+// Circuit 4: Transfer Between Users (ATOMIC!)
+export circuit transfer_between_users(sender_id: Bytes<32>, pin: Bytes<32>, recipient_id: Bytes<32>, amount: Uint<64>): [] {
+  assert (amount > 0 as Uint<64>, "Transfer amount must be positive");
+  assert (sender_id != recipient_id, "Cannot transfer to yourself");
+  
+  // Get both accounts from shared ledger
+  assert (all_accounts.member(disclose(sender_id)), "Sender account does not exist");
+  assert (all_accounts.member(disclose(recipient_id)), "Recipient account does not exist");
+  
+  const sender_account = all_accounts.lookup(disclose(sender_id));
+  const recipient_account = all_accounts.lookup(disclose(recipient_id));
+  
+  // Authenticate sender
+  const expected_owner = public_key(pin);
+  assert (sender_account.owner_hash == expected_owner, "Authentication failed");
+  
+  // ATOMIC BALANCE UPDATE
+  const sender_balance = user_balance(sender_id);
+  const recipient_balance = user_balance(recipient_id);
+  
+  assert (sender_balance >= amount, "Insufficient funds for transfer");
+  
+  // Update both balances atomically
+  set_user_balance(sender_id, (sender_balance - amount) as Uint<64>);
+  set_user_balance(recipient_id, (recipient_balance + amount) as Uint<64>);
+  
+  // Update sender's transaction history
+  const sender_tx_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "transfer_out"), recipient_id, persistentHash<Uint<64>>(amount)]);
+  const sender_history = user_transaction_history(sender_id);
+  const updated_sender_history = [sender_tx_hash, sender_history[0], sender_history[1], sender_history[2], sender_history[3],
+                                 sender_history[4], sender_history[5], sender_history[6], sender_history[7], sender_history[8]];
+  set_user_transaction_history(sender_id, updated_sender_history);
+  
+  // Update recipient's transaction history
+  const recipient_tx_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "transfer_in"), sender_id, persistentHash<Uint<64>>(amount)]);
+  const recipient_history = user_transaction_history(recipient_id);
+  const updated_recipient_history = [recipient_tx_hash, recipient_history[0], recipient_history[1], recipient_history[2], recipient_history[3],
+                                    recipient_history[4], recipient_history[5], recipient_history[6], recipient_history[7], recipient_history[8]];
+  set_user_transaction_history(recipient_id, updated_recipient_history);
+  
+  // Update both accounts' public state
+  const updated_sender = BankAccount {
+    exists: sender_account.exists,
+    owner_hash: sender_account.owner_hash,
+    public_key: sender_account.public_key,
+    transaction_count: (sender_account.transaction_count + 1) as Uint<32>,
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "transfer_sent")),
+    status: sender_account.status,
+    created_at: sender_account.created_at
+  };
+  all_accounts.insert(disclose(sender_id), updated_sender);
+  
+  const updated_recipient = BankAccount {
+    exists: recipient_account.exists,
+    owner_hash: recipient_account.owner_hash,
+    public_key: recipient_account.public_key,
+    transaction_count: (recipient_account.transaction_count + 1) as Uint<32>,
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "transfer_received")),
+    status: recipient_account.status,
+    created_at: recipient_account.created_at
+  };
+  all_accounts.insert(disclose(recipient_id), updated_recipient);
+  
+  // Global transaction log
+  last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "transfer"), sender_id, recipient_id]));
+}
+
+// Circuit 5: Authenticate Balance Access
+export circuit authenticate_balance_access(user_id: Bytes<32>, pin: Bytes<32>): [] {
+  assert (all_accounts.member(disclose(user_id)), "Account does not exist");
+  const account = all_accounts.lookup(disclose(user_id));
+  
+  // Authenticate user
+  const expected_owner = public_key(pin);
+  assert (account.owner_hash == expected_owner, "Authentication failed");
+  
+  // Update last transaction to show balance was checked
+  const updated_account = BankAccount {
+    exists: account.exists,
+    owner_hash: account.owner_hash,
+    public_key: account.public_key,
+    transaction_count: account.transaction_count,
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "balance_check")),
+    status: account.status,
+    created_at: account.created_at
+  };
+  all_accounts.insert(disclose(user_id), updated_account);
+}
+
+// Circuit 6: Verify Account Status
+export circuit verify_account_status(user_id: Bytes<32>, pin: Bytes<32>): [] {
+  assert (all_accounts.member(disclose(user_id)), "Account does not exist");
+  const account = all_accounts.lookup(disclose(user_id));
+  
+  // Authenticate user
+  const expected_owner = public_key(pin);
+  assert (account.owner_hash == expected_owner, "Authentication failed");
+  
+  // Verify account properties
+  const balance = user_balance(user_id);
+  assert (balance >= 5 as Uint<64>, "Account balance too low for verification");
+  assert (account.transaction_count >= 1 as Uint<32>, "Insufficient transaction history");
+  
+  // Update verification status
+  const updated_account = BankAccount {
+    exists: account.exists,
+    owner_hash: account.owner_hash,
+    public_key: account.public_key,
+    transaction_count: account.transaction_count,
+    last_transaction: account.last_transaction,
+    status: pad(32, "verified"),
+    created_at: account.created_at
+  };
+  all_accounts.insert(disclose(user_id), updated_account);
+}
+
+// Helper Functions
 pure circuit valid_pin_format(pin: Bytes<32>): Boolean {
-  // Simple validation: PIN should not be all zeros
   const zero_pin = pad(32, "");
   return pin != zero_pin;
 }
 
-// Helper function: Generate public key from secret key with domain separation
 export pure circuit public_key(sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midnight:bank:pk:"), sk]);
 }
-
