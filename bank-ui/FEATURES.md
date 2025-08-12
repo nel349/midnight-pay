@@ -1,66 +1,119 @@
-# Bank UI - Features & Roadmap
+# Bank UI - Features & Implementation Status
 
-This document tracks the features for the Bank UI onboarding, account management, and history views. Use checkboxes to track implementation status.
+**Current Status: Phase 2 COMPLETE ✅**
 
-## 1. Onboarding (Phase 1)
+This document tracks the implementation status of all Bank UI features.
+
+## ✅ 1. Onboarding (Phase 1) - COMPLETED
 - [x] Project scaffold (Vite + React + MUI)
-- [x] Vite config for WASM/top-level-await/commonjs
+- [x] Vite config for WASM/top-level-await/commonjs  
 - [x] Dockerfile + Nginx runtime config
 - [x] Onboarding page scaffold (deploy → create → verify)
 - [x] Wallet/provider context (BankWalletProvider, connect button)
-- [x] Local persistence via localStorage (swap to Drizzle later)
+- [x] Local persistence via localStorage 
 - [x] Create Account flow (deploy + create + verify)
-- [ ] Session policy (10‑min) for mask/unmask later
+- [x] **Session policy (10-min timeout) for balance authentication** ✅
 
-## 2. Accounts Home
-- [x] List saved accounts (local)
-- [ ] Add existing account by address
-- [ ] Rename/label accounts
+## ✅ 2. Accounts Home - COMPLETED
+- [x] List saved accounts (local storage)
+- [x] **Smart routing**: Shows create prompt when no accounts exist
+- [x] **Account access tracking**: Updates lastUsedAt timestamps
+- [ ] Add existing account by address (FUTURE)
+- [ ] Rename/label accounts (FUTURE)
 
-## 3. Account View (Phase 2)
-- [ ] Masked balance (unmask on fresh session)
-- [ ] Authenticate balance access (PIN; 10-min expiry)
-- [ ] Deposit/Withdraw modals (PIN + amount)
-- [ ] Verify account status (PIN)
-- [ ] RxJS → Query Cache adapter for `state$`
+## ✅ 3. Account View (Phase 2) - COMPLETED  
+- [x] **Masked balance**: Shows `***` by default for privacy ✅
+- [x] **Authenticate balance access**: PIN authentication with 10-min expiry ✅
+- [x] **Deposit/Withdraw actions**: PIN + amount input with real-time updates ✅
+- [x] **Verify account status**: PIN-based account verification ✅
+- [x] **Real-time state updates**: Direct RxJS subscription to `bankAPI.state$` ✅
+- [x] **Proper balance formatting**: Currency display (e.g., "50.00") ✅
+- [x] **Session timeout**: Auto-hide balance after 10 minutes ✅
+- [x] **Wallet connection status**: Visual indicators and warnings ✅
 
-## 4. History (Phase 3)
-- [ ] On-chain metadata (transactionCount + transactionHistoryHex)
-- [ ] Client-side detailed history (type, amount?, balanceAfter, timestamp)
-- [ ] Filters; totals; export CSV/JSON
+## 🚧 4. Advanced Privacy Features (Phase 3) - PLANNED 🆕
 
-## 5. Local Database
-- [ ] Schema: accounts, recent_contracts, sessions, tx_detailed
-- [ ] Repository API (insert/list/update)
-- [ ] Session policy (10-min expiry)
-- [ ] Optional encryption hooks
+### 4.1 Inter-Contract Transfers
+- [ ] **Send money to contract**: Transfer funds between Midnight Bank contracts
+- [ ] **Recipient validation**: Verify target contract is valid bank before transfer
+- [ ] **Private transfers**: Amount and recipient details remain confidential
+- [ ] **Transfer authorization**: PIN + amount confirmation with recipient address
+- [ ] **Transfer history**: Private record of outgoing/incoming transfers
+- [ ] **Real-time notifications**: Updates when transfers complete
 
-## 6. Wallet & Providers
-- [x] Provider construction (indexer, zk-config, proof, wallet, midnight)
-- [ ] Snackbars for proving/submission
-- [x] Public config ingestion (config.json)
+### 4.2 Selective Balance Disclosure  
+- [ ] **Permission management**: Grant/revoke specific contracts access to balance info
+- [ ] **Threshold verification**: Yes/No answers for "balance >= X" queries  
+- [ ] **Exact balance disclosure**: Full amount reveal to authorized contracts
+- [ ] **Custom conditions**: Flexible disclosure rules (range checks, time-based)
+- [ ] **Permission UI**: Manage active disclosures and expiration times
+- [ ] **Audit trail**: Track which contracts accessed what information
 
-## 7. Build & Dev Infra
-- [x] Vite build (wasm bundles) + preview
-- [x] Dev server guidance (optimizeDeps excludes)
-- [x] Turbo build inputs updated for UI assets
-- [ ] CI build job (optional)
+### 4.3 Use Cases
+- **Credit approval**: Banks can verify "balance >= $100" without seeing exact amount
+- **Loan qualification**: Lenders get threshold confirmation for risk assessment  
+- **Account verification**: Services verify account exists without balance details
+- **P2P transfers**: Send funds to friends using their contract addresses
+- **Merchant payments**: Pay businesses while keeping transaction details private
 
-## 8. Backup/Restore (Optional)
-- [ ] Export encrypted DB + private state
-- [ ] Import with passphrase
+## 🚧 5. Transaction History (Phase 4) - FUTURE
+- [ ] Transaction history display from `transactionHistoryHex$` + `transactionCount`
+- [ ] Client-side detailed history with filters and search
+- [ ] Export functionality (CSV/JSON)
+- [ ] Transaction details and timestamps
 
-## 9. Observability
-- [ ] Configurable log level (pino)
-- [ ] Download client logs
+## ✅ 6. Technical Infrastructure - COMPLETED
+- [x] **Private state persistence**: Manual sync after circuit execution ✅
+- [x] **Contract address consistency**: Uses contract address as private state key ✅
+- [x] **RxJS state management**: Direct subscription to `bankAPI.state$` ✅
+- [x] **Session management**: 10-minute authentication timeout ✅
+- [x] **Error handling**: Comprehensive error states and user feedback ✅
 
-## 10. Performance
-- [ ] Query caching & invalidation strategy
-- [ ] Code splitting to reduce bundle size
-- [ ] Single subscription adapter per account
+## ✅ 7. Wallet & Providers - COMPLETED
+- [x] Provider construction (indexer, zk-config, proof, wallet, midnight) ✅
+- [x] **Lace wallet auto-connect**: Automatically connects if previously authorized ✅
+- [x] Public config ingestion (config.json) ✅
+- [x] **Network ID configuration**: Supports different Midnight networks ✅
+- [ ] Enhanced error notifications and user feedback (FUTURE)
 
-## 11. Documentation
-- [x] Implementation Plan (PLAN.md)
-- [ ] Usage guide (README)
-- [ ] Architecture overview
+## ✅ 8. Build & Dev Infrastructure - COMPLETED
+- [x] Vite build with WASM support ✅
+- [x] SPA routing with history-api-fallback ✅  
+- [x] **Automatic bank keys copying**: ZK keys/circuits copied to dist ✅
+- [x] Development server optimization ✅
+- [x] **Turbo monorepo integration** ✅
+- [ ] CI/CD pipeline (FUTURE)
+
+## 🚧 9. Future Enhancements
+- [ ] **Backup/Restore**: Export encrypted private state + account data
+- [ ] **Enhanced UX**: Better loading states and progress indicators
+- [ ] **Account management**: Add existing accounts, rename/label functionality
+- [ ] **Transaction history**: Full history view with filtering and export
+- [ ] **Performance optimization**: Code splitting and caching strategies
+
+## ✅ 10. Documentation - UPDATED
+- [x] **Implementation Plan (PLAN.md)**: Updated with current status ✅
+- [x] **Features tracking (FEATURES.md)**: This document ✅
+- [x] **Technical insights**: Private state management lessons documented ✅
+- [ ] User guide and deployment instructions (FUTURE)
+
+## 🎯 Key Achievements
+
+### ✅ **Core Banking Functionality**
+- Complete account creation and management workflow
+- Secure balance authentication with PIN protection
+- Real-time deposit and withdrawal operations
+- Proper currency formatting and display
+
+### ✅ **Privacy & Security**  
+- Default balance masking for privacy
+- Session-based authentication with automatic timeout
+- PIN-based transaction authorization
+- No sensitive data stored in localStorage
+
+### ✅ **Technical Excellence**
+- **Fixed critical private state bug**: Circuit witness updates now persist correctly
+- **Battleship pattern adoption**: Applied proven private state management
+- **Consistent state keys**: Contract address used throughout for data consistency
+- **Real-time updates**: Immediate UI reflection of blockchain state changes
 

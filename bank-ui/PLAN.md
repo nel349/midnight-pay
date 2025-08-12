@@ -1,81 +1,129 @@
 # Bank UI Implementation Plan
 
-This plan mirrors the Battleship UI where useful and replaces ad-hoc subscriptions with TanStack Query. Phase 1 focuses on onboarding.
+## Implementation Status: **Phase 2 COMPLETE** ✅
 
-## Tech choices
-- UI: React + Vite + MUI
-- Data/state: TanStack Query (react-query) for queries/mutations, retries, cache (later)
-- RxJS interop: minimal adapter to sync `state$` → Query Cache; use `firstValueFrom` for milestone waits
-- Local persistence (Phase 1): simple localStorage repo abstraction (swap to Drizzle/sql.js later if needed)
-- Logging: pino (env-controlled)
+## Tech choices ✅ IMPLEMENTED
+- UI: React + Vite + MUI ✅
+- Data/state: Direct RxJS observables (TanStack Query deferred)
+- RxJS interop: Direct subscription to `bankAPI.state$` observables
+- Local persistence: localStorage-based account storage ✅
+- Logging: pino (env-controlled) ✅
 
-## Local persistence (Phase 1)
-- accounts: contract_address (unique), label?, created_at, last_used_at
-- sessions: contract_address, last_auth_at (for mask/unmask)
-- recent: optional list of recently opened contracts
-Note: implemented via localStorage behind a small repo; can be migrated to Drizzle/sql.js in Phase 3 if richer queries are needed.
+## Local persistence ✅ IMPLEMENTED
+- accounts: contract_address (unique), label?, created_at, last_used_at ✅
+- sessions: PIN authentication with 10-minute timeout ✅
+- Auto-touch account on access ✅
 
-## Routes
-- `/accounts`: welcome + list saved accounts (local)
-- `/accounts/create`: create account (deploy + create in one step)
-- `/account/:contract`: account view
+## Routes ✅ IMPLEMENTED
+- `/accounts`: welcome + list saved accounts (local) ✅
+- `/accounts/create`: create account (deploy + create in one step) ✅  
+- `/account/:contract`: account view with balance and actions ✅
 
-## Shared providers
-- `BankWalletProvider` (clone of battleship’s, bank zk-config)
-- `BrowserDeployedAccountManager` (deploy/subscribe; persist to DB)
-
----
-
-## Phase 1: Onboarding (now)
-
-### Goals
-1) Connect Lace; set network id from config
-2) Create account (deploy + create_account + verify) in one click
-3) Persist account (address/label/timestamps) locally (localStorage repo)
-4) Navigate to `/account/:contract`
-
-### Deliverables
-- Local repo: accounts/sessions via localStorage (swap-in later)
-- `DeployedAccountProvider` for deploy/subscribe
-- Pages: `AccountsHome.tsx`, `Onboarding.tsx`
-- Connect Lace button; network id init
-- Copy bank keys into dist on build
-
-### Data flow
-- Mutations for tx flows; progress and error states
-- Wait readiness via `firstValueFrom(api.state$.pipe(filter(...)))`
-- Optionally mirror detailed tx entries to `tx_detailed` after each action
-
-### Acceptance
-- Connect → create (deploy+create+verify) → navigate works end-to-end
-- Account visible in `/accounts` list (local)
-- PIN entered inline; no raw PIN stored (only session timestamp later)
+## Shared providers ✅ IMPLEMENTED
+- `BankWalletProvider`: Lace wallet integration + auto-connect ✅
+- `DeployedAccountProvider`: deploy/subscribe management ✅
 
 ---
 
-## Phase 2: Account view & actions
-- Masked balance panel; “Show balance” runs `authenticateBalanceAccess` and updates `sessions.last_auth_at`; auto re-mask after 10 min
-- Actions: deposit/withdraw/verify via mutations; DB updates; history appended
-- RxJS adapter keeps `state$` in Query Cache per account
+## ✅ Phase 1: Onboarding COMPLETED
 
-## Phase 3: History views
-- On-chain metadata: `transactionHistoryHex$` + `transactionCount`
-- Client-side detailed: optional move to Drizzle/sql.js for filters/totals; CSV/JSON export
+### Goals ✅ ACHIEVED
+1) Connect Lace; set network id from config ✅
+2) Create account (deploy + create_account + verify) in one click ✅
+3) Persist account (address/label/timestamps) locally ✅
+4) Navigate to `/account/:contract` ✅
 
-## Phase 4: Backup/restore (optional)
-- Encrypt-and-export DB + private state; import flow
+### Deliverables ✅ IMPLEMENTED
+- Local repo: accounts/sessions via localStorage ✅
+- `DeployedAccountProvider` for deploy/subscribe ✅
+- Pages: `AccountsHome.tsx`, `Onboarding.tsx` ✅
+- Connect Lace button; network id init ✅
+- Copy bank keys into dist on build ✅
 
-## Notes on subscriptions
-- Prefer Query as primary source; one adapter per account to sync `state$`; avoid scattered subscriptions
+### Data flow ✅ WORKING
+- Direct RxJS subscriptions to `bankAPI.state$` ✅
+- State updates via private state provider manual sync ✅
+- Real-time balance and transaction updates ✅
+
+### Acceptance ✅ VERIFIED
+- Connect → create (deploy+create+verify) → navigate works end-to-end ✅
+- Account visible in `/accounts` list (local) ✅
+- PIN entered inline; session-based authentication ✅
 
 ---
 
-## Optimizations
+## ✅ Phase 2: Account view & actions COMPLETED
 
-- Reduce approvals during onboarding
-  - Pre-deploy `bank-contract` and use `BankAPI.subscribe(...)` with a configured `contractAddress` instead of `BankAPI.deploy(...)` on first run. This removes the deploy transaction (one approval).
-  - Call only one circuit during onboarding. Today we do `create_account` then `verify_account_status` (two tx). Either skip verification at onboarding or add a combined circuit so onboarding sends one tx.
+### Implemented Features ✅
+- **Masked balance panel**: Shows `***` by default for privacy ✅
+- **"Show Balance" authentication**: Runs `authenticateBalanceAccess` with PIN ✅
+- **Auto re-mask**: Balance hides after 10-minute timeout ✅
+- **Actions**: deposit/withdraw/verify buttons implemented ✅
+- **Real-time updates**: Direct `state$` subscription ✅
+- **Proper formatting**: Balance displays as currency (e.g., "50.00") ✅
 
-- Single-transaction onboarding (contract-level)
-  - Add a new impure circuit, e.g. `create_and_verify(pin, initial_deposit)`, that performs the current create and verification logic within one circuit, producing a single tx/approval.
-  - Recompile and export keys/zkir; update `bank-api` to call `callTx.create_and_verify(...)` in onboarding.
+### Key Technical Achievement ✅
+- **Fixed private state persistence**: Manual state sync after circuit execution
+- **Contract address consistency**: Uses contract address as private state key
+- **Battleship pattern**: Applied working private state management pattern
+
+## 🚧 Phase 3: Advanced Privacy Features (PLANNED)
+
+### 3.1 Inter-Contract Transfers 🆕
+- **Send money to contract**: Transfer funds to another Midnight Bank contract
+- **Recipient verification**: Validate target contract before transfer
+- **Transfer privacy**: Amount and recipient remain confidential
+- **Transfer authorization**: PIN-based confirmation for outgoing transfers
+
+### 3.2 Selective Balance Disclosure 🆕  
+- **Custom disclosure permissions**: Grant specific contracts limited access
+- **Threshold verification**: Yes/No disclosure for minimum balance requirements
+- **Exact amount disclosure**: Full balance reveal to authorized contracts
+- **Time-limited access**: Disclosure permissions with expiration
+- **Revocable permissions**: Account holder can revoke access anytime
+
+### Implementation Strategy:
+- New circuits: `send_to_contract`, `create_disclosure_permission`, `verify_balance_threshold`
+- Permission management in private state
+- UI for managing disclosure permissions and inter-contract transfers
+
+## 🚧 Phase 4: History views (FUTURE)
+- Transaction history display from `transactionHistoryHex$` + `transactionCount`
+- Detailed client-side history with filters/totals
+- CSV/JSON export functionality
+- Transaction details and timestamps
+
+## 🚧 Phase 5: Backup/restore (FUTURE) 
+- Encrypt-and-export private state
+- Import flow for account recovery
+- Cross-device synchronization
+
+---
+
+## 🔧 Technical Notes
+
+### Private State Management
+- **Critical lesson**: Circuit witness calls don't automatically persist to private state provider
+- **Solution**: Manual sync using `privateStateProvider.set()` + `privateStates$.next()`
+- **Key insight**: Use contract address (not accountId) as consistent private state key
+
+### Current Architecture  
+- Direct RxJS observables (no TanStack Query)
+- Manual private state synchronization after circuit transactions
+- Session-based authentication with timeouts
+- localStorage for account persistence
+
+---
+
+## 🚀 Future Optimizations
+
+### Reduce Wallet Approvals
+- Pre-deploy contracts to eliminate deployment transaction
+- Combine `create_account` + `verify_account_status` into single circuit
+- Single-transaction onboarding experience
+
+### Enhanced UX
+- Better error handling and user feedback
+- Loading states and progress indicators  
+- Offline support and state persistence
+- Account backup/restore workflows
