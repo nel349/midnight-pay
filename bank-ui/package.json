@@ -13,22 +13,23 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@emotion/react": "^11.11.4",
-    "@emotion/styled": "^11.11.5",
+    "@emotion/react": "^11.13.3",
+    "@emotion/styled": "^11.13.3",
     "@midnight-bank/bank-api": "file:../bank-api",
-    "@mui/material": "^5.15.0",
-    "react-router-dom": "^6.26.2",
+    "@mui/icons-material": "^7.3.1",
+    "@mui/material": "^7.3.1",
     "pino": "^8.16.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
-    "rimraf": "^5.0.5",
     "@originjs/vite-plugin-commonjs": "^1.0.3",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^4.3.1",
     "http-server": "^14.1.1",
+    "rimraf": "^5.0.5",
     "typescript": "^5.3.3",
     "vite": "^5.0.0",
     "vite-plugin-top-level-await": "^1.4.1",

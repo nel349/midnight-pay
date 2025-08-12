@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { Button, Card, CardContent, Grid, Typography } from '@mui/material';
+import { Button, Card, CardContent, Typography, Box } from '@mui/material';
 import { listAccounts } from '../utils/AccountsLocalState';
 import { useBankWallet } from '../components/BankWallet';
 
@@ -28,36 +28,36 @@ export const AccountsHome: React.FC<{ onCreate: () => void; onOpen: (addr: strin
         <Typography variant="h1" color="primary.dark" align="center" gutterBottom>
           Welcome to Midnight Bank
         </Typography>
-        <Grid container spacing={2} direction="column" alignItems="center">
+        <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
           {accounts.length === 0 ? (
             <>
-              <Grid item>
+              <Box>
                 <Typography color="text.secondary" align="center" gutterBottom>
                   No accounts saved yet. Create your first account to get started.
                 </Typography>
-              </Grid>
-              <Grid item>
+              </Box>
+              <Box>
                 <Button variant="contained" onClick={onCreate}>Create Account</Button>
-              </Grid>
+              </Box>
             </>
           ) : (
             <>
-              <Grid item>
+              <Box>
                 <Button variant="contained" onClick={onCreate}>Create New Account</Button>
-              </Grid>
-              <Grid item>
+              </Box>
+              <Box>
                 <Typography variant="h6">Your Accounts</Typography>
-              </Grid>
+              </Box>
             </>
           )}
           {accounts.map((a) => (
-            <Grid item key={a.address}>
+            <Box key={a.address}>
               <Button variant="outlined" onClick={() => onOpen(a.address)}>
                 {a.label ?? a.address}
               </Button>
-            </Grid>
+            </Box>
           ))}
-        </Grid>
+        </Box>
       </CardContent>
     </Card>
   );

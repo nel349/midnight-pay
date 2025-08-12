@@ -31,7 +31,7 @@ class Manager implements DeployedAccountAPIProvider {
   constructor(private readonly logger: Logger) {}
   get accountDeployments$(): Observable<AccountItem[]> { return this.#subject }
 
-  addAccount(providers: BankProviders, contractAddress: ContractAddress): AccountItem {
+  addAccount = (providers: BankProviders, contractAddress: ContractAddress): AccountItem => {
     const deployment = new BehaviorSubject<AccountDeployment>({ status: 'in-progress', address: contractAddress });
     const item: AccountItem = { observable: deployment, address: contractAddress };
     this.#subject.next([...this.#subject.value, item]);
@@ -39,7 +39,7 @@ class Manager implements DeployedAccountAPIProvider {
     return item;
   }
 
-  async deployAndAddAccount(providers: BankProviders): Promise<AccountItem> {
+  deployAndAddAccount = async (providers: BankProviders): Promise<AccountItem> => {
     const deployment = new BehaviorSubject<AccountDeployment>({ status: 'in-progress' });
     const item: AccountItem = { observable: deployment };
     this.#subject.next([...this.#subject.value, item]);

@@ -67,3 +67,15 @@ Note: implemented via localStorage behind a small repo; can be migrated to Drizz
 
 ## Notes on subscriptions
 - Prefer Query as primary source; one adapter per account to sync `state$`; avoid scattered subscriptions
+
+---
+
+## Optimizations
+
+- Reduce approvals during onboarding
+  - Pre-deploy `bank-contract` and use `BankAPI.subscribe(...)` with a configured `contractAddress` instead of `BankAPI.deploy(...)` on first run. This removes the deploy transaction (one approval).
+  - Call only one circuit during onboarding. Today we do `create_account` then `verify_account_status` (two tx). Either skip verification at onboarding or add a combined circuit so onboarding sends one tx.
+
+- Single-transaction onboarding (contract-level)
+  - Add a new impure circuit, e.g. `create_and_verify(pin, initial_deposit)`, that performs the current create and verification logic within one circuit, producing a single tx/approval.
+  - Recompile and export keys/zkir; update `bank-api` to call `callTx.create_and_verify(...)` in onboarding.

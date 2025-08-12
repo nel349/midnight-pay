@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Button, Card, CardContent, CircularProgress, Grid, TextField, Typography } from '@mui/material';
+import { Button, Card, CardContent, CircularProgress, TextField, Typography, Box } from '@mui/material';
 import type { Logger } from 'pino';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { firstValueFrom, filter } from 'rxjs';
@@ -48,38 +48,38 @@ const Onboarding: React.FC<OnboardingProps> = ({ logger, onComplete }) => {
         <Typography variant="h1" color="primary.dark" align="center" gutterBottom>
           Midnight Bank
         </Typography>
-        <Grid container spacing={2} direction="column" alignItems="center">
+        <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
           {!isConnected && (
-            <Grid item>
+            <Box>
               <Button variant="outlined" onClick={() => void connect()} disabled={working}>
                 {working ? <CircularProgress size={16} /> : 'Connect Lace Wallet'}
               </Button>
-            </Grid>
+            </Box>
           )}
-          <Grid item>
+          <Box>
             <TextField label="Label (optional)" value={label} onChange={(e) => setLabel(e.target.value)} />
-          </Grid>
-          <Grid item>
+          </Box>
+          <Box>
             <TextField
               label="PIN (4-8 digits)"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
               inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
             />
-          </Grid>
-          <Grid item>
+          </Box>
+          <Box>
             <TextField
               label="Initial Deposit (e.g. 50.00)"
               value={initialDeposit}
               onChange={(e) => setInitialDeposit(e.target.value)}
             />
-          </Grid>
-          <Grid item>
+          </Box>
+          <Box>
             <Button variant="contained" onClick={onCreateAccount} disabled={!pinValid || !isConnected || working}>
               {working ? <CircularProgress size={16} /> : 'Create Account'}
             </Button>
-          </Grid>
-        </Grid>
+          </Box>
+        </Box>
       </CardContent>
     </Card>
   );
