@@ -9,12 +9,13 @@ import {
 
 // Local transaction record (user maintains this separately)
 interface TransactionRecord {
-  type: 'create' | 'deposit' | 'withdraw' | 'balance_check' | 'verify' | 'transfer_out' | 'transfer_in';
+  type: 'create' | 'deposit' | 'withdraw' | 'balance_check' | 'verify' | 'transfer_out' | 'transfer_in' | 'auth_request' | 'auth_approve' | 'auth_transfer';
   amount?: bigint;
   timestamp: Date;
   balanceAfter: bigint;
   pin: string; // In real app, this would be encrypted/hashed
   counterparty?: string; // For transfers, the other user_id
+  maxAmount?: bigint; // For authorization approval
 }
 
 // Test setup class for shared bank contract architecture
@@ -139,38 +140,6 @@ export class BankTestSetup {
     return ledger;
   }
 
-  // Test method: Transfer between users (NEW!)
-  transferBetweenUsers(senderId: string, pin: string, recipientId: string, amount: bigint): Ledger {
-    console.log(`💸 User ${senderId} transferring $${amount} to user ${recipientId}`);
-    
-    const senderIdBytes = this.stringToBytes32(senderId);
-    const pinBytes = this.stringToBytes32(pin);
-    const recipientIdBytes = this.stringToBytes32(recipientId);
-    
-    const results = this.contract.impureCircuits.transfer_between_users(this.turnContext, senderIdBytes, pinBytes, recipientIdBytes, amount);
-    const ledger = this.updateStateAndGetLedger(results);
-    
-    // Record detailed transaction locally for both users
-    this.recordTransaction(senderId, {
-      type: 'transfer_out',
-      amount: amount,
-      timestamp: new Date(),
-      balanceAfter: this.getUserBalance(senderId),
-      pin: pin,
-      counterparty: recipientId
-    });
-    
-    this.recordTransaction(recipientId, {
-      type: 'transfer_in',
-      amount: amount,
-      timestamp: new Date(),
-      balanceAfter: this.getUserBalance(recipientId),
-      pin: '', // Recipient doesn't need PIN
-      counterparty: senderId
-    });
-    
-    return ledger;
-  }
 
   // Test method: Authenticate balance access
   authenticateBalanceAccess(userId: string, pin: string): Ledger {
@@ -192,6 +161,77 @@ export class BankTestSetup {
     
     const results = this.contract.impureCircuits.verify_account_status(this.turnContext, userIdBytes, pinBytes);
     return this.updateStateAndGetLedger(results);
+  }
+
+  // Test method: Request Transfer Authorization (NEW!)
+  requestTransferAuthorization(senderId: string, recipientId: string, pin: string): Ledger {
+    console.log(`🔑 User ${senderId} requesting transfer authorization from ${recipientId}`);
+    
+    const senderIdBytes = this.stringToBytes32(senderId);
+    const recipientIdBytes = this.stringToBytes32(recipientId);
+    const pinBytes = this.stringToBytes32(pin);
+    
+    const results = this.contract.impureCircuits.request_transfer_authorization(this.turnContext, senderIdBytes, recipientIdBytes, pinBytes);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Record transaction locally
+    this.recordTransaction(senderId, {
+      type: 'auth_request',
+      timestamp: new Date(),
+      balanceAfter: this.getUserBalance(senderId),
+      pin: pin,
+      counterparty: recipientId
+    });
+    
+    return ledger;
+  }
+
+  // Test method: Approve Transfer Authorization (NEW!)
+  approveTransferAuthorization(recipientId: string, senderId: string, pin: string, maxAmount: bigint): Ledger {
+    console.log(`✅ User ${recipientId} approving transfer authorization for ${senderId} (max: $${maxAmount})`);
+    
+    const recipientIdBytes = this.stringToBytes32(recipientId);
+    const senderIdBytes = this.stringToBytes32(senderId);
+    const pinBytes = this.stringToBytes32(pin);
+    
+    const results = this.contract.impureCircuits.approve_transfer_authorization(this.turnContext, recipientIdBytes, senderIdBytes, pinBytes, maxAmount);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Record transaction locally
+    this.recordTransaction(recipientId, {
+      type: 'auth_approve',
+      maxAmount: maxAmount,
+      timestamp: new Date(),
+      balanceAfter: this.getUserBalance(recipientId),
+      pin: pin,
+      counterparty: senderId
+    });
+    
+    return ledger;
+  }
+
+  // Test method: Send to Authorized User (NEW!)
+  sendToAuthorizedUser(senderId: string, recipientId: string, amount: bigint, pin: string): Ledger {
+    console.log(`💸 User ${senderId} sending $${amount} to authorized user ${recipientId}`);
+    
+    const senderIdBytes = this.stringToBytes32(senderId);
+    const recipientIdBytes = this.stringToBytes32(recipientId);
+    const pinBytes = this.stringToBytes32(pin);
+    
+    const results = this.contract.impureCircuits.send_to_authorized_user(this.turnContext, senderIdBytes, recipientIdBytes, amount, pinBytes);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Record transaction locally for sender
+    this.recordTransaction(senderId, {
+      type: 'auth_transfer',
+      amount: amount,
+      timestamp: new Date(),
+      balanceAfter: this.getUserBalance(senderId),
+      pin: pin,
+      counterparty: recipientId
+    });
+    
+    return ledger;
   }
 
   // Getter methods for state inspection

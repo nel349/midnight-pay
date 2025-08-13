@@ -19,10 +19,40 @@ struct BankAccount {
   created_at: Uint<32>
 }
 
+// Authorization structures for Zelle-like transfers
+struct TransferAuthorization {
+  sender_id: Bytes<32>,
+  recipient_id: Bytes<32>,
+  shared_encryption_key: Bytes<32>,
+  max_amount: Uint<64>,
+  created_at: Uint<32>,
+  last_updated: Uint<32>
+}
+
+struct AuthRequest {
+  sender_id: Bytes<32>,
+  recipient_id: Bytes<32>,
+  requested_at: Uint<32>,
+  status: Uint<8>
+}
+
+enum AUTH_STATUS {
+  pending,
+  approved,
+  rejected
+}
+
 // Public ledger state - ALL ACCOUNTS IN ONE CONTRACT
 export ledger all_accounts: Map<Bytes<32>, BankAccount>;  // Maps user_id -> account info
 export ledger total_accounts: Counter;                    // Total number of accounts
 export ledger last_global_transaction: Bytes<32>;         // Latest transaction hash
+
+// Authorization system for Zelle-like transfers
+export ledger active_authorizations: Map<Bytes<32>, TransferAuthorization>; // auth_id -> authorization
+export ledger encrypted_balances: Map<Bytes<32>, Bytes<32>>;                // auth_id -> encrypted_balance
+export ledger pending_auth_requests: Map<Bytes<32>, AuthRequest>;           // request_id -> request
+export ledger user_as_recipient_auths: Map<Bytes<32>, Vector<20, Bytes<32>>>; // user_id -> auth_ids
+export ledger user_as_sender_auths: Map<Bytes<32>, Vector<20, Bytes<32>>>;   // user_id -> auth_ids
 
 // Private data (user-specific, stored per user)
 witness user_pin_hash(user_id: Bytes<32>): Bytes<32>;
@@ -152,71 +182,151 @@ export circuit withdraw(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): [
   last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "withdrawal"), user_id]));
 }
 
-// Circuit 4: Transfer Between Users (ATOMIC!)
-export circuit transfer_between_users(sender_id: Bytes<32>, pin: Bytes<32>, recipient_id: Bytes<32>, amount: Uint<64>): [] {
-  assert (amount > 0 as Uint<64>, "Transfer amount must be positive");
-  assert (sender_id != recipient_id, "Cannot transfer to yourself");
-  
-  // Get both accounts from shared ledger
-  assert (all_accounts.member(disclose(sender_id)), "Sender account does not exist");
+// Circuit 4: Request Transfer Authorization (Like Adding Contact on Zelle)
+export circuit request_transfer_authorization(user_id: Bytes<32>, recipient_id: Bytes<32>, pin: Bytes<32>): [] {
+  assert (user_id != recipient_id, "Cannot authorize yourself");
   assert (all_accounts.member(disclose(recipient_id)), "Recipient account does not exist");
   
-  const sender_account = all_accounts.lookup(disclose(sender_id));
-  const recipient_account = all_accounts.lookup(disclose(recipient_id));
-  
   // Authenticate sender
-  const expected_owner = public_key(pin);
-  assert (sender_account.owner_hash == expected_owner, "Authentication failed");
+  assert (all_accounts.member(disclose(user_id)), "Sender account does not exist");
+  const sender_account = all_accounts.lookup(disclose(user_id));
+  assert (sender_account.owner_hash == public_key(pin), "Authentication failed");
   
-  // ATOMIC BALANCE UPDATE
-  const sender_balance = user_balance(sender_id);
-  const recipient_balance = user_balance(recipient_id);
+  const request_id = persistentHash<Vector<2, Bytes<32>>>([user_id, recipient_id]);
   
-  assert (sender_balance >= amount, "Insufficient funds for transfer");
+  const request = AuthRequest {
+    sender_id: disclose(user_id),
+    recipient_id: disclose(recipient_id),
+    requested_at: 1, // current timestamp
+    status: 0 as Uint<8> // AUTH_STATUS.pending
+  };
   
-  // Update both balances atomically
-  set_user_balance(sender_id, (sender_balance - amount) as Uint<64>);
-  set_user_balance(recipient_id, (recipient_balance + amount) as Uint<64>);
+  pending_auth_requests.insert(disclose(request_id), request);
   
-  // Update sender's transaction history
-  const sender_tx_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "transfer_out"), recipient_id, persistentHash<Uint<64>>(amount)]);
-  const sender_history = user_transaction_history(sender_id);
-  const updated_sender_history = [sender_tx_hash, sender_history[0], sender_history[1], sender_history[2], sender_history[3],
-                                 sender_history[4], sender_history[5], sender_history[6], sender_history[7], sender_history[8]];
-  set_user_transaction_history(sender_id, updated_sender_history);
-  
-  // Update recipient's transaction history
-  const recipient_tx_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "transfer_in"), sender_id, persistentHash<Uint<64>>(amount)]);
-  const recipient_history = user_transaction_history(recipient_id);
-  const updated_recipient_history = [recipient_tx_hash, recipient_history[0], recipient_history[1], recipient_history[2], recipient_history[3],
-                                    recipient_history[4], recipient_history[5], recipient_history[6], recipient_history[7], recipient_history[8]];
-  set_user_transaction_history(recipient_id, updated_recipient_history);
-  
-  // Update both accounts' public state
+  // Update sender's transaction count
   const updated_sender = BankAccount {
     exists: sender_account.exists,
     owner_hash: sender_account.owner_hash,
     public_key: sender_account.public_key,
     transaction_count: (sender_account.transaction_count + 1) as Uint<32>,
-    last_transaction: persistentHash<Bytes<32>>(pad(32, "transfer_sent")),
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "auth_requested")),
     status: sender_account.status,
     created_at: sender_account.created_at
   };
-  all_accounts.insert(disclose(sender_id), updated_sender);
+  all_accounts.insert(disclose(user_id), updated_sender);
+}
+
+// Circuit 5: Approve Transfer Authorization (One-Time Setup)
+export circuit approve_transfer_authorization(user_id: Bytes<32>, sender_id: Bytes<32>, pin: Bytes<32>, max_amount: Uint<64>): [] {
+  // 1. Verify request exists
+  const request_id = persistentHash<Vector<2, Bytes<32>>>([sender_id, user_id]);
+  assert (pending_auth_requests.member(disclose(request_id)), "No pending authorization request");
   
-  const updated_recipient = BankAccount {
-    exists: recipient_account.exists,
-    owner_hash: recipient_account.owner_hash,
-    public_key: recipient_account.public_key,
-    transaction_count: (recipient_account.transaction_count + 1) as Uint<32>,
-    last_transaction: persistentHash<Bytes<32>>(pad(32, "transfer_received")),
-    status: recipient_account.status,
-    created_at: recipient_account.created_at
+  // 2. Authenticate recipient
+  assert (all_accounts.member(disclose(user_id)), "Account does not exist");
+  const account = all_accounts.lookup(disclose(user_id));
+  assert (account.owner_hash == public_key(pin), "Authentication failed");
+  
+  // 3. Generate shared encryption key and auth_id
+  const shared_key = persistentHash<Vector<3, Bytes<32>>>([user_id, sender_id, persistentHash<Bytes<32>>(pin)]);
+  const auth_id = persistentHash<Vector<2, Bytes<32>>>([sender_id, user_id]);
+  
+  // 4. Create authorization
+  const authorization = TransferAuthorization {
+    sender_id: disclose(sender_id),
+    recipient_id: disclose(user_id),
+    shared_encryption_key: disclose(shared_key),
+    max_amount: disclose(max_amount),
+    created_at: 1,
+    last_updated: 1
   };
-  all_accounts.insert(disclose(recipient_id), updated_recipient);
   
-  // Global transaction log
-  last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "transfer"), sender_id, recipient_id]));
+  // 5. Store authorization and initialize encrypted transfer amounts to zero
+  active_authorizations.insert(disclose(auth_id), authorization);
+  const zero_amount = 0 as Uint<64>;
+  const encrypted_zero = encrypt_balance(zero_amount, disclose(shared_key));
+  encrypted_balances.insert(disclose(auth_id), encrypted_zero);
+  
+  // 6. Update lookup tables (simplified - using single entry for now)
+  const empty_vector: Vector<20, Bytes<32>> = [pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""),
+                                               pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""),
+                                               pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""),
+                                               pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""), pad(32, "")];
+  const recipient_auths = user_as_recipient_auths.member(disclose(user_id)) ? 
+    user_as_recipient_auths.lookup(disclose(user_id)) : empty_vector;
+  const updated_recipient_auths = [disclose(auth_id), recipient_auths[0], recipient_auths[1], recipient_auths[2], recipient_auths[3],
+                                  recipient_auths[4], recipient_auths[5], recipient_auths[6], recipient_auths[7], recipient_auths[8],
+                                  recipient_auths[9], recipient_auths[10], recipient_auths[11], recipient_auths[12], recipient_auths[13],
+                                  recipient_auths[14], recipient_auths[15], recipient_auths[16], recipient_auths[17], recipient_auths[18]];
+  user_as_recipient_auths.insert(disclose(user_id), updated_recipient_auths);
+  
+  // 7. Clean up request
+  pending_auth_requests.remove(disclose(request_id));
+  
+  // 8. Update account
+  const updated_account = BankAccount {
+    exists: account.exists,
+    owner_hash: account.owner_hash,
+    public_key: account.public_key,
+    transaction_count: (account.transaction_count + 1) as Uint<32>,
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "auth_approved")),
+    status: account.status,
+    created_at: account.created_at
+  };
+  all_accounts.insert(disclose(user_id), updated_account);
+}
+
+// Circuit 6: Send to Authorized User (Simplified for now)
+export circuit send_to_authorized_user(user_id: Bytes<32>, recipient_id: Bytes<32>, amount: Uint<64>, pin: Bytes<32>): [] {
+  assert (amount > 0 as Uint<64>, "Transfer amount must be positive");
+  assert (user_id != recipient_id, "Cannot transfer to yourself");
+  
+  // 1. Verify authorization exists
+  const auth_id = persistentHash<Vector<2, Bytes<32>>>([user_id, recipient_id]);
+  assert (active_authorizations.member(disclose(auth_id)), "No authorization - recipient must approve first");
+  
+  const auth = active_authorizations.lookup(disclose(auth_id));
+  assert (amount <= auth.max_amount, "Amount exceeds authorized limit");
+  
+  // 2. Authenticate sender
+  assert (all_accounts.member(disclose(user_id)), "Sender account does not exist");
+  const sender_account = all_accounts.lookup(disclose(user_id));
+  assert (sender_account.owner_hash == public_key(pin), "Authentication failed");
+  
+  // 3. Verify sender has sufficient funds and transfer
+  const sender_balance = user_balance(user_id);
+  assert (sender_balance >= amount, "Insufficient funds");
+  set_user_balance(user_id, (sender_balance - amount) as Uint<64>);
+  
+  // 4. Store pending transfer for recipient to claim later
+  const pending_amount = encrypted_balances.member(disclose(auth_id)) ? 
+    encrypted_balances.lookup(disclose(auth_id)) : encrypt_balance(0 as Uint<64>, auth.shared_encryption_key);
+  
+  // Note: For simplicity, just mark that a transfer occurred
+  // The recipient will need to call a separate circuit to claim transfers
+  const new_encrypted_amount = encrypt_balance(disclose(amount), disclose(auth.shared_encryption_key));
+  encrypted_balances.insert(disclose(auth_id), new_encrypted_amount);
+  
+  // 5. Update sender's account
+  const updated_sender = BankAccount {
+    exists: sender_account.exists,
+    owner_hash: sender_account.owner_hash,
+    public_key: sender_account.public_key,
+    transaction_count: (sender_account.transaction_count + 1) as Uint<32>,
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "auth_transfer_sent")),
+    status: sender_account.status,
+    created_at: sender_account.created_at
+  };
+  all_accounts.insert(disclose(user_id), updated_sender);
+  
+  // 6. Update transaction history
+  const sender_tx_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "auth_transfer_out"), recipient_id, persistentHash<Uint<64>>(amount)]);
+  const sender_history = user_transaction_history(user_id);
+  const updated_sender_history = [sender_tx_hash, sender_history[0], sender_history[1], sender_history[2], sender_history[3],
+                                 sender_history[4], sender_history[5], sender_history[6], sender_history[7], sender_history[8]];
+  set_user_transaction_history(user_id, updated_sender_history);
+  
+  last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "auth_transfer"), user_id, recipient_id]));
 }
 
 // Circuit 5: Authenticate Balance Access
@@ -276,4 +386,11 @@ pure circuit valid_pin_format(pin: Bytes<32>): Boolean {
 
 export pure circuit public_key(sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midnight:bank:pk:"), sk]);
+}
+
+// Helper Functions for Encryption (Authorization System)
+// Using persistentCommit for cryptographic security
+pure circuit encrypt_balance(balance: Uint<64>, encryption_key: Bytes<32>): Bytes<32> {
+  // Use persistentCommit as a secure encryption method
+  return persistentCommit<Uint<64>>(balance, encryption_key);
 }

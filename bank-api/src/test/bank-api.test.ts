@@ -30,9 +30,9 @@ describe('BankAPI', () => {
     // Check static methods exist
     expect(typeof BankAPI.deploy).toBe('function');
     expect(typeof BankAPI.subscribe).toBe('function');
-    expect(typeof BankAPI.getOrCreateInitialPrivateState).toBe('function');
-    expect(typeof BankAPI.accountExists).toBe('function');
-    expect(typeof BankAPI.getPublicKey).toBe('function');
+    expect(typeof BankAPI.getSharedPrivateState).toBe('function');
+    expect(typeof BankAPI.contractExists).toBe('function');
+    expect(typeof BankAPI.userHasAccount).toBe('function');
   });
 
   describe('Utils', () => {
@@ -96,15 +96,24 @@ describe('BankAPI', () => {
       const createAccountMethod = BankAPI.prototype.createAccount;
       const depositMethod = BankAPI.prototype.deposit;
       const withdrawMethod = BankAPI.prototype.withdraw;
+      const transferToUserMethod = BankAPI.prototype.transferToUser;
+      const authenticateBalanceAccessMethod = BankAPI.prototype.authenticateBalanceAccess;
+      const verifyAccountStatusMethod = BankAPI.prototype.verifyAccountStatus;
       
       expect(typeof createAccountMethod).toBe('function');
       expect(typeof depositMethod).toBe('function');
       expect(typeof withdrawMethod).toBe('function');
+      expect(typeof transferToUserMethod).toBe('function');
+      expect(typeof authenticateBalanceAccessMethod).toBe('function');
+      expect(typeof verifyAccountStatusMethod).toBe('function');
       
       // All methods should be async (return Promise<void>)
       expect(createAccountMethod.constructor.name).toBe('AsyncFunction');
       expect(depositMethod.constructor.name).toBe('AsyncFunction');
       expect(withdrawMethod.constructor.name).toBe('AsyncFunction');
+      expect(transferToUserMethod.constructor.name).toBe('AsyncFunction');
+      expect(authenticateBalanceAccessMethod.constructor.name).toBe('AsyncFunction');
+      expect(verifyAccountStatusMethod.constructor.name).toBe('AsyncFunction');
     });
   });
 
@@ -134,10 +143,10 @@ describe('BankAPI', () => {
     });
 
     test('should create account successfully (full integration test)', async () => {
-      const accountId = 'test-account-1';
+      const userId = 'test-user-1';
 
       logger.info('Deploying Bank contract…');
-      const bankAPI = await BankAPI.deploy(accountId, providers, logger);
+      const bankAPI = await BankAPI.deploy(userId, providers, logger);
 
       logger.info('Bank contract deployed');
 
@@ -173,10 +182,10 @@ describe('BankAPI', () => {
     }, 10 * 60_000);
 
     test('should run full lifecycle: create, auth balance, deposit, withdraw, verify', async () => {
-      const accountId = `lifecycle-${Date.now()}`;
+      const userId = `lifecycle-user-${Date.now()}`;
 
       logger.info('Deploying Bank contract for lifecycle test…');
-      const bankAPI = await BankAPI.deploy(accountId, providers, logger);
+      const bankAPI = await BankAPI.deploy(userId, providers, logger);
 
       let state = emptyBankState;
       const sub = bankAPI.state$.subscribe((s) => {
@@ -253,5 +262,173 @@ describe('BankAPI', () => {
 
       sub.unsubscribe();
     }, 10 * 60_000);
+
+    test('should transfer money between users successfully', async () => {
+      const aliceUserId = `alice-${Date.now()}`;
+      const bobUserId = `bob-${Date.now()}`;
+
+      logger.info('Deploying shared Bank contract for transfer test…');
+      const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+      const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+      let aliceState = emptyBankState;
+      let bobState = emptyBankState;
+      
+      const aliceSub = aliceBankAPI.state$.subscribe((s) => {
+        aliceState = s;
+        logger.info({ event: 'alice-state', balance: s.balance.toString(), exists: s.accountExists });
+      });
+      
+      const bobSub = bobBankAPI.state$.subscribe((s) => {
+        bobState = s;
+        logger.info({ event: 'bob-state', balance: s.balance.toString(), exists: s.accountExists });
+      });
+
+      // Alice creates account with $100.00
+      await aliceBankAPI.createAccount('1111', '100.00');
+      const aliceAfterCreate = await firstValueFrom(
+        aliceBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 10000n)),
+      );
+      expect(aliceAfterCreate.balance).toBe(10000n);
+
+      // Bob creates account with $50.00
+      await bobBankAPI.createAccount('2222', '50.00');
+      const bobAfterCreate = await firstValueFrom(
+        bobBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 5000n)),
+      );
+      expect(bobAfterCreate.balance).toBe(5000n);
+
+      // Alice transfers $30.00 to Bob
+      await aliceBankAPI.transferToUser('1111', bobUserId, '30.00');
+      
+      // Wait for Alice's balance to update (100 - 30 = 70)
+      const aliceAfterTransfer = await firstValueFrom(
+        aliceBankAPI.state$.pipe(filter((s) => s.balance === 7000n)),
+      );
+      expect(aliceAfterTransfer.balance).toBe(7000n);
+      
+      // Wait for Bob's balance to update (50 + 30 = 80)
+      const bobAfterTransfer = await firstValueFrom(
+        bobBankAPI.state$.pipe(filter((s) => s.balance === 8000n)),
+      );
+      expect(bobAfterTransfer.balance).toBe(8000n);
+
+      // Verify transaction histories
+      const aliceHistory = await aliceBankAPI.getDetailedTransactionHistory();
+      const bobHistory = await bobBankAPI.getDetailedTransactionHistory();
+      
+      // Alice should have transfer_out record
+      const aliceTransfer = aliceHistory.find(tx => tx.type === 'transfer_out');
+      expect(aliceTransfer).toBeDefined();
+      expect(aliceTransfer?.amount).toBe(3000n); // $30.00 in cents
+      expect(aliceTransfer?.counterparty).toBe(bobUserId);
+      
+      // Bob doesn't track incoming transfers in this implementation
+      // (only the sender tracks the transfer in their detailed log)
+      
+      logger.info('Transfer test completed successfully');
+      aliceSub.unsubscribe();
+      bobSub.unsubscribe();
+    }, 10 * 60_000);
+
+    test('should fail transfer with insufficient funds', async () => {
+      const aliceUserId = `alice-insufficient-${Date.now()}`;
+      const bobUserId = `bob-insufficient-${Date.now()}`;
+
+      logger.info('Testing insufficient funds transfer…');
+      const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+      const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+      // Alice creates account with only $20.00
+      await aliceBankAPI.createAccount('1111', '20.00');
+      await firstValueFrom(
+        aliceBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 2000n)),
+      );
+
+      // Bob creates account
+      await bobBankAPI.createAccount('2222', '10.00');
+      await firstValueFrom(
+        bobBankAPI.state$.pipe(filter((s) => s.accountExists === true)),
+      );
+
+      // Alice tries to transfer $50.00 (more than her $20.00 balance)
+      await expect(async () => {
+        await aliceBankAPI.transferToUser('1111', bobUserId, '50.00');
+      }).rejects.toThrow(); // Should fail with "Insufficient funds for transfer"
+      
+      logger.info('Insufficient funds test completed');
+    }, 10 * 60_000);
+
+    test('should fail transfer with wrong PIN', async () => {
+      const aliceUserId = `alice-wrongpin-${Date.now()}`;
+      const bobUserId = `bob-wrongpin-${Date.now()}`;
+
+      const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+      const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+      // Setup accounts
+      await aliceBankAPI.createAccount('1111', '100.00');
+      await bobBankAPI.createAccount('2222', '50.00');
+      
+      await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.accountExists === true)));
+      await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.accountExists === true)));
+
+      // Alice tries to transfer with wrong PIN
+      await expect(async () => {
+        await aliceBankAPI.transferToUser('9999', bobUserId, '30.00'); // Wrong PIN
+      }).rejects.toThrow(); // Should fail authentication
+      
+      logger.info('Wrong PIN test completed');
+    }, 10 * 60_000);
+
+    test('should handle multiple transfers correctly', async () => {
+      const aliceUserId = `alice-multi-${Date.now()}`;
+      const bobUserId = `bob-multi-${Date.now()}`;
+      const charlieUserId = `charlie-multi-${Date.now()}`;
+
+      logger.info('Testing multiple transfers…');
+      const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+      const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+      const charlieBankAPI = await BankAPI.subscribe(charlieUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+      // Setup accounts: Alice($200), Bob($100), Charlie($150)
+      await aliceBankAPI.createAccount('1111', '200.00');
+      await bobBankAPI.createAccount('2222', '100.00');
+      await charlieBankAPI.createAccount('3333', '150.00');
+      
+      await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 20000n)));
+      await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+      await firstValueFrom(charlieBankAPI.state$.pipe(filter((s) => s.balance === 15000n)));
+
+      // Alice -> Bob: $50.00
+      await aliceBankAPI.transferToUser('1111', bobUserId, '50.00');
+      await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 15000n))); // 200-50=150
+      await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 15000n)));   // 100+50=150
+
+      // Bob -> Charlie: $25.00
+      await bobBankAPI.transferToUser('2222', charlieUserId, '25.00');
+      await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 12500n)));      // 150-25=125
+      await firstValueFrom(charlieBankAPI.state$.pipe(filter((s) => s.balance === 17500n))); // 150+25=175
+
+      // Charlie -> Alice: $75.00 (completing the circle)
+      await charlieBankAPI.transferToUser('3333', aliceUserId, '75.00');
+      await firstValueFrom(charlieBankAPI.state$.pipe(filter((s) => s.balance === 10000n))); // 175-75=100
+      await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 22500n)));    // 150+75=225
+
+      // Final balances: Alice($225), Bob($125), Charlie($100) = $450 total (matches initial $450)
+      const finalAlice = await firstValueFrom(aliceBankAPI.state$);
+      const finalBob = await firstValueFrom(bobBankAPI.state$);
+      const finalCharlie = await firstValueFrom(charlieBankAPI.state$);
+      
+      expect(finalAlice.balance).toBe(22500n);  // $225.00
+      expect(finalBob.balance).toBe(12500n);    // $125.00
+      expect(finalCharlie.balance).toBe(10000n); // $100.00
+      
+      // Total should be conserved: $225 + $125 + $100 = $450 (same as initial $200+$100+$150)
+      const totalBalance = finalAlice.balance + finalBob.balance + finalCharlie.balance;
+      expect(totalBalance).toBe(45000n); // $450.00 in cents
+      
+      logger.info('Multiple transfers test completed successfully');
+    }, 15 * 60_000);
   });
 });

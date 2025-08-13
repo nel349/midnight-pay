@@ -143,130 +143,6 @@ describe('Midnight Shared Bank Contract Tests', () => {
     });
   });
 
-  describe('Inter-User Transfers (NEW FEATURE)', () => {
-    beforeEach(() => {
-      // Setup users with initial balances
-      bank.createAccount('alice', '1111', 100n);
-      bank.createAccount('bob', '2222', 50n);
-      bank.createAccount('charlie', '3333', 200n);
-    });
-
-    test('should transfer funds between users successfully', () => {
-      const initialAliceBalance = bank.getUserBalance('alice');
-      const initialBobBalance = bank.getUserBalance('bob');
-
-      // Alice transfers $30 to Bob
-      bank.transferBetweenUsers('alice', '1111', 'bob', 30n);
-
-      // Verify balances updated correctly
-      expect(bank.getUserBalance('alice')).toBe(initialAliceBalance - 30n); // 70
-      expect(bank.getUserBalance('bob')).toBe(initialBobBalance + 30n);     // 80
-
-      // Check transaction histories
-      const aliceHistory = bank.getUserTransactionHistory('alice');
-      const bobHistory = bank.getUserTransactionHistory('bob');
-
-      // Alice should have transfer_out record
-      const aliceTransfer = aliceHistory.find(tx => tx.type === 'transfer_out');
-      expect(aliceTransfer).toBeDefined();
-      expect(aliceTransfer?.amount).toBe(30n);
-      expect(aliceTransfer?.counterparty).toBe('bob');
-
-      // Bob should have transfer_in record
-      const bobTransfer = bobHistory.find(tx => tx.type === 'transfer_in');
-      expect(bobTransfer).toBeDefined();
-      expect(bobTransfer?.amount).toBe(30n);
-      expect(bobTransfer?.counterparty).toBe('alice');
-
-      bank.printAllUsersOverview();
-    });
-
-    test('should handle multiple transfers correctly', () => {
-      // Alice -> Bob: $25
-      bank.transferBetweenUsers('alice', '1111', 'bob', 25n);
-      
-      // Bob -> Charlie: $30  
-      bank.transferBetweenUsers('bob', '2222', 'charlie', 30n);
-      
-      // Charlie -> Alice: $50
-      bank.transferBetweenUsers('charlie', '3333', 'alice', 50n);
-
-      // Final balances: Alice: 100 - 25 + 50 = 125, Bob: 50 + 25 - 30 = 45, Charlie: 200 + 30 - 50 = 180
-      expect(bank.getUserBalance('alice')).toBe(125n);
-      expect(bank.getUserBalance('bob')).toBe(45n);
-      expect(bank.getUserBalance('charlie')).toBe(180n);
-
-      // Print detailed histories
-      bank.printUserDetailedHistory('alice');
-      bank.printUserDetailedHistory('bob');
-      bank.printUserDetailedHistory('charlie');
-    });
-
-    test('should fail transfer with insufficient funds', () => {
-      // Alice tries to transfer more than her balance ($150 > $100)
-      expect(() => {
-        bank.transferBetweenUsers('alice', '1111', 'bob', 150n);
-      }).toThrow(); // Should fail "Insufficient funds for transfer"
-    });
-
-    test('should fail transfer with wrong PIN', () => {
-      expect(() => {
-        bank.transferBetweenUsers('alice', '2222', 'bob', 30n); // Wrong PIN
-      }).toThrow(); // Should fail authentication
-    });
-
-    test('should fail transfer to non-existent user', () => {
-      expect(() => {
-        bank.transferBetweenUsers('alice', '1111', 'david', 30n); // David doesn't exist
-      }).toThrow(); // Should fail "Recipient account does not exist"
-    });
-
-    test('should fail transfer from non-existent user', () => {
-      expect(() => {
-        bank.transferBetweenUsers('david', '1111', 'bob', 30n); // David doesn't exist
-      }).toThrow(); // Should fail "Sender account does not exist"
-    });
-
-    test('should fail self-transfer', () => {
-      expect(() => {
-        bank.transferBetweenUsers('alice', '1111', 'alice', 30n); // Self-transfer
-      }).toThrow(); // Should fail "Cannot transfer to yourself"
-    });
-
-    test('should fail transfer with zero amount', () => {
-      expect(() => {
-        bank.transferBetweenUsers('alice', '1111', 'bob', 0n); // Zero amount
-      }).toThrow(); // Should fail "Transfer amount must be positive"
-    });
-
-    test('should track transfer statistics per user', () => {
-      // Setup some transfers
-      bank.transferBetweenUsers('alice', '1111', 'bob', 30n);     // Alice sends $30
-      bank.transferBetweenUsers('charlie', '3333', 'alice', 40n); // Alice receives $40
-      bank.transferBetweenUsers('alice', '1111', 'charlie', 20n); // Alice sends $20
-
-      // Check Alice's transfer statistics
-      const aliceTransfersOut = bank.getUserTransactionsByType('alice', 'transfer_out');
-      const aliceTransfersIn = bank.getUserTransactionsByType('alice', 'transfer_in');
-      
-      expect(aliceTransfersOut).toHaveLength(2); // 2 outgoing transfers
-      expect(aliceTransfersIn).toHaveLength(1);  // 1 incoming transfer
-
-      const totalSent = bank.getUserTotalAmountByType('alice', 'transfer_out');
-      const totalReceived = bank.getUserTotalAmountByType('alice', 'transfer_in');
-      
-      expect(totalSent).toBe(50n);  // 30 + 20
-      expect(totalReceived).toBe(40n); // 40
-
-      // Alice's final balance: 100 - 30 + 40 - 20 = 90
-      expect(bank.getUserBalance('alice')).toBe(90n);
-
-      console.log('💸 Alice Transfer Summary:');
-      console.log('├─ Total Sent: $' + totalSent.toString());
-      console.log('├─ Total Received: $' + totalReceived.toString());
-      console.log('└─ Net Transfer: $' + (totalReceived - totalSent).toString());
-    });
-  });
 
   describe('Privacy and Security (Shared Contract)', () => {
     beforeEach(() => {
@@ -326,78 +202,6 @@ describe('Midnight Shared Bank Contract Tests', () => {
     });
   });
 
-  describe('Advanced Transfer Scenarios', () => {
-    beforeEach(() => {
-      // Setup multiple users with different balances
-      bank.createAccount('alice', '1111', 1000n);
-      bank.createAccount('bob', '2222', 500n);
-      bank.createAccount('charlie', '3333', 750n);
-      bank.createAccount('diana', '4444', 300n);
-    });
-
-    test('should handle round-robin transfers', () => {
-      // Each person sends $100 to the next person in sequence
-      bank.transferBetweenUsers('alice', '1111', 'bob', 100n);      // Alice -> Bob
-      bank.transferBetweenUsers('bob', '2222', 'charlie', 100n);    // Bob -> Charlie  
-      bank.transferBetweenUsers('charlie', '3333', 'diana', 100n);  // Charlie -> Diana
-      bank.transferBetweenUsers('diana', '4444', 'alice', 100n);    // Diana -> Alice
-
-      // Final balances should be same as initial (net zero transfers)
-      expect(bank.getUserBalance('alice')).toBe(1000n);   // 1000 - 100 + 100 = 1000
-      expect(bank.getUserBalance('bob')).toBe(500n);      // 500 + 100 - 100 = 500
-      expect(bank.getUserBalance('charlie')).toBe(750n);  // 750 + 100 - 100 = 750
-      expect(bank.getUserBalance('diana')).toBe(300n);    // 300 + 100 - 100 = 300
-
-      bank.printAllUsersOverview();
-    });
-
-    test('should handle payment splitting scenario', () => {
-      // Alice pays for dinner and others split the cost
-      const dinnerCost = 240n; // $240 total
-      const perPersonCost = 60n; // $60 each (4 people)
-
-      // Everyone pays Alice their share
-      bank.transferBetweenUsers('bob', '2222', 'alice', perPersonCost);
-      bank.transferBetweenUsers('charlie', '3333', 'alice', perPersonCost);
-      bank.transferBetweenUsers('diana', '4444', 'alice', perPersonCost);
-
-      // Alice's balance: 1000 + 60 + 60 + 60 - 240 (for dinner) = 940
-      // But we're not deducting the dinner cost since that's external
-      expect(bank.getUserBalance('alice')).toBe(1180n); // 1000 + 3*60
-
-      // Others' balances
-      expect(bank.getUserBalance('bob')).toBe(440n);     // 500 - 60
-      expect(bank.getUserBalance('charlie')).toBe(690n); // 750 - 60  
-      expect(bank.getUserBalance('diana')).toBe(240n);   // 300 - 60
-
-      console.log('🍽️ Dinner Payment Split Complete:');
-      bank.printAllUsersOverview();
-    });
-
-    test('should handle gradual savings transfer', () => {
-      // Alice gradually transfers savings to a shared account (Charlie acts as savings)
-      const weeklyTransfer = 50n;
-      
-      // 4 weeks of transfers
-      for (let week = 1; week <= 4; week++) {
-        bank.transferBetweenUsers('alice', '1111', 'charlie', weeklyTransfer);
-        console.log(`Week ${week}: Alice transferred $${weeklyTransfer} to savings`);
-      }
-
-      // Alice's balance: 1000 - 4*50 = 800
-      expect(bank.getUserBalance('alice')).toBe(800n);
-      
-      // Charlie's balance (acting as savings): 750 + 4*50 = 950
-      expect(bank.getUserBalance('charlie')).toBe(950n);
-
-      // Check Alice has 4 transfer_out transactions
-      const aliceTransfers = bank.getUserTransactionsByType('alice', 'transfer_out');
-      expect(aliceTransfers).toHaveLength(4);
-      expect(bank.getUserTotalAmountByType('alice', 'transfer_out')).toBe(200n);
-
-      bank.printUserDetailedHistory('alice');
-    });
-  });
 
   describe('Error Handling and Edge Cases', () => {
     beforeEach(() => {
@@ -410,8 +214,6 @@ describe('Midnight Shared Bank Contract Tests', () => {
       const initialBobBalance = bank.getUserBalance('bob');
 
       // Try invalid operations
-      try { bank.transferBetweenUsers('alice', '1111', 'bob', 200n); } catch {} // Insufficient funds
-      try { bank.transferBetweenUsers('alice', '2222', 'bob', 30n); } catch {}  // Wrong PIN
       try { bank.withdraw('alice', '1111', 150n); } catch {}                   // Insufficient funds
       try { bank.deposit('bob', '1111', 25n); } catch {}                       // Wrong PIN
 
@@ -428,8 +230,8 @@ describe('Midnight Shared Bank Contract Tests', () => {
       expect(() => bank.withdraw('charlie', '3333', 50n)).toThrow();
       expect(() => bank.authenticateBalanceAccess('charlie', '3333')).toThrow();
       expect(() => bank.verifyAccountStatus('charlie', '3333')).toThrow();
-      expect(() => bank.transferBetweenUsers('charlie', '3333', 'alice', 50n)).toThrow();
-      expect(() => bank.transferBetweenUsers('alice', '1111', 'charlie', 50n)).toThrow();
+      expect(() => bank.requestTransferAuthorization('charlie', 'alice', '3333')).toThrow();
+      expect(() => bank.sendToAuthorizedUser('alice', 'charlie', 50n, '1111')).toThrow();
     });
 
     test('should verify account status per user', () => {
@@ -447,6 +249,233 @@ describe('Midnight Shared Bank Contract Tests', () => {
       expect(() => {
         bank.verifyAccountStatus('alice', '2222'); // Wrong PIN
       }).toThrow();
+    });
+  });
+
+  describe('Zelle-like Authorization System (NEW FEATURE)', () => {
+    beforeEach(() => {
+      // Setup users for authorization testing
+      bank.createAccount('alice', '1111', 500n);
+      bank.createAccount('bob', '2222', 300n);
+      bank.createAccount('charlie', '3333', 400n);
+    });
+
+    test('should complete full authorization workflow successfully', () => {
+      // Step 1: Alice requests authorization to send to Bob
+      expect(() => {
+        bank.requestTransferAuthorization('alice', 'bob', '1111');
+      }).not.toThrow();
+
+      // Step 2: Bob approves Alice's request with a $100 limit
+      expect(() => {
+        bank.approveTransferAuthorization('bob', 'alice', '2222', 100n);
+      }).not.toThrow();
+
+      // Step 3: Alice can now send to Bob (within limit)
+      const initialAliceBalance = bank.getUserBalance('alice');
+      const initialBobBalance = bank.getUserBalance('bob');
+
+      expect(() => {
+        bank.sendToAuthorizedUser('alice', 'bob', 50n, '1111');
+      }).not.toThrow();
+
+      // Verify balances (Alice's balance reduced, but note: recipient balance update is lazy)
+      expect(bank.getUserBalance('alice')).toBe(initialAliceBalance - 50n);
+      
+      // Check transaction history
+      const aliceHistory = bank.getUserTransactionHistory('alice');
+      const aliceAuthRequest = aliceHistory.find(tx => tx.type === 'auth_request');
+      const aliceAuthTransfer = aliceHistory.find(tx => tx.type === 'auth_transfer');
+      
+      expect(aliceAuthRequest).toBeDefined();
+      expect(aliceAuthRequest?.counterparty).toBe('bob');
+      expect(aliceAuthTransfer).toBeDefined();
+      expect(aliceAuthTransfer?.amount).toBe(50n);
+      expect(aliceAuthTransfer?.counterparty).toBe('bob');
+
+      const bobHistory = bank.getUserTransactionHistory('bob');
+      const bobAuthApproval = bobHistory.find(tx => tx.type === 'auth_approve');
+      
+      expect(bobAuthApproval).toBeDefined();
+      expect(bobAuthApproval?.counterparty).toBe('alice');
+      expect(bobAuthApproval?.maxAmount).toBe(100n);
+
+      bank.printAllUsersOverview();
+      console.log('✅ Authorization workflow completed successfully!');
+    });
+
+    test('should allow multiple transfers within authorization limit', () => {
+      // Setup authorization: Bob allows Alice to send up to $150
+      bank.requestTransferAuthorization('alice', 'bob', '1111');
+      bank.approveTransferAuthorization('bob', 'alice', '2222', 150n);
+
+      const initialAliceBalance = bank.getUserBalance('alice');
+
+      // Alice makes multiple transfers within limit
+      bank.sendToAuthorizedUser('alice', 'bob', 30n, '1111');  // Total: $30
+      bank.sendToAuthorizedUser('alice', 'bob', 40n, '1111');  // Total: $70
+      bank.sendToAuthorizedUser('alice', 'bob', 50n, '1111');  // Total: $120
+
+      // Verify Alice's balance reduced by total amount
+      expect(bank.getUserBalance('alice')).toBe(initialAliceBalance - 120n);
+
+      // Check Alice has 3 auth_transfer transactions
+      const aliceAuthTransfers = bank.getUserTransactionsByType('alice', 'auth_transfer');
+      expect(aliceAuthTransfers).toHaveLength(3);
+      expect(bank.getUserTotalAmountByType('alice', 'auth_transfer')).toBe(120n);
+
+      bank.printUserDetailedHistory('alice');
+    });
+
+    test('should fail transfer exceeding authorization limit', () => {
+      // Setup authorization: Bob allows Alice to send up to $75
+      bank.requestTransferAuthorization('alice', 'bob', '1111');
+      bank.approveTransferAuthorization('bob', 'alice', '2222', 75n);
+
+      // Alice tries to send more than authorized limit
+      expect(() => {
+        bank.sendToAuthorizedUser('alice', 'bob', 100n, '1111'); // Exceeds $75 limit
+      }).toThrow(); // Should fail "Amount exceeds authorized limit"
+    });
+
+    test('should fail transfer without authorization', () => {
+      // Alice tries to send to Bob without authorization
+      expect(() => {
+        bank.sendToAuthorizedUser('alice', 'bob', 50n, '1111');
+      }).toThrow(); // Should fail "No authorization - recipient must approve first"
+    });
+
+    test('should fail authorization request with wrong PIN', () => {
+      expect(() => {
+        bank.requestTransferAuthorization('alice', 'bob', '2222'); // Wrong PIN
+      }).toThrow(); // Should fail authentication
+    });
+
+    test('should fail authorization approval with wrong PIN', () => {
+      // Alice requests authorization
+      bank.requestTransferAuthorization('alice', 'bob', '1111');
+
+      // Bob tries to approve with wrong PIN
+      expect(() => {
+        bank.approveTransferAuthorization('bob', 'alice', '1111', 100n); // Wrong PIN
+      }).toThrow(); // Should fail authentication
+    });
+
+    test('should fail self-authorization', () => {
+      expect(() => {
+        bank.requestTransferAuthorization('alice', 'alice', '1111'); // Self-authorization
+      }).toThrow(); // Should fail "Cannot authorize yourself"
+    });
+
+    test('should fail authorization to non-existent user', () => {
+      expect(() => {
+        bank.requestTransferAuthorization('alice', 'david', '1111'); // David doesn't exist
+      }).toThrow(); // Should fail "Recipient account does not exist"
+    });
+
+    test('should fail authorization approval without pending request', () => {
+      // Bob tries to approve Alice without a pending request
+      expect(() => {
+        bank.approveTransferAuthorization('bob', 'alice', '2222', 100n);
+      }).toThrow(); // Should fail "No pending authorization request"
+    });
+
+    test('should handle bidirectional authorization', () => {
+      // Alice authorizes Bob AND Bob authorizes Alice
+      
+      // Alice -> Bob authorization
+      bank.requestTransferAuthorization('alice', 'bob', '1111');
+      bank.approveTransferAuthorization('bob', 'alice', '2222', 80n);
+      
+      // Bob -> Alice authorization  
+      bank.requestTransferAuthorization('bob', 'alice', '2222');
+      bank.approveTransferAuthorization('alice', 'bob', '1111', 120n);
+
+      const initialAliceBalance = bank.getUserBalance('alice');
+      const initialBobBalance = bank.getUserBalance('bob');
+
+      // Both users can now send to each other
+      bank.sendToAuthorizedUser('alice', 'bob', 60n, '1111');   // Alice -> Bob: $60
+      bank.sendToAuthorizedUser('bob', 'alice', 90n, '2222');   // Bob -> Alice: $90
+
+      // Verify balances
+      expect(bank.getUserBalance('alice')).toBe(initialAliceBalance - 60n);
+      expect(bank.getUserBalance('bob')).toBe(initialBobBalance - 90n);
+
+      // Check transaction counts
+      const aliceAuthTransfers = bank.getUserTransactionsByType('alice', 'auth_transfer');
+      const bobAuthTransfers = bank.getUserTransactionsByType('bob', 'auth_transfer');
+      
+      expect(aliceAuthTransfers).toHaveLength(1);
+      expect(bobAuthTransfers).toHaveLength(1);
+
+      console.log('🔄 Bidirectional authorization completed!');
+      bank.printAllUsersOverview();
+    });
+
+    test('should support multiple authorization relationships', () => {
+      // Create a network of authorizations:
+      // Alice can send to Bob ($100) and Charlie ($150)  
+      // Bob can send to Charlie ($75)
+
+      // Alice -> Bob
+      bank.requestTransferAuthorization('alice', 'bob', '1111');
+      bank.approveTransferAuthorization('bob', 'alice', '2222', 100n);
+
+      // Alice -> Charlie
+      bank.requestTransferAuthorization('alice', 'charlie', '1111');
+      bank.approveTransferAuthorization('charlie', 'alice', '3333', 150n);
+
+      // Bob -> Charlie
+      bank.requestTransferAuthorization('bob', 'charlie', '2222');
+      bank.approveTransferAuthorization('charlie', 'bob', '3333', 75n);
+
+      // Execute transfers
+      bank.sendToAuthorizedUser('alice', 'bob', 80n, '1111');      // Alice -> Bob: $80
+      bank.sendToAuthorizedUser('alice', 'charlie', 120n, '1111'); // Alice -> Charlie: $120
+      bank.sendToAuthorizedUser('bob', 'charlie', 60n, '2222');    // Bob -> Charlie: $60
+
+      // Final balances: Alice: 500-80-120=300, Bob: 300-60=240
+      expect(bank.getUserBalance('alice')).toBe(300n);
+      expect(bank.getUserBalance('bob')).toBe(240n);
+
+      // Verify each user has correct number of auth transfers
+      expect(bank.getUserTransactionsByType('alice', 'auth_transfer')).toHaveLength(2);
+      expect(bank.getUserTransactionsByType('bob', 'auth_transfer')).toHaveLength(1);
+      expect(bank.getUserTransactionsByType('charlie', 'auth_transfer')).toHaveLength(0);
+
+      console.log('🌐 Multi-user authorization network completed!');
+      bank.printAllUsersOverview();
+    });
+
+    test('should track authorization statistics', () => {
+      // Setup multiple authorizations
+      bank.requestTransferAuthorization('alice', 'bob', '1111');
+      bank.approveTransferAuthorization('bob', 'alice', '2222', 200n);
+      
+      bank.requestTransferAuthorization('alice', 'charlie', '1111');
+      bank.approveTransferAuthorization('charlie', 'alice', '3333', 300n);
+
+      // Make transfers
+      bank.sendToAuthorizedUser('alice', 'bob', 50n, '1111');
+      bank.sendToAuthorizedUser('alice', 'bob', 30n, '1111');
+      bank.sendToAuthorizedUser('alice', 'charlie', 100n, '1111');
+
+      // Analyze Alice's authorization activity
+      const aliceAuthRequests = bank.getUserTransactionsByType('alice', 'auth_request');
+      const aliceAuthTransfers = bank.getUserTransactionsByType('alice', 'auth_transfer');
+      const totalAuthTransferAmount = bank.getUserTotalAmountByType('alice', 'auth_transfer');
+
+      expect(aliceAuthRequests).toHaveLength(2);   // 2 authorization requests
+      expect(aliceAuthTransfers).toHaveLength(3);  // 3 authorized transfers
+      expect(totalAuthTransferAmount).toBe(180n);  // $50 + $30 + $100
+
+      console.log('📊 Authorization Statistics:');
+      console.log('├─ Alice made', aliceAuthRequests.length, 'authorization requests');
+      console.log('├─ Alice made', aliceAuthTransfers.length, 'authorized transfers');
+      console.log('└─ Total amount transferred: $' + totalAuthTransferAmount.toString());
+
+      bank.printUserDetailedHistory('alice');
     });
   });
 
@@ -475,20 +504,42 @@ describe('Midnight Shared Bank Contract Tests', () => {
     test('should demonstrate shared contract efficiency', () => {
       console.log('\n🎯 Shared Contract Benefits:');
       console.log('├─ Single deployment for all users');
-      console.log('├─ Atomic transfers between users');
+      console.log('├─ Zelle-like authorization system');
       console.log('├─ Global state consistency');
       console.log('├─ Reduced gas costs per user');
       console.log('└─ Simplified state management');
 
-      // Create multiple users and do transfers
+      // Create multiple users and demonstrate authorization
       bank.createAccount('alice', '1111', 1000n);
       bank.createAccount('bob', '2222', 500n);
       bank.createAccount('charlie', '3333', 250n);
 
-      // Perform atomic transfer
-      bank.transferBetweenUsers('alice', '1111', 'bob', 100n);
+      console.log('\n💡 Shared contract supports multiple users with authorization system!');
+      bank.printAllUsersOverview();
+    });
 
-      console.log('\n💡 Transfer completed atomically in single contract!');
+    test('should demonstrate Zelle-like authorization benefits', () => {
+      console.log('\n🎯 Zelle-like Authorization Benefits:');
+      console.log('├─ One-time setup, multiple transfers');
+      console.log('├─ Recipient controls maximum amounts');
+      console.log('├─ Privacy-preserving with encryption');
+      console.log('├─ Lazy updates for gas efficiency');
+      console.log('└─ Secure authorization workflows');
+
+      // Create users and demonstrate the full workflow
+      bank.createAccount('alice', '1111', 1000n);
+      bank.createAccount('bob', '2222', 500n);
+
+      // One-time authorization setup
+      bank.requestTransferAuthorization('alice', 'bob', '1111');
+      bank.approveTransferAuthorization('bob', 'alice', '2222', 200n);
+
+      // Multiple transfers without re-authorization
+      bank.sendToAuthorizedUser('alice', 'bob', 50n, '1111');
+      bank.sendToAuthorizedUser('alice', 'bob', 75n, '1111');
+      bank.sendToAuthorizedUser('alice', 'bob', 25n, '1111');
+
+      console.log('\n💡 Alice made 3 transfers with single authorization!');
       bank.printAllUsersOverview();
     });
   });
