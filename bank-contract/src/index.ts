@@ -62,10 +62,7 @@ export const bankWitnesses = {
   ): [BankPrivateState, bigint] => {
     const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
     const balance = privateState.userBalances.get(userIdStr);
-    if (balance === undefined) {
-      throw new Error(`User ${userIdStr} balance not found in private state`);
-    }
-    return [privateState, balance];
+    return [privateState, balance ?? 0n];
   },
 
   // Witness 3: Provides user's transaction history (user-specific, private) - exactly 10 entries

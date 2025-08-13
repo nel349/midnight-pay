@@ -32,7 +32,7 @@ export const AccountDetails: React.FC = () => {
     touchAccount(bankAddress, userId);
     
     // Subscribe to the bank contract
-    const accountItem = addAccount(providers, bankAddress);
+    const accountItem = addAccount(providers, bankAddress, userId);
     
     const subscription = accountItem.observable.subscribe({
       next: (deployment) => {

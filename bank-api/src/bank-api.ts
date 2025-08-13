@@ -166,8 +166,8 @@ export class BankAPI implements DeployedBankAPI {
 
   // Helper to update user-specific private state in shared contract
   private async updateUserPrivateState(pin: string, newBalance: bigint): Promise<void> {
-    const sharedStateKey = 'shared-bank-contract' as AccountId;
-    const currentState = await this.providers.privateStateProvider.get(sharedStateKey) ?? createBankPrivateState();
+    const stateKey = this.accountId;
+    const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createBankPrivateState();
     
     // Update this user's data in the shared private state
     const normalizedUserId = this.normalizeUserId(this.userId);
@@ -191,14 +191,14 @@ export class BankAPI implements DeployedBankAPI {
     };
     
     // Persist and notify observers
-    await this.providers.privateStateProvider.set(sharedStateKey, updatedState);
+    await this.providers.privateStateProvider.set(stateKey, updatedState);
     this.privateStates$.next(updatedState);
   }
 
   // Helper to ensure user exists in shared private state (for transfers)
   private async ensureUserInPrivateState(userId: string, pin: string, balance: bigint): Promise<void> {
-    const sharedStateKey = 'shared-bank-contract' as AccountId;
-    const currentState = await this.providers.privateStateProvider.get(sharedStateKey) ?? createBankPrivateState();
+    const stateKey = this.accountId;
+    const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createBankPrivateState();
     
     const normalizedUserId = this.normalizeUserId(userId);
     console.log(`DEBUG: ensureUserInPrivateState called for ${userId} (normalized: ${normalizedUserId}) with balance ${balance}`);
@@ -227,14 +227,14 @@ export class BankAPI implements DeployedBankAPI {
     };
     
     // Persist and notify observers
-    await this.providers.privateStateProvider.set(sharedStateKey, updatedState);
+    await this.providers.privateStateProvider.set(stateKey, updatedState);
     this.privateStates$.next(updatedState);
   }
 
   // Helper to get current user balance from shared private state
   private async getCurrentUserBalance(): Promise<bigint> {
-    const sharedStateKey = 'shared-bank-contract' as AccountId;
-    const currentState = await this.providers.privateStateProvider.get(sharedStateKey) ?? createBankPrivateState();
+    const stateKey = this.accountId;
+    const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createBankPrivateState();
     const normalizedUserId = this.normalizeUserId(this.userId);
     return currentState.userBalances.get(normalizedUserId) ?? 0n;
   }
@@ -280,8 +280,8 @@ export class BankAPI implements DeployedBankAPI {
 
   // Force refresh of shared private state for all observers
   private async refreshSharedPrivateState(): Promise<void> {
-    const sharedStateKey = 'shared-bank-contract' as AccountId;
-    const currentState = await this.providers.privateStateProvider.get(sharedStateKey) ?? createBankPrivateState();
+    const stateKey = this.accountId;
+    const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createBankPrivateState();
     this.privateStates$.next(currentState);
   }
 
@@ -343,6 +343,9 @@ export class BankAPI implements DeployedBankAPI {
       const normalizedUserId = this.normalizeUserId(this.userId);
       const userIdBytes = this.stringToBytes32(normalizedUserId);
       const pinBytes = this.stringToBytes32(pin);
+      // Ensure the user exists in shared private state before invoking witness-dependent circuit
+      const startingBalance = await this.getCurrentUserBalance();
+      await this.ensureUserInPrivateState(this.userId, pin, startingBalance);
       
       const txData = await this.deployedContract.callTx.deposit(
         userIdBytes,
@@ -402,6 +405,9 @@ export class BankAPI implements DeployedBankAPI {
       const normalizedUserId = this.normalizeUserId(this.userId);
       const userIdBytes = this.stringToBytes32(normalizedUserId);
       const pinBytes = this.stringToBytes32(pin);
+      // Ensure the user exists in shared private state before invoking witness-dependent circuit
+      const startingBalance = await this.getCurrentUserBalance();
+      await this.ensureUserInPrivateState(this.userId, pin, startingBalance);
       
       const txData = await this.deployedContract.callTx.withdraw(
         userIdBytes,
@@ -488,12 +494,18 @@ export class BankAPI implements DeployedBankAPI {
 
     const balance = await this.getCurrentUserBalance();
     this.logger?.info(`balanceAccessAuthenticated for ${this.userId}: ${balance}`);
-    
+
+    // Ensure user's private entry exists and reflects current balance
+    await this.updateUserPrivateState(pin, balance);
+
     await this.appendDetailedLog({
       type: 'auth',
       balanceAfter: balance,
       timestamp: new Date(),
     });
+
+    // Ensure subscribers get the latest shared private state snapshot
+    await this.refreshSharedPrivateState();
   }
 
   async verifyAccountStatus(pin: string): Promise<void> {
@@ -597,6 +609,9 @@ export class BankAPI implements DeployedBankAPI {
     const normalizedRecipientId = this.normalizeUserId(recipientUserId);
     const recipientIdBytes = this.stringToBytes32(normalizedRecipientId);
     const pinBytes = this.stringToBytes32(pin);
+    // Ensure the sender exists in shared private state before invoking witness-dependent circuit
+    const startingBalance = await this.getCurrentUserBalance();
+    await this.ensureUserInPrivateState(this.userId, pin, startingBalance);
     
     const txData = await this.deployedContract.callTx.send_to_authorized_user(
       userIdBytes,
