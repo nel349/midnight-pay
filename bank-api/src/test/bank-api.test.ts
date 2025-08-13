@@ -100,12 +100,20 @@ describe('BankAPI', () => {
       const authenticateBalanceAccessMethod = BankAPI.prototype.authenticateBalanceAccess;
       const verifyAccountStatusMethod = BankAPI.prototype.verifyAccountStatus;
       
+      // Authorization system methods
+      const requestTransferAuthorizationMethod = BankAPI.prototype.requestTransferAuthorization;
+      const approveTransferAuthorizationMethod = BankAPI.prototype.approveTransferAuthorization;
+      const sendToAuthorizedUserMethod = BankAPI.prototype.sendToAuthorizedUser;
+      
       expect(typeof createAccountMethod).toBe('function');
       expect(typeof depositMethod).toBe('function');
       expect(typeof withdrawMethod).toBe('function');
       expect(typeof transferToUserMethod).toBe('function');
       expect(typeof authenticateBalanceAccessMethod).toBe('function');
       expect(typeof verifyAccountStatusMethod).toBe('function');
+      expect(typeof requestTransferAuthorizationMethod).toBe('function');
+      expect(typeof approveTransferAuthorizationMethod).toBe('function');
+      expect(typeof sendToAuthorizedUserMethod).toBe('function');
       
       // All methods should be async (return Promise<void>)
       expect(createAccountMethod.constructor.name).toBe('AsyncFunction');
@@ -114,6 +122,9 @@ describe('BankAPI', () => {
       expect(transferToUserMethod.constructor.name).toBe('AsyncFunction');
       expect(authenticateBalanceAccessMethod.constructor.name).toBe('AsyncFunction');
       expect(verifyAccountStatusMethod.constructor.name).toBe('AsyncFunction');
+      expect(requestTransferAuthorizationMethod.constructor.name).toBe('AsyncFunction');
+      expect(approveTransferAuthorizationMethod.constructor.name).toBe('AsyncFunction');
+      expect(sendToAuthorizedUserMethod.constructor.name).toBe('AsyncFunction');
     });
   });
 
@@ -263,73 +274,6 @@ describe('BankAPI', () => {
       sub.unsubscribe();
     }, 10 * 60_000);
 
-    test('should transfer money between users successfully', async () => {
-      const aliceUserId = `alice-${Date.now()}`;
-      const bobUserId = `bob-${Date.now()}`;
-
-      logger.info('Deploying shared Bank contract for transfer test…');
-      const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
-      const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
-
-      let aliceState = emptyBankState;
-      let bobState = emptyBankState;
-      
-      const aliceSub = aliceBankAPI.state$.subscribe((s) => {
-        aliceState = s;
-        logger.info({ event: 'alice-state', balance: s.balance.toString(), exists: s.accountExists });
-      });
-      
-      const bobSub = bobBankAPI.state$.subscribe((s) => {
-        bobState = s;
-        logger.info({ event: 'bob-state', balance: s.balance.toString(), exists: s.accountExists });
-      });
-
-      // Alice creates account with $100.00
-      await aliceBankAPI.createAccount('1111', '100.00');
-      const aliceAfterCreate = await firstValueFrom(
-        aliceBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 10000n)),
-      );
-      expect(aliceAfterCreate.balance).toBe(10000n);
-
-      // Bob creates account with $50.00
-      await bobBankAPI.createAccount('2222', '50.00');
-      const bobAfterCreate = await firstValueFrom(
-        bobBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 5000n)),
-      );
-      expect(bobAfterCreate.balance).toBe(5000n);
-
-      // Alice transfers $30.00 to Bob
-      await aliceBankAPI.transferToUser('1111', bobUserId, '30.00');
-      
-      // Wait for Alice's balance to update (100 - 30 = 70)
-      const aliceAfterTransfer = await firstValueFrom(
-        aliceBankAPI.state$.pipe(filter((s) => s.balance === 7000n)),
-      );
-      expect(aliceAfterTransfer.balance).toBe(7000n);
-      
-      // Wait for Bob's balance to update (50 + 30 = 80)
-      const bobAfterTransfer = await firstValueFrom(
-        bobBankAPI.state$.pipe(filter((s) => s.balance === 8000n)),
-      );
-      expect(bobAfterTransfer.balance).toBe(8000n);
-
-      // Verify transaction histories
-      const aliceHistory = await aliceBankAPI.getDetailedTransactionHistory();
-      const bobHistory = await bobBankAPI.getDetailedTransactionHistory();
-      
-      // Alice should have transfer_out record
-      const aliceTransfer = aliceHistory.find(tx => tx.type === 'transfer_out');
-      expect(aliceTransfer).toBeDefined();
-      expect(aliceTransfer?.amount).toBe(3000n); // $30.00 in cents
-      expect(aliceTransfer?.counterparty).toBe(bobUserId);
-      
-      // Bob doesn't track incoming transfers in this implementation
-      // (only the sender tracks the transfer in their detailed log)
-      
-      logger.info('Transfer test completed successfully');
-      aliceSub.unsubscribe();
-      bobSub.unsubscribe();
-    }, 10 * 60_000);
 
     test('should fail transfer with insufficient funds', async () => {
       const aliceUserId = `alice-insufficient-${Date.now()}`;
@@ -381,54 +325,250 @@ describe('BankAPI', () => {
       logger.info('Wrong PIN test completed');
     }, 10 * 60_000);
 
-    test('should handle multiple transfers correctly', async () => {
-      const aliceUserId = `alice-multi-${Date.now()}`;
-      const bobUserId = `bob-multi-${Date.now()}`;
-      const charlieUserId = `charlie-multi-${Date.now()}`;
 
-      logger.info('Testing multiple transfers…');
-      const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
-      const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
-      const charlieBankAPI = await BankAPI.subscribe(charlieUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+    // Zelle-like Authorization System Tests
+    describe('Authorization System', () => {
+      test('should complete full authorization workflow successfully', async () => {
+        const aliceUserId = `alice-auth-${Date.now()}`;
+        const bobUserId = `bob-auth-${Date.now()}`;
 
-      // Setup accounts: Alice($200), Bob($100), Charlie($150)
-      await aliceBankAPI.createAccount('1111', '200.00');
-      await bobBankAPI.createAccount('2222', '100.00');
-      await charlieBankAPI.createAccount('3333', '150.00');
-      
-      await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 20000n)));
-      await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
-      await firstValueFrom(charlieBankAPI.state$.pipe(filter((s) => s.balance === 15000n)));
+        logger.info('Testing full authorization workflow…');
+        const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
 
-      // Alice -> Bob: $50.00
-      await aliceBankAPI.transferToUser('1111', bobUserId, '50.00');
-      await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 15000n))); // 200-50=150
-      await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 15000n)));   // 100+50=150
+        // Setup accounts: Alice($200), Bob($100)
+        await aliceBankAPI.createAccount('1111', '200.00');
+        await bobBankAPI.createAccount('2222', '100.00');
+        
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 20000n)));
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
 
-      // Bob -> Charlie: $25.00
-      await bobBankAPI.transferToUser('2222', charlieUserId, '25.00');
-      await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 12500n)));      // 150-25=125
-      await firstValueFrom(charlieBankAPI.state$.pipe(filter((s) => s.balance === 17500n))); // 150+25=175
+        // Step 1: Alice requests authorization to send to Bob
+        await aliceBankAPI.requestTransferAuthorization('1111', bobUserId);
+        logger.info('Authorization requested by Alice');
 
-      // Charlie -> Alice: $75.00 (completing the circle)
-      await charlieBankAPI.transferToUser('3333', aliceUserId, '75.00');
-      await firstValueFrom(charlieBankAPI.state$.pipe(filter((s) => s.balance === 10000n))); // 175-75=100
-      await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 22500n)));    // 150+75=225
+        // Step 2: Bob approves Alice's request with $50 limit
+        await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '50.00');
+        logger.info('Authorization approved by Bob with $50 limit');
 
-      // Final balances: Alice($225), Bob($125), Charlie($100) = $450 total (matches initial $450)
-      const finalAlice = await firstValueFrom(aliceBankAPI.state$);
-      const finalBob = await firstValueFrom(bobBankAPI.state$);
-      const finalCharlie = await firstValueFrom(charlieBankAPI.state$);
-      
-      expect(finalAlice.balance).toBe(22500n);  // $225.00
-      expect(finalBob.balance).toBe(12500n);    // $125.00
-      expect(finalCharlie.balance).toBe(10000n); // $100.00
-      
-      // Total should be conserved: $225 + $125 + $100 = $450 (same as initial $200+$100+$150)
-      const totalBalance = finalAlice.balance + finalBob.balance + finalCharlie.balance;
-      expect(totalBalance).toBe(45000n); // $450.00 in cents
-      
-      logger.info('Multiple transfers test completed successfully');
-    }, 15 * 60_000);
+        // Step 3: Alice can now send to Bob within the limit
+        await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '30.00');
+        
+        // Wait for Alice's balance to update (200 - 30 = 170)
+        const aliceAfterTransfer = await firstValueFrom(
+          aliceBankAPI.state$.pipe(filter((s) => s.balance === 17000n)),
+        );
+        expect(aliceAfterTransfer.balance).toBe(17000n);
+
+        // Verify detailed transaction histories
+        const aliceHistory = await aliceBankAPI.getDetailedTransactionHistory();
+        const bobHistory = await bobBankAPI.getDetailedTransactionHistory();
+        
+        // Alice should have auth_request and auth_transfer records
+        const aliceAuthRequest = aliceHistory.find(tx => tx.type === 'auth_request');
+        const aliceAuthTransfer = aliceHistory.find(tx => tx.type === 'auth_transfer');
+        
+        expect(aliceAuthRequest).toBeDefined();
+        expect(aliceAuthRequest?.counterparty).toBe(bobUserId);
+        expect(aliceAuthTransfer).toBeDefined();
+        expect(aliceAuthTransfer?.amount).toBe(3000n); // $30.00 in cents
+        expect(aliceAuthTransfer?.counterparty).toBe(bobUserId);
+
+        // Bob should have auth_approve record
+        const bobAuthApproval = bobHistory.find(tx => tx.type === 'auth_approve');
+        expect(bobAuthApproval).toBeDefined();
+        expect(bobAuthApproval?.counterparty).toBe(aliceUserId);
+        expect(bobAuthApproval?.maxAmount).toBe(5000n); // $50.00 in cents
+
+        logger.info('Full authorization workflow test completed successfully');
+      }, 15 * 60_000);
+
+      test('should allow multiple transfers within authorization limit', async () => {
+        const aliceUserId = `alice-multi-auth-${Date.now()}`;
+        const bobUserId = `bob-multi-auth-${Date.now()}`;
+
+        const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+        // Setup accounts
+        await aliceBankAPI.createAccount('1111', '150.00');
+        await bobBankAPI.createAccount('2222', '50.00');
+        
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 15000n)));
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
+
+        // Setup authorization: Bob allows Alice to send up to $80
+        await aliceBankAPI.requestTransferAuthorization('1111', bobUserId);
+        await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '80.00');
+
+        // Alice makes multiple transfers within limit
+        await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '20.00');  // Total: $20
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 13000n))); // 150-20=130
+
+        await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '25.00');  // Total: $45
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10500n))); // 130-25=105
+
+        await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '15.00');  // Total: $60
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 9000n))); // 105-15=90
+
+        // Verify Alice has 3 auth_transfer transactions
+        const aliceHistory = await aliceBankAPI.getDetailedTransactionHistory();
+        const aliceAuthTransfers = aliceHistory.filter(tx => tx.type === 'auth_transfer');
+        expect(aliceAuthTransfers).toHaveLength(3);
+        
+        const totalTransferred = aliceAuthTransfers.reduce((sum, tx) => sum + (tx.amount || 0n), 0n);
+        expect(totalTransferred).toBe(6000n); // $20 + $25 + $15 = $60 in cents
+
+        logger.info('Multiple transfers within limit test completed');
+      }, 15 * 60_000);
+
+      test('should fail transfer exceeding authorization limit', async () => {
+        const aliceUserId = `alice-exceed-${Date.now()}`;
+        const bobUserId = `bob-exceed-${Date.now()}`;
+
+        const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+        // Setup accounts
+        await aliceBankAPI.createAccount('1111', '200.00');
+        await bobBankAPI.createAccount('2222', '100.00');
+        
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 20000n)));
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+
+        // Setup authorization: Bob allows Alice to send up to $30
+        await aliceBankAPI.requestTransferAuthorization('1111', bobUserId);
+        await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '30.00');
+
+        // Alice tries to send more than authorized limit
+        await expect(async () => {
+          await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '50.00'); // Exceeds $30 limit
+        }).rejects.toThrow(); // Should fail "Amount exceeds authorized limit"
+        
+        logger.info('Authorization limit exceeded test completed');
+      }, 10 * 60_000);
+
+      test('should fail transfer without authorization', async () => {
+        const aliceUserId = `alice-no-auth-${Date.now()}`;
+        const bobUserId = `bob-no-auth-${Date.now()}`;
+
+        const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+        // Setup accounts
+        await aliceBankAPI.createAccount('1111', '100.00');
+        await bobBankAPI.createAccount('2222', '50.00');
+        
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
+
+        // Alice tries to send to Bob without authorization
+        await expect(async () => {
+          await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '25.00');
+        }).rejects.toThrow(); // Should fail "No authorization - recipient must approve first"
+        
+        logger.info('No authorization test completed');
+      }, 10 * 60_000);
+
+      test('should fail authorization approval without pending request', async () => {
+        const aliceUserId = `alice-no-request-${Date.now()}`;
+        const bobUserId = `bob-no-request-${Date.now()}`;
+
+        const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+        // Setup accounts
+        await aliceBankAPI.createAccount('1111', '100.00');
+        await bobBankAPI.createAccount('2222', '50.00');
+        
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
+
+        // Bob tries to approve Alice without a pending request
+        await expect(async () => {
+          await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '50.00');
+        }).rejects.toThrow(); // Should fail "No pending authorization request"
+        
+        logger.info('No pending request test completed');
+      }, 10 * 60_000);
+
+      test('should handle bidirectional authorization', async () => {
+        const aliceUserId = `alice-bidirectional-${Date.now()}`;
+        const bobUserId = `bob-bidirectional-${Date.now()}`;
+
+        const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+        // Add small delay to ensure contract is fully ready
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+        // Setup accounts
+        logger.info('Creating Alice account for bidirectional test...');
+        await aliceBankAPI.createAccount('1111', '150.00');
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => {
+          logger.info(`Alice bidirectional state: exists=${s.accountExists}, balance=${s.balance}`);
+          return s.accountExists === true && s.balance === 15000n;
+        })));
+        
+        logger.info('Creating Bob account for bidirectional test...');
+        await bobBankAPI.createAccount('2222', '100.00');
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => {
+          logger.info(`Bob bidirectional state: exists=${s.accountExists}, balance=${s.balance}`);
+          return s.accountExists === true && s.balance === 10000n;
+        })));
+
+        // Alice -> Bob authorization
+        await aliceBankAPI.requestTransferAuthorization('1111', bobUserId);
+        await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '40.00');
+        
+        logger.info('Bob -> Alice authorization');
+        // Bob -> Alice authorization  
+        await bobBankAPI.requestTransferAuthorization('2222', aliceUserId);
+        await aliceBankAPI.approveTransferAuthorization('1111', bobUserId, '60.00');
+        logger.info('Alice -> Bob authorization');
+
+        // Both users can now send to each other
+        await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '30.00');   // Alice -> Bob: $30
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 12000n))); // 150-30=120
+        logger.info('Alice -> Bob transfer');
+
+        await bobBankAPI.sendToAuthorizedUser('2222', aliceUserId, '25.00');   // Bob -> Alice: $25
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 7500n))); // 100-25=75
+        logger.info('Bob -> Alice transfer');
+
+        // Verify both have auth_transfer transactions
+        const aliceHistory = await aliceBankAPI.getDetailedTransactionHistory();
+        const bobHistory = await bobBankAPI.getDetailedTransactionHistory();
+        
+        const aliceAuthTransfers = aliceHistory.filter(tx => tx.type === 'auth_transfer');
+        const bobAuthTransfers = bobHistory.filter(tx => tx.type === 'auth_transfer');
+        
+        expect(aliceAuthTransfers).toHaveLength(1);
+        expect(bobAuthTransfers).toHaveLength(1);
+
+        logger.info('Bidirectional authorization test completed');
+      }, 15 * 60_000);
+
+      test('should provide helpful error message for legacy transferToUser without authorization', async () => {
+        const aliceUserId = `alice-legacy-${Date.now()}`;
+        const bobUserId = `bob-legacy-${Date.now()}`;
+
+        const aliceBankAPI = await BankAPI.deploy(aliceUserId, providers, logger);
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
+
+        // Setup accounts
+        await aliceBankAPI.createAccount('1111', '100.00');
+        await bobBankAPI.createAccount('2222', '50.00');
+        
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
+
+        // Alice tries to use legacy transferToUser without authorization
+        await expect(async () => {
+          await aliceBankAPI.transferToUser('1111', bobUserId, '25.00');
+        }).rejects.toThrow(/Transfer failed: No authorization exists.*authorization system/);
+        
+        logger.info('Legacy transfer helpful error test completed');
+      }, 10 * 60_000);
+    });
   });
 });

@@ -25,11 +25,12 @@ export type BankTransaction = {
 };
 
 export type DetailedTransaction = {
-  readonly type: 'create' | 'deposit' | 'withdraw' | 'auth' | 'verify' | 'transfer_out' | 'transfer_in';
+  readonly type: 'create' | 'deposit' | 'withdraw' | 'auth' | 'verify' | 'transfer_out' | 'transfer_in' | 'auth_request' | 'auth_approve' | 'auth_transfer';
   readonly amount?: bigint;
   readonly balanceAfter: bigint;
   readonly timestamp: Date;
   readonly counterparty?: string; // For transfers, the other user_id
+  readonly maxAmount?: bigint; // For authorization approval
 };
 
 export type UserAction = {
