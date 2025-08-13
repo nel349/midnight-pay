@@ -55,7 +55,7 @@ export const BankDetails: React.FC = () => {
       setError(null);
       
       // Create account in the bank
-      await bankAPI.createAccount(pinInput, initialDeposit);
+      await bankAPI.createAccount(userIdInput.trim(), pinInput, initialDeposit);
       
       // Save account to local storage
       saveAccount({

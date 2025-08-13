@@ -175,7 +175,7 @@ describe('BankAPI', () => {
       });
 
       logger.info('Creating account…');
-      await bankAPI.createAccount('1234', '100.00');
+      await bankAPI.createAccount('test-user', '1234', '100.00');
       logger.info('Account created');
 
       logger.info('Waiting for account to be ready…');
@@ -211,7 +211,7 @@ describe('BankAPI', () => {
       });
 
       // Create account with $50.00
-      await bankAPI.createAccount('1234', '50.00');
+      await bankAPI.createAccount('test-user', '1234', '50.00');
       const afterCreate = await firstValueFrom(
         bankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 5000n)),
       );
@@ -284,13 +284,13 @@ describe('BankAPI', () => {
       const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
 
       // Alice creates account with only $20.00
-      await aliceBankAPI.createAccount('1111', '20.00');
+      await aliceBankAPI.createAccount('test-user', '1111', '20.00');
       await firstValueFrom(
         aliceBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 2000n)),
       );
 
       // Bob creates account
-      await bobBankAPI.createAccount('2222', '10.00');
+      await bobBankAPI.createAccount('test-user', '2222', '10.00');
       await firstValueFrom(
         bobBankAPI.state$.pipe(filter((s) => s.accountExists === true)),
       );
@@ -311,8 +311,8 @@ describe('BankAPI', () => {
       const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
 
       // Setup accounts
-      await aliceBankAPI.createAccount('1111', '100.00');
-      await bobBankAPI.createAccount('2222', '50.00');
+      await aliceBankAPI.createAccount('test-user', '1111', '100.00');
+      await bobBankAPI.createAccount('test-user', '2222', '50.00');
       
       await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.accountExists === true)));
       await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.accountExists === true)));
@@ -337,8 +337,8 @@ describe('BankAPI', () => {
         const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
 
         // Setup accounts: Alice($200), Bob($100)
-        await aliceBankAPI.createAccount('1111', '200.00');
-        await bobBankAPI.createAccount('2222', '100.00');
+        await aliceBankAPI.createAccount('test-user', '1111', '200.00');
+        await bobBankAPI.createAccount('test-user', '2222', '100.00');
         
         await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 20000n)));
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
@@ -391,8 +391,8 @@ describe('BankAPI', () => {
         const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
 
         // Setup accounts
-        await aliceBankAPI.createAccount('1111', '150.00');
-        await bobBankAPI.createAccount('2222', '50.00');
+        await aliceBankAPI.createAccount('test-user', '1111', '150.00');
+        await bobBankAPI.createAccount('test-user', '2222', '50.00');
         
         await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 15000n)));
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
@@ -430,8 +430,8 @@ describe('BankAPI', () => {
         const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
 
         // Setup accounts
-        await aliceBankAPI.createAccount('1111', '200.00');
-        await bobBankAPI.createAccount('2222', '100.00');
+        await aliceBankAPI.createAccount('test-user', '1111', '200.00');
+        await bobBankAPI.createAccount('test-user', '2222', '100.00');
         
         await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 20000n)));
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
@@ -456,8 +456,8 @@ describe('BankAPI', () => {
         const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
 
         // Setup accounts
-        await aliceBankAPI.createAccount('1111', '100.00');
-        await bobBankAPI.createAccount('2222', '50.00');
+        await aliceBankAPI.createAccount('test-user', '1111', '100.00');
+        await bobBankAPI.createAccount('test-user', '2222', '50.00');
         
         await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
@@ -478,8 +478,8 @@ describe('BankAPI', () => {
         const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
 
         // Setup accounts
-        await aliceBankAPI.createAccount('1111', '100.00');
-        await bobBankAPI.createAccount('2222', '50.00');
+        await aliceBankAPI.createAccount('test-user', '1111', '100.00');
+        await bobBankAPI.createAccount('test-user', '2222', '50.00');
         
         await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
@@ -503,14 +503,14 @@ describe('BankAPI', () => {
 
         // Setup accounts
         logger.info('Creating Alice account for bidirectional test...');
-        await aliceBankAPI.createAccount('1111', '150.00');
+        await aliceBankAPI.createAccount('test-user', '1111', '150.00');
         await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => {
           logger.info(`Alice bidirectional state: exists=${s.accountExists}, balance=${s.balance}`);
           return s.accountExists === true && s.balance === 15000n;
         })));
         
         logger.info('Creating Bob account for bidirectional test...');
-        await bobBankAPI.createAccount('2222', '100.00');
+        await bobBankAPI.createAccount('test-user', '2222', '100.00');
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => {
           logger.info(`Bob bidirectional state: exists=${s.accountExists}, balance=${s.balance}`);
           return s.accountExists === true && s.balance === 10000n;
@@ -556,8 +556,8 @@ describe('BankAPI', () => {
         const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, aliceBankAPI.deployedContractAddress, logger);
 
         // Setup accounts
-        await aliceBankAPI.createAccount('1111', '100.00');
-        await bobBankAPI.createAccount('2222', '50.00');
+        await aliceBankAPI.createAccount('test-user', '1111', '100.00');
+        await bobBankAPI.createAccount('test-user', '2222', '50.00');
         
         await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));

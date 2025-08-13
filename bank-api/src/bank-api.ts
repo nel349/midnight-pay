@@ -34,7 +34,7 @@ export interface DeployedBankAPI {
   readonly state$: Observable<BankDerivedState>;
   readonly userId: string;
 
-  createAccount(pin: string, initialDeposit: string): Promise<void>;
+  createAccount(userId: string, pin: string, initialDeposit: string): Promise<void>;
   deposit(pin: string, amount: string): Promise<void>;
   withdraw(pin: string, amount: string): Promise<void>;
   transferToUser(pin: string, recipientUserId: string, amount: string): Promise<void>;
@@ -285,8 +285,12 @@ export class BankAPI implements DeployedBankAPI {
     this.privateStates$.next(currentState);
   }
 
-  async createAccount(pin: string, initialDeposit: string): Promise<void> {
-    this.logger?.info({ createAccount: { userId: this.userId, initialDeposit } });
+  async createAccount(userId: string, pin: string, initialDeposit: string): Promise<void> {
+    this.logger?.info({
+      event: 'createAccount',
+      userId: userId,
+      initialDeposit: initialDeposit.toString(),
+    });
     this.transactions$.next({
       transaction: {
         type: TransactionType.ACCOUNT_CREATED,
@@ -298,49 +302,30 @@ export class BankAPI implements DeployedBankAPI {
     });
 
     try {
-      const normalizedUserId = this.normalizeUserId(this.userId);
+      const normalizedUserId = this.normalizeUserId(userId);
       const userIdBytes = this.stringToBytes32(normalizedUserId);
       const pinBytes = this.stringToBytes32(pin);
       
-      const txData = await this.deployedContract.callTx.create_account(
-        userIdBytes,
-        pinBytes,
-        utils.parseAmount(initialDeposit)
-      );
+      const txData = await this.deployedContract.callTx.create_account(userIdBytes, pinBytes, utils.parseAmount(initialDeposit));
       this.logger?.trace({
         accountCreated: {
-          userId: this.userId,
+          userId: userId,
           initialDeposit,
           txHash: txData.public.txHash,
           blockHeight: txData.public.blockHeight,
         },
       });
+
+      // Add user to shared private state
+      await this.ensureUserInPrivateState(userId, pin, utils.parseAmount(initialDeposit));
       
-      // Ensure this user is properly added to the shared private state
-      await this.ensureUserInPrivateState(this.userId, pin, utils.parseAmount(initialDeposit));
-      
-      // Force refresh of private state for all observers
       await this.refreshSharedPrivateState();
-      
-      await this.appendDetailedLog({
-        type: 'create',
-        amount: utils.parseAmount(initialDeposit),
-        balanceAfter: utils.parseAmount(initialDeposit),
-        timestamp: new Date(),
-      });
-    } catch (e) {
-      this.transactions$.next({
-        cancelledTransaction: {
-          type: TransactionType.ACCOUNT_CREATED,
-          amount: utils.parseAmount(initialDeposit),
-          timestamp: new Date(),
-          pin,
-        },
-        transaction: undefined,
-      });
-      throw e;
+    } catch (error) {
+      this.logger?.error(error, `createAccount failed for ${userId}`);
+      throw error;
     }
   }
+
 
   async deposit(pin: string, amount: string): Promise<void> {
     this.logger?.info({ deposit: { userId: this.userId, amount } });

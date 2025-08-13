@@ -11,7 +11,7 @@ import { NetworkId, setNetworkId } from '@midnight-ntwrk/midnight-js-network-id'
 
 export const App: React.FC = () => {
   const cfg = useRuntimeConfiguration();
-  const logger = pino({ level: cfg.LOGGING_LEVEL ?? 'info' });
+  const logger = pino({ level: cfg.LOGGING_LEVEL ?? 'info' , browser: { asObject: true } });
   setNetworkId((cfg.NETWORK_ID as NetworkId) ?? NetworkId.Undeployed);
   
   return (
