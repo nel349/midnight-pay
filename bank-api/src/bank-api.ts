@@ -46,7 +46,11 @@ export interface DeployedBankAPI {
   approveTransferAuthorization(pin: string, senderUserId: string, maxAmount: string): Promise<void>;
   sendToAuthorizedUser(pin: string, recipientUserId: string, amount: string): Promise<void>;
   claimAuthorizedTransfer(pin: string, senderUserId: string): Promise<void>;
-  getPendingClaims(pin: string): Promise<Array<{ senderUserId: string; amount: bigint }>>
+  getPendingClaims(pin: string): Promise<Array<{ senderUserId: string; amount: bigint }>>;
+  
+  // Real-time communication methods
+  getPendingAuthRequests(): Promise<Array<{ senderUserId: string; requestedAt: number }>>;
+  getOutgoingAuthRequests(): Promise<Array<{ recipientUserId: string; requestedAt: number; status: number }>>
 }
 
 export class BankAPI implements DeployedBankAPI {
@@ -658,41 +662,6 @@ export class BankAPI implements DeployedBankAPI {
     });
   }
 
-  async getPendingClaims(pin: string): Promise<Array<{ senderUserId: string; amount: bigint }>> {
-    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
-    if (!state) return [];
-    
-    const l = ledger(state.data);
-    const normalizedUserId = this.normalizeUserId(this.userId);
-    const userIdBytes = this.stringToBytes32(normalizedUserId);
-    
-    if (!l.user_as_recipient_auths.member(userIdBytes)) return [];
-    
-    const authVector = l.user_as_recipient_auths.lookup(userIdBytes) as Uint8Array[];
-    const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
-    const decoder = new TextDecoder();
-    const claims: Array<{ senderUserId: string; amount: bigint }> = [];
-    
-    for (const authId of authVector) {
-      if (!authId || isZeroBytes(authId)) continue;
-      if (!l.active_authorizations.member(authId)) continue;
-      if (!l.encrypted_balances.member(authId)) continue;
-      
-      const auth = l.active_authorizations.lookup(authId);
-      const encryptedAmount = l.encrypted_balances.lookup(authId);
-      const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
-
-      // Resolve exact amount using public mapping written by contract
-      if (l.encrypted_amount_mappings.member(encryptedAmount)) {
-        const amt = BigInt(l.encrypted_amount_mappings.lookup(encryptedAmount));
-        if (amt > 0n) {
-          claims.push({ senderUserId: senderId, amount: amt });
-        }
-      }
-    }
-    
-    return claims;
-  }
 
   async getTransactionHistoryHex(): Promise<string[]> {
     return await firstValueFrom(this.transactionHistoryHex$);
@@ -715,6 +684,93 @@ export class BankAPI implements DeployedBankAPI {
     } catch {}
   }
 
+  // Get pending authorization requests (Bob checks what Alice requested)
+  async getPendingAuthRequests(): Promise<Array<{ senderUserId: string; requestedAt: number }>> {
+    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (!state) return [];
+    
+    const l = ledger(state.data);
+    const normalizedUserId = this.normalizeUserId(this.userId);
+    
+    const requests: Array<{ senderUserId: string; requestedAt: number }> = [];
+    const decoder = new TextDecoder();
+    
+    // Scan all pending_auth_requests for requests TO this user
+    for (const [requestIdBytes, request] of l.pending_auth_requests) {
+      const recipientId = decoder.decode(request.recipient_id).replace(/\0/g, '');
+      
+      if (recipientId === normalizedUserId) {
+        const senderId = decoder.decode(request.sender_id).replace(/\0/g, '');
+        requests.push({
+          senderUserId: senderId,
+          requestedAt: Number(request.requested_at)
+        });
+      }
+    }
+    
+    return requests;
+  }
+
+  // Get outgoing authorization requests (Alice checks what she requested)
+  async getOutgoingAuthRequests(): Promise<Array<{ recipientUserId: string; requestedAt: number; status: number }>> {
+    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (!state) return [];
+    
+    const l = ledger(state.data);
+    const normalizedUserId = this.normalizeUserId(this.userId);
+    
+    const requests: Array<{ recipientUserId: string; requestedAt: number; status: number }> = [];
+    const decoder = new TextDecoder();
+    
+    // Scan all pending_auth_requests for requests FROM this user
+    for (const [requestIdBytes, request] of l.pending_auth_requests) {
+      const senderId = decoder.decode(request.sender_id).replace(/\0/g, '');
+      
+      if (senderId === normalizedUserId) {
+        const recipientId = decoder.decode(request.recipient_id).replace(/\0/g, '');
+        requests.push({
+          recipientUserId: recipientId,
+          requestedAt: Number(request.requested_at),
+          status: Number(request.status)
+        });
+      }
+    }
+    
+    return requests;
+  }
+
+  async getPendingClaims(pin: string): Promise<Array<{ senderUserId: string; amount: bigint }>> {
+    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (!state) return [];
+    
+    const l = ledger(state.data);
+    const normalizedUserId = this.normalizeUserId(this.userId);
+    const userIdBytes = this.stringToBytes32(normalizedUserId);
+    
+    if (!l.user_as_recipient_auths.member(userIdBytes)) return [];
+    
+    const authVector = l.user_as_recipient_auths.lookup(userIdBytes) as Uint8Array[];
+    const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+    const decoder = new TextDecoder();
+    const claims: Array<{ senderUserId: string; amount: bigint }> = [];
+    
+    for (const authId of authVector) {
+      if (!authId || isZeroBytes(authId)) continue;
+      if (!l.active_authorizations.member(authId)) continue;
+      if (!l.encrypted_balances.member(authId)) continue;
+      
+      const auth = l.active_authorizations.lookup(authId);
+      const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+      
+      // Amount is encrypted until claimed, return 0n for detection
+      claims.push({
+        senderUserId: senderId,
+        amount: 0n // Amount is encrypted until claimed
+      });
+    }
+    
+    return claims;
+  }
 
   static async deploy(
     providers: BankProviders,

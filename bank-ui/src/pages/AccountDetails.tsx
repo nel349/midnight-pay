@@ -6,6 +6,7 @@ import { useBankWallet } from '../components/BankWallet';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
 import { touchAccount } from '../utils/AccountsLocalState';
 import { AuthorizationPanel } from '../components/AuthorizationPanel';
+import { AuthorizationNotifications } from '../components/AuthorizationNotifications';
 import type { BankAPI, BankDerivedState } from '@midnight-bank/bank-api';
 import { utils } from '@midnight-bank/bank-api';
 
@@ -21,6 +22,7 @@ export const AccountDetails: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [accountState, setAccountState] = useState<BankDerivedState | null>(null);
   const [showBalance, setShowBalance] = useState(false);
+  const [userPin, setUserPin] = useState<string>('');
   const lastAuthRef = useRef<number | null>(null);
   
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -71,6 +73,7 @@ export const AccountDetails: React.FC = () => {
     const timeoutCheck = setInterval(() => {
       if (lastAuthRef.current && Date.now() - lastAuthRef.current > SESSION_TIMEOUT_MS) {
         setShowBalance(false);
+        setUserPin('');
         lastAuthRef.current = null;
       }
     }, 5000);
@@ -107,6 +110,7 @@ export const AccountDetails: React.FC = () => {
       await bankAPI.authenticateBalanceAccess(pinInput);
       
       lastAuthRef.current = Date.now();
+      setUserPin(pinInput);
       setShowBalance(true);
       setLoading(false);
       
@@ -197,6 +201,14 @@ export const AccountDetails: React.FC = () => {
             </Typography>
           </Box>
 
+          {bankAPI && (
+            <AuthorizationNotifications
+              bankAPI={bankAPI}
+              onError={setError}
+              onSuccess={setSuccess}
+            />
+          )}
+
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
               <Typography variant="h6">Balance</Typography>
@@ -235,6 +247,7 @@ export const AccountDetails: React.FC = () => {
                   startIcon={<VisibilityOff />}
                   onClick={() => {
                     setShowBalance(false);
+                    setUserPin('');
                     lastAuthRef.current = null;
                   }}
                   size="small"
