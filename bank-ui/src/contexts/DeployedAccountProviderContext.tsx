@@ -50,8 +50,9 @@ class Manager implements DeployedAccountAPIProvider {
   async #deploy(providers: BankProviders, deployment: BehaviorSubject<AccountDeployment>): Promise<void> {
     try {
       const uuid = crypto.randomUUID();
-      const api = await BankAPI.deploy(uuid, providers, this.logger);
-      deployment.next({ status: 'deployed', api, address: api.deployedContractAddress });
+      const address = await BankAPI.deploy(providers, this.logger);
+      const api = await BankAPI.subscribe(uuid, providers, address, this.logger);
+      deployment.next({ status: 'deployed', api, address });
     } catch (e) {
       this.logger.error(e);
       deployment.next({ status: 'failed', error: e instanceof Error ? e : new Error(String(e)) });
@@ -67,7 +68,7 @@ class Manager implements DeployedAccountAPIProvider {
     try {
       const privateStateId = userId ?? crypto.randomUUID();
       const api = await BankAPI.subscribe(privateStateId, providers, contractAddress, this.logger);
-      deployment.next({ status: 'deployed', api, address: api.deployedContractAddress });
+      deployment.next({ status: 'deployed', api, address: contractAddress });
     } catch (e) {
       this.logger.error(e);
       deployment.next({ status: 'failed', error: e instanceof Error ? e : new Error(String(e)), address: contractAddress });

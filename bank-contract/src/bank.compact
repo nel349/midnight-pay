@@ -54,14 +54,16 @@ export ledger pending_auth_requests: Map<Bytes<32>, AuthRequest>;           // r
 export ledger user_as_recipient_auths: Map<Bytes<32>, Vector<20, Bytes<32>>>; // user_id -> auth_ids
 export ledger user_as_sender_auths: Map<Bytes<32>, Vector<20, Bytes<32>>>;   // user_id -> auth_ids
 
+// Encrypted token amount mappings (contract-wide accessible)
+export ledger encrypted_amount_mappings: Map<Bytes<32>, Uint<64>>;          // encrypted_balance -> actual_amount
+
 // Private data (user-specific, stored per user)
 witness user_pin_hash(user_id: Bytes<32>): Bytes<32>;
 witness user_balance(user_id: Bytes<32>): Uint<64>;
 witness user_transaction_history(user_id: Bytes<32>): Vector<10, Bytes<32>>;
 witness set_user_balance(user_id: Bytes<32>, balance: Uint<64>): [];
 witness set_user_transaction_history(user_id: Bytes<32>, history: Vector<10, Bytes<32>>): [];
-witness store_pending_amount(encrypted_balance: Bytes<32>, amount: Uint<64>): [];
-witness decrypt_balance_witness(encrypted_balance: Bytes<32>, decryption_key: Bytes<32>): Uint<64>;
+// Note: store_pending_amount and decrypt_balance_witness removed - using public ledger instead
 
 // Constructor - Initialize empty shared bank
 constructor() {
@@ -300,17 +302,23 @@ export circuit send_to_authorized_user(user_id: Bytes<32>, recipient_id: Bytes<3
   assert (sender_balance >= amount, "Insufficient funds");
   set_user_balance(user_id, (sender_balance - amount) as Uint<64>);
   
-  // 4. Store pending transfer for recipient to claim later
-  const pending_amount = encrypted_balances.member(disclose(auth_id)) ? 
+  // 4. Store/accumulate pending transfer for recipient to claim later
+  const pending_amount = encrypted_balances.member(disclose(auth_id)) ?
     encrypted_balances.lookup(disclose(auth_id)) : encrypt_balance(0 as Uint<64>, auth.shared_encryption_key);
-  
-  // Encrypt the amount and store both the encryption and the original amount
-  const new_encrypted_amount = encrypt_balance(disclose(amount), disclose(auth.shared_encryption_key));
-  
-  // Store the actual amount keyed by the encrypted value for exact decryption
-  store_pending_amount(new_encrypted_amount, amount);
-  
-  // Store the encrypted amount in the public ledger
+
+  // Resolve current total (if any) from the public mapping
+  const has_mapping = encrypted_amount_mappings.member(pending_amount);
+  const current_total = has_mapping ? encrypted_amount_mappings.lookup(pending_amount) : 0 as Uint<64>;
+  const new_total = (current_total + amount) as Uint<64>;
+
+  // Encrypt the new total and update mapping and encrypted balance
+  const new_encrypted_amount = encrypt_balance(disclose(new_total), disclose(auth.shared_encryption_key));
+
+  // Clear old mapping entry to avoid leaking stale totals
+  if (has_mapping) {
+    encrypted_amount_mappings.insert(pending_amount, 0 as Uint<64>);
+  }
+  encrypted_amount_mappings.insert(new_encrypted_amount, disclose(new_total));
   encrypted_balances.insert(disclose(auth_id), new_encrypted_amount);
   
   // 5. Update sender's account
@@ -355,8 +363,9 @@ export circuit claim_authorized_transfer(user_id: Bytes<32>, sender_id: Bytes<32
   const shared_key = persistentHash<Vector<3, Bytes<32>>>([user_id, sender_id, persistentHash<Bytes<32>>(pin)]);
   assert (auth.shared_encryption_key == disclose(shared_key), "Invalid encryption key");
   
-  // 5. Decrypt the pending amount using witness
-  const pending_amount = decrypt_balance_witness(encrypted_amount, disclose(shared_key));
+  // 5. Look up the pending amount from public ledger
+  assert (encrypted_amount_mappings.member(encrypted_amount), "No pending transfer found");
+  const pending_amount = encrypted_amount_mappings.lookup(encrypted_amount);
   assert (pending_amount > 0 as Uint<64>, "No pending amount to claim");
   
   // 6. Add to recipient's balance
@@ -367,8 +376,8 @@ export circuit claim_authorized_transfer(user_id: Bytes<32>, sender_id: Bytes<32
   const zero_encrypted = encrypt_balance(0 as Uint<64>, disclose(shared_key));
   encrypted_balances.insert(disclose(auth_id), zero_encrypted);
   
-  // Also clear from private tracking
-  store_pending_amount(encrypted_amount, 0 as Uint<64>);
+  // Clear the amount mapping from public ledger
+  encrypted_amount_mappings.insert(encrypted_amount, 0 as Uint<64>);
   
   // 8. Update recipient's account and transaction history
   const updated_account = BankAccount {

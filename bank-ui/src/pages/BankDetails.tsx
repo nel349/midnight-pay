@@ -5,7 +5,8 @@ import { ArrowBack, Add } from '@mui/icons-material';
 import { useBankWallet } from '../components/BankWallet';
 import { listAccountsForBank, saveAccount, touchBank } from '../utils/AccountsLocalState';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
-import type { BankAPI } from '@midnight-bank/bank-api';
+import { BankAPI } from '@midnight-bank/bank-api';
+import type { Logger } from 'pino';
 
 export const BankDetails: React.FC = () => {
   const { bankAddress } = useParams<{ bankAddress: string }>();
@@ -54,20 +55,18 @@ export const BankDetails: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      // Create a user-bound API so privateStateId matches the new userId
-      const userItem = addAccount(providers, bankAddress!, userIdInput.trim());
-      const userApi: BankAPI = await new Promise((resolve, reject) => {
-        const sub = userItem.observable.subscribe({
-          next: (deployment) => {
-            if (deployment.status === 'deployed') { sub.unsubscribe(); resolve(deployment.api); }
-            else if (deployment.status === 'failed') { sub.unsubscribe(); reject(deployment.error); }
-          },
-          error: (err) => { sub.unsubscribe(); reject(err); }
-        });
-      });
 
-      // Create account in the bank (initial deposit applied to the correct private state)
-      await userApi.createAccount(userIdInput.trim(), pinInput, initialDeposit);
+
+
+      // Create account in the bank using static API, then the subscribed userApi reflects it
+      await BankAPI.createAccount(
+        providers,
+        bankAddress!,
+        userIdInput.trim(),
+        pinInput,
+        initialDeposit,
+        (console as unknown as Logger),
+      );
       
       // Save account to local storage
       saveAccount({

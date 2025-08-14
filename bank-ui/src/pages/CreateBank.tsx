@@ -35,11 +35,7 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
       setError(null);
       
       // Generate a unique ID for the bank contract
-      const bankId = crypto.randomUUID();
-      
-      // Deploy the bank contract (but don't create any accounts yet)
-      const api = await BankAPI.deploy(bankId, providers, logger);
-      const contractAddress = api.deployedContractAddress;
+      const contractAddress = await BankAPI.deploy(providers, logger);
       
       logger.info({ 
         event: 'bank_deployed', 
@@ -55,11 +51,7 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
       });
       
       // Store deployment info for debugging if needed
-      sessionStorage.setItem('lastBankDeployment', JSON.stringify({
-        contractAddress,
-        label: bankLabel,
-        timestamp: new Date().toISOString()
-      }));
+      sessionStorage.setItem('lastBankDeployment', JSON.stringify({ contractAddress, label: bankLabel, timestamp: new Date().toISOString() }));
       
       onComplete(contractAddress);
     } catch (e) {
