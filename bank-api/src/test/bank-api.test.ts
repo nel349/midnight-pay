@@ -153,13 +153,6 @@ describe('BankAPI', () => {
       );
       expect(afterVerify.accountStatus).toBe(ACCOUNT_STATE.verified);
 
-      logger.info('Fetching hex-encoded transaction history…');
-      // Fetch hex-encoded transaction history from convenience API
-      const historyHex = await bankAPI.getTransactionHistoryHex();
-      logger.info({ event: 'historyHex', recent: historyHex.slice(0, 3) });
-      expect(Array.isArray(historyHex)).toBe(true);
-      expect(historyHex.length).toBe(10);
-
       logger.info('Fetching detailed transaction history…');
       // Assert detailed client-side log order and fields
       const detailed = await bankAPI.getDetailedTransactionHistory();

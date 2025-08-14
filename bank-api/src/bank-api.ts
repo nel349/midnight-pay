@@ -100,7 +100,6 @@ export class BankAPI implements DeployedBankAPI {
         // Get user-specific private data (use normalized userId)
         const userBalance = privateState.userBalances.get(normalizedUserId) ?? 0n;
         const userPinHash = privateState.userPinHashes.get(normalizedUserId) ?? new Uint8Array(32);
-        const userTxHistory = privateState.userTransactionHistories.get(normalizedUserId) ?? [];
         
         // Debug logging
         if (userBalance === 0n && accountExists) {
@@ -117,7 +116,7 @@ export class BankAPI implements DeployedBankAPI {
           lastTransactionHash: userAccount ? toHex(userAccount.last_transaction) : '',
           whoami: toHex(whoami),
           balance: userBalance,
-          transactionHistory: userTxHistory,
+          transactionHistory: [], // Use getDetailedTransactionHistory() for transaction history
           lastTransaction: userActions.transaction,
           lastCancelledTransaction: userActions.cancelledTransaction,
         };
@@ -130,8 +129,6 @@ export class BankAPI implements DeployedBankAPI {
       }),
     );
 
-    // Build convenience observable for hex-encoded history
-    this.transactionHistoryHex$ = this.state$.pipe(map((s) => s.transactionHistory.map(toHex)));
     this.detailedLogKey = `${this.accountId}:dlog`;
   }
 
@@ -143,8 +140,6 @@ export class BankAPI implements DeployedBankAPI {
 
   readonly privateStates$: Subject<BankPrivateState>;
 
-  // Convenience stream of transaction history as hex-encoded strings
-  readonly transactionHistoryHex$!: Observable<string[]>;
 
   // Client-owned detailed log key
   private readonly detailedLogKey: string = '';
@@ -180,20 +175,13 @@ export class BankAPI implements DeployedBankAPI {
     const pinHash = hashPin(pin);
     const newUserPinHashes = new Map(currentState.userPinHashes);
     const newUserBalances = new Map(currentState.userBalances);
-    const newUserHistories = new Map(currentState.userTransactionHistories);
     
     newUserPinHashes.set(normalizedUserId, pinHash);
     newUserBalances.set(normalizedUserId, newBalance);
     
-    // Only update transaction history if user doesn't have one yet
-    if (!newUserHistories.has(normalizedUserId)) {
-      newUserHistories.set(normalizedUserId, Array(10).fill(new Uint8Array(32)));
-    }
-    
     const updatedState: BankPrivateState = {
       userPinHashes: newUserPinHashes,
       userBalances: newUserBalances,
-      userTransactionHistories: newUserHistories,
       pendingTransferAmounts: new Map(currentState.pendingTransferAmounts ?? new Map()),
     };
     
@@ -221,16 +209,13 @@ export class BankAPI implements DeployedBankAPI {
     const pinHash = hashPin(pin);
     const newUserPinHashes = new Map(currentState.userPinHashes);
     const newUserBalances = new Map(currentState.userBalances);
-    const newUserHistories = new Map(currentState.userTransactionHistories);
     
     newUserPinHashes.set(normalizedUserId, pinHash);
     newUserBalances.set(normalizedUserId, balance);
-    newUserHistories.set(normalizedUserId, Array(10).fill(new Uint8Array(32)));
     
     const updatedState: BankPrivateState = {
       userPinHashes: newUserPinHashes,
       userBalances: newUserBalances,
-      userTransactionHistories: newUserHistories,
       pendingTransferAmounts: new Map(currentState.pendingTransferAmounts ?? new Map()),
     };
     
@@ -669,11 +654,6 @@ export class BankAPI implements DeployedBankAPI {
     });
   }
 
-
-  async getTransactionHistoryHex(): Promise<string[]> {
-    return await firstValueFrom(this.transactionHistoryHex$);
-  }
-
   // Client-owned detailed log (persisted via privateStateProvider)
   async getDetailedTransactionHistory(): Promise<DetailedTransaction[]> {
     const raw = await this.providers.privateStateProvider.get(this.detailedLogKey as unknown as AccountId);
@@ -789,7 +769,7 @@ export class BankAPI implements DeployedBankAPI {
     // Deploys can occasionally fail transiently if the node/indexer/proof server
     // are not fully ready at the very start of the test run. Add a short
     // retry-with-backoff to make the tests more robust.
-    const maxAttempts = 3;
+    const maxAttempts = 5;
     let lastError: unknown;
     let deployedBankContract: DeployedBankContract | undefined;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -929,16 +909,11 @@ export class BankAPI implements DeployedBankAPI {
     const pinHash = hashPin(pin);
     const newUserPinHashes = new Map(currentState.userPinHashes);
     const newUserBalances = new Map(currentState.userBalances);
-    const newUserHistories = new Map(currentState.userTransactionHistories);
     newUserPinHashes.set(normalizedUserId, pinHash);
     newUserBalances.set(normalizedUserId, utils.parseAmount(initialDeposit));
-    if (!newUserHistories.has(normalizedUserId)) {
-      newUserHistories.set(normalizedUserId, Array(10).fill(new Uint8Array(32)));
-    }
     await providers.privateStateProvider.set(sharedKey, {
       userPinHashes: newUserPinHashes,
       userBalances: newUserBalances,
-      userTransactionHistories: newUserHistories,
       pendingTransferAmounts: new Map(currentState.pendingTransferAmounts ?? new Map()),
     });
 

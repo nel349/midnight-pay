@@ -60,10 +60,8 @@ export ledger encrypted_amount_mappings: Map<Bytes<32>, Uint<64>>;          // e
 // Private data (user-specific, stored per user)
 witness user_pin_hash(user_id: Bytes<32>): Bytes<32>;
 witness user_balance(user_id: Bytes<32>): Uint<64>;
-witness user_transaction_history(user_id: Bytes<32>): Vector<10, Bytes<32>>;
 witness set_user_balance(user_id: Bytes<32>, balance: Uint<64>): [];
-witness set_user_transaction_history(user_id: Bytes<32>, history: Vector<10, Bytes<32>>): [];
-// Note: store_pending_amount and decrypt_balance_witness removed - using public ledger instead
+// Note: Transaction history removed - API handles detailed transaction logging
 
 // Constructor - Initialize empty shared bank
 constructor() {
@@ -98,13 +96,6 @@ export circuit create_account(user_id: Bytes<32>, initial_pin: Bytes<32>, deposi
   
   // Initialize private state for this user
   set_user_balance(user_id, deposit_amount);
-  
-  // Initialize transaction history
-  const tx_hash = persistentHash<Bytes<32>>(pad(32, "account_created"));
-  const empty_tx = pad(32, "");
-  const initial_history = [tx_hash, empty_tx, empty_tx, empty_tx, empty_tx, 
-                          empty_tx, empty_tx, empty_tx, empty_tx, empty_tx];
-  set_user_transaction_history(user_id, initial_history);
 }
 
 // Circuit 2: Deposit to User Account
@@ -123,13 +114,6 @@ export circuit deposit(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): []
   const current_balance = user_balance(user_id);
   const new_balance = current_balance + amount;
   set_user_balance(user_id, new_balance as Uint<64>);
-  
-  // Update transaction history
-  const tx_hash = persistentHash<Bytes<32>>(pad(32, "deposit"));
-  const current_history = user_transaction_history(user_id);
-  const updated_history = [tx_hash, current_history[0], current_history[1], current_history[2], current_history[3],
-                          current_history[4], current_history[5], current_history[6], current_history[7], current_history[8]];
-  set_user_transaction_history(user_id, updated_history);
   
   // Update public account state
   const updated_account = BankAccount {
@@ -163,13 +147,6 @@ export circuit withdraw(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): [
   assert (current_balance >= amount, "Insufficient funds");
   const new_balance = current_balance - amount;
   set_user_balance(user_id, new_balance as Uint<64>);
-  
-  // Update transaction history
-  const tx_hash = persistentHash<Bytes<32>>(pad(32, "withdrawal"));
-  const current_history = user_transaction_history(user_id);
-  const updated_history = [tx_hash, current_history[0], current_history[1], current_history[2], current_history[3],
-                          current_history[4], current_history[5], current_history[6], current_history[7], current_history[8]];
-  set_user_transaction_history(user_id, updated_history);
   
   // Update public account state
   const updated_account = BankAccount {
@@ -333,12 +310,7 @@ export circuit send_to_authorized_user(user_id: Bytes<32>, recipient_id: Bytes<3
   };
   all_accounts.insert(disclose(user_id), updated_sender);
   
-  // 6. Update transaction history
-  const sender_tx_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "auth_transfer_out"), recipient_id, persistentHash<Uint<64>>(amount)]);
-  const sender_history = user_transaction_history(user_id);
-  const updated_sender_history = [sender_tx_hash, sender_history[0], sender_history[1], sender_history[2], sender_history[3],
-                                 sender_history[4], sender_history[5], sender_history[6], sender_history[7], sender_history[8]];
-  set_user_transaction_history(user_id, updated_sender_history);
+  // Transaction completed - history tracked by API
   
   last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "auth_transfer"), user_id, recipient_id]));
 }
@@ -391,12 +363,7 @@ export circuit claim_authorized_transfer(user_id: Bytes<32>, sender_id: Bytes<32
   };
   all_accounts.insert(disclose(user_id), updated_account);
   
-  // 9. Update transaction history
-  const claim_tx_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "transfer_claimed"), sender_id, persistentHash<Uint<64>>(pending_amount)]);
-  const recipient_history = user_transaction_history(user_id);
-  const updated_recipient_history = [claim_tx_hash, recipient_history[0], recipient_history[1], recipient_history[2], recipient_history[3],
-                                    recipient_history[4], recipient_history[5], recipient_history[6], recipient_history[7], recipient_history[8]];
-  set_user_transaction_history(user_id, updated_recipient_history);
+  // Transfer claimed - history tracked by API
   
   last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "transfer_claimed"), sender_id, user_id]));
 }
