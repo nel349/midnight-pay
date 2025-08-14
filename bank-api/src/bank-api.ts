@@ -40,6 +40,7 @@ export interface DeployedBankAPI {
   transferToUser(pin: string, recipientUserId: string, amount: string): Promise<void>;
   authenticateBalanceAccess(pin: string): Promise<void>;
   verifyAccountStatus(pin: string): Promise<void>;
+  getAuthorizedContacts(): Promise<Array<{ userId: string; maxAmount: bigint }>>;
   
   // Zelle-like Authorization System
   requestTransferAuthorization(pin: string, recipientUserId: string): Promise<void>;
@@ -521,6 +522,28 @@ export class BankAPI implements DeployedBankAPI {
       balanceAfter: balance,
       timestamp: new Date(),
     });
+  }
+
+  async getAuthorizedContacts(): Promise<Array<{ userId: string; maxAmount: bigint }>> {
+    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (!state) return [];
+    const l = ledger(state.data);
+    const normalizedUserId = this.normalizeUserId(this.userId);
+    const userIdBytes = this.stringToBytes32(normalizedUserId);
+    if (!l.user_as_recipient_auths.member(userIdBytes)) return [];
+    const authVector = l.user_as_recipient_auths.lookup(userIdBytes) as Uint8Array[];
+    const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+    const decoder = new TextDecoder();
+    const contacts: Array<{ userId: string; maxAmount: bigint }> = [];
+    for (const authId of authVector) {
+      if (!authId || isZeroBytes(authId)) continue;
+      if (!l.active_authorizations.member(authId)) continue;
+      const auth = l.active_authorizations.lookup(authId);
+      const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+      const max = BigInt(auth.max_amount);
+      contacts.push({ userId: senderId, maxAmount: max });
+    }
+    return contacts;
   }
 
   async requestTransferAuthorization(pin: string, recipientUserId: string): Promise<void> {

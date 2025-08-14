@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Card,
   CardContent,
@@ -34,12 +34,7 @@ interface AuthorizationPanelProps {
   onSuccess: (message: string) => void;
 }
 
-interface AuthorizedContact {
-  userId: string;
-  maxAmount: string;
-  status: 'pending' | 'approved' | 'can_send' | 'can_receive';
-  createdAt: Date;
-}
+type AuthorizedContact = { userId: string; maxAmount: string; status: 'can_send' };
 
 export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   bankAPI,
@@ -59,14 +54,21 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
 
   // In a real app, this would come from the backend/contract state
   // For now, we'll simulate it with localStorage
-  const [authorizedContacts] = useState<AuthorizedContact[]>([
-    {
-      userId: 'alice-demo',
-      maxAmount: '100.00',
-      status: 'can_send',
-      createdAt: new Date()
-    }
-  ]);
+  const [authorizedContacts, setAuthorizedContacts] = useState<AuthorizedContact[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const contacts = await bankAPI.getAuthorizedContacts();
+        if (!active) return;
+        setAuthorizedContacts(
+          contacts.map((c) => ({ userId: c.userId, maxAmount: (Number(c.maxAmount) / 100).toFixed(2), status: 'can_send' }))
+        );
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, [bankAPI]);
 
   const handleRequestAuthorization = async () => {
     if (!bankAPI || !isConnected || !recipientUserId.trim()) return;
@@ -207,7 +209,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
               <ListItem key={index} divider>
                 <ListItemText
                   primary={contact.userId}
-                  secondary={`Max: $${contact.maxAmount} • Added: ${contact.createdAt.toLocaleDateString()}`}
+                  secondary={`Max: $${contact.maxAmount}`}
                 />
                 <Chip
                   label={contact.status === 'can_send' ? 'Can Send' : contact.status}
