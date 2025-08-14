@@ -31,13 +31,13 @@ This document tracks the implementation status of all Bank UI features.
 - [x] **Session timeout**: Auto-hide balance after 10 minutes ✅
 - [x] **Wallet connection status**: Visual indicators and warnings ✅
 
-## 🚧 4. Advanced Privacy Features (Phase 3) - PLANNED 🆕
+## ✅ 4. Advanced Privacy Features (Phase 3.1) - COMPLETED 🆕
 
-### 4.1 Inter-Contract Transfers
-- [ ] **Send money to contract**: Transfer funds between Midnight Bank contracts
-- [ ] **Recipient validation**: Verify target contract is valid bank before transfer
-- [ ] **Private transfers**: Amount and recipient details remain confidential
-- [ ] **Transfer authorization**: PIN + amount confirmation with recipient address
+### 4.1 Inter-Contract Transfers ✅
+- [x] **Send money to contract**: Transfer funds between Midnight Bank contracts
+- [x] **Recipient validation**: Verify target contract is valid bank before transfer
+- [x] **Private transfers**: Amount and recipient details remain confidential
+- [x] **Transfer authorization**: PIN + amount confirmation with recipient address
 - [ ] **Transfer history**: Private record of outgoing/incoming transfers
 - [ ] **Real-time notifications**: Updates when transfers complete
 
@@ -55,6 +55,18 @@ This document tracks the implementation status of all Bank UI features.
 - **Account verification**: Services verify account exists without balance details
 - **P2P transfers**: Send funds to friends using their contract addresses
 - **Merchant payments**: Pay businesses while keeping transaction details private
+
+### 4.3 Native Token (DUST) Support 🆕
+- [ ] **Contract Changes**:
+  - Add `accepted_token` (Bytes<32>) in constructor or hardcode native token type.
+  - Add `vault`: Map<Bytes<32>, CoinInfo> (or QualifiedCoinInfo) keyed by user_id.
+  - Modify `deposit` circuit to accept a `CoinInfo` parameter and call `receive(coin)`.
+  - Modify `withdraw` circuit to use `sendImmediate` and store the returned change.
+  - Optional: Aggregate multiple deposits via `mergeCoin`/`mergeCoinImmediate`.
+- [ ] **API/Wallet Changes**:
+  - When calling deposit, pass a `CoinInfo` input. Wallet will select a user coin and attach it (or use `createZswapInput`).
+  - On withdraw, no user input coin is needed; the contract spends from its vault.
+  - Keep private balances as UX state, backed by real coins.
 
 ## 🚧 5. Transaction History (Phase 4) - FUTURE
 - [ ] Transaction history display from `transactionHistoryHex$` + `transactionCount`
