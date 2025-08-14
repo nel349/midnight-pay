@@ -57,12 +57,22 @@ export function useAuthorizationUpdates(bankAPI: BankAPI | null) {
     staleTime: 1000,
   });
 
-  // For now, skip pending claims since they require PIN for decryption
-  const pendingClaims: PendingClaim[] = [];
+  // Pending claims derived from public mapping; no PIN needed
+  const { data: pendingClaims, refetch: refetchClaims } = useQuery({
+    queryKey: ['pendingClaims', bankAPI?.userId, lastUpdate],
+    queryFn: async () => {
+      if (!bankAPI) return [];
+      return bankAPI.getPendingClaims();
+    },
+    enabled: !!bankAPI,
+    refetchInterval: 3000,
+    staleTime: 1000,
+  });
 
   const refresh = () => {
     refetchRequests();
     refetchOutgoing();
+    refetchClaims();
   };
 
   return {

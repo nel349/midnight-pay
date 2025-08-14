@@ -71,6 +71,14 @@ export function AuthorizationNotifications({
     setProcessing(actionKey, true);
     
     try {
+      // Preflight: ensure a pending claim exists for this sender
+      const claims = await bankAPI.getPendingClaims();
+      const hasClaim = claims.some(c => c.senderUserId === senderUserId);
+      if (!hasClaim) {
+        onError?.('No pending transfer found for this sender. Please wait a few seconds and refresh.');
+        return;
+      }
+
       await bankAPI.claimAuthorizedTransfer(pin, senderUserId);
       onSuccess?.(`💰 Successfully claimed transfer from ${senderUserId}!`);
       refresh();
@@ -124,7 +132,7 @@ export function AuthorizationNotifications({
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {pendingRequests.map(request => (
                 <Card 
-                  key={request.senderUserId} 
+                  key={`${request.senderUserId}-${request.requestedAt}`} 
                   sx={{ bgcolor: 'info.lighter', border: '1px solid', borderColor: 'info.light' }}
                 >
                   <CardContent>
@@ -166,7 +174,7 @@ export function AuthorizationNotifications({
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {outgoingRequests.map(request => (
                 <Card 
-                  key={request.recipientUserId} 
+                  key={`${request.recipientUserId}-${request.requestedAt}`} 
                   sx={{ bgcolor: 'warning.lighter', border: '1px solid', borderColor: 'warning.light' }}
                 >
                   <CardContent>
@@ -197,9 +205,9 @@ export function AuthorizationNotifications({
               💰 Pending Transfers
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {pendingClaims.map(claim => (
+              {pendingClaims.map((claim, idx) => (
                 <Card 
-                  key={claim.senderUserId} 
+                  key={`${claim.senderUserId}-${idx}`} 
                   sx={{ bgcolor: 'success.lighter', border: '1px solid', borderColor: 'success.light' }}
                 >
                   <CardContent>

@@ -277,7 +277,7 @@ describe('BankAPI', () => {
         expect(bobBeforeClaim.balance).toBe(10000n);
 
         // Step 4: Bob detects and claims the encrypted transfer
-        const pendingClaims = await bobBankAPI.getPendingClaims('2222');
+        const pendingClaims = await bobBankAPI.getPendingClaims();
         logger.info(`Pending claims found: ${pendingClaims.length}`, { claims: pendingClaims });
         expect(pendingClaims).toHaveLength(1);
         expect(pendingClaims[0].senderUserId).toBe(aliceUserId);
@@ -346,7 +346,7 @@ describe('BankAPI', () => {
 
         // Bob should see pending claims but amounts are encrypted (0n until claimed)
         await new Promise(resolve => setTimeout(resolve, 2000));
-        const pendingClaims = await bobBankAPI.getPendingClaims('2222');
+        const pendingClaims = await bobBankAPI.getPendingClaims();
         expect(pendingClaims).toHaveLength(1); // Multiple transfers to same auth get combined
 
         // Bob claims the combined encrypted transfer

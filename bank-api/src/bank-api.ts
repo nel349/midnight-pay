@@ -491,25 +491,32 @@ export class BankAPI implements DeployedBankAPI {
   }
 
   async getAuthorizedContacts(): Promise<Array<{ userId: string; maxAmount: bigint }>> {
+    // Return the list of RECIPIENTS that the current user (sender) is authorized to send to
     const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
     if (!state) return [];
     const l = ledger(state.data);
     const normalizedUserId = this.normalizeUserId(this.userId);
-    const userIdBytes = this.stringToBytes32(normalizedUserId);
-    if (!l.user_as_recipient_auths.member(userIdBytes)) return [];
-    const authVector = l.user_as_recipient_auths.lookup(userIdBytes) as Uint8Array[];
-    const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
     const decoder = new TextDecoder();
-    const contacts: Array<{ userId: string; maxAmount: bigint }> = [];
-    for (const authId of authVector) {
-      if (!authId || isZeroBytes(authId)) continue;
-      if (!l.active_authorizations.member(authId)) continue;
-      const auth = l.active_authorizations.lookup(authId);
-      const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
-      const max = BigInt(auth.max_amount);
-      contacts.push({ userId: senderId, maxAmount: max });
+    const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+
+    const recipientToMax = new Map<string, bigint>();
+
+    // Scan all recipient auth lists and collect auths where sender == current user
+    for (const [recipientKey, authVector] of l.user_as_recipient_auths) {
+      const recipientId = decoder.decode(recipientKey).replace(/\0/g, '');
+      for (const authId of authVector as Uint8Array[]) {
+        if (!authId || isZeroBytes(authId)) continue;
+        if (!l.active_authorizations.member(authId)) continue;
+        const auth = l.active_authorizations.lookup(authId);
+        const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+        if (senderId !== normalizedUserId) continue;
+        const max = BigInt(auth.max_amount);
+        const current = recipientToMax.get(recipientId) ?? 0n;
+        if (max > current) recipientToMax.set(recipientId, max);
+      }
     }
-    return contacts;
+
+    return Array.from(recipientToMax.entries()).map(([userId, maxAmount]) => ({ userId, maxAmount }));
   }
 
   async requestTransferAuthorization(pin: string, recipientUserId: string): Promise<void> {
@@ -739,7 +746,7 @@ export class BankAPI implements DeployedBankAPI {
     return requests;
   }
 
-  async getPendingClaims(pin: string): Promise<Array<{ senderUserId: string; amount: bigint }>> {
+  async getPendingClaims(): Promise<Array<{ senderUserId: string; amount: bigint }>> {
     const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
     if (!state) return [];
     
@@ -760,13 +767,15 @@ export class BankAPI implements DeployedBankAPI {
       if (!l.encrypted_balances.member(authId)) continue;
       
       const auth = l.active_authorizations.lookup(authId);
+      const encryptedAmount = l.encrypted_balances.lookup(authId);
       const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
       
-      // Amount is encrypted until claimed, return 0n for detection
-      claims.push({
-        senderUserId: senderId,
-        amount: 0n // Amount is encrypted until claimed
-      });
+      if (l.encrypted_amount_mappings.member(encryptedAmount)) {
+        const actual = BigInt(l.encrypted_amount_mappings.lookup(encryptedAmount));
+        if (actual > 0n) {
+          claims.push({ senderUserId: senderId, amount: actual });
+        }
+      }
     }
     
     return claims;
