@@ -14,7 +14,7 @@ export interface AccountItem { observable: BehaviorSubject<AccountDeployment>; a
 
 interface DeployedAccountAPIProvider {
   readonly accountDeployments$: Observable<AccountItem[]>;
-  readonly addAccount: (providers: BankProviders, contractAddress: ContractAddress) => AccountItem;
+  readonly addAccount: (providers: BankProviders, contractAddress: ContractAddress, userId?: string) => AccountItem;
   readonly deployAndAddAccount: (providers: BankProviders) => Promise<AccountItem>;
 }
 
@@ -31,11 +31,11 @@ class Manager implements DeployedAccountAPIProvider {
   constructor(private readonly logger: Logger) {}
   get accountDeployments$(): Observable<AccountItem[]> { return this.#subject }
 
-  addAccount = (providers: BankProviders, contractAddress: ContractAddress): AccountItem => {
+  addAccount = (providers: BankProviders, contractAddress: ContractAddress, userId?: string): AccountItem => {
     const deployment = new BehaviorSubject<AccountDeployment>({ status: 'in-progress', address: contractAddress });
     const item: AccountItem = { observable: deployment, address: contractAddress };
     this.#subject.next([...this.#subject.value, item]);
-    void this.#join(providers, deployment, contractAddress);
+    void this.#join(providers, deployment, contractAddress, userId);
     return item;
   }
 
@@ -50,8 +50,9 @@ class Manager implements DeployedAccountAPIProvider {
   async #deploy(providers: BankProviders, deployment: BehaviorSubject<AccountDeployment>): Promise<void> {
     try {
       const uuid = crypto.randomUUID();
-      const api = await BankAPI.deploy(uuid, providers, this.logger);
-      deployment.next({ status: 'deployed', api, address: api.deployedContractAddress });
+      const address = await BankAPI.deploy(providers, this.logger);
+      const api = await BankAPI.subscribe(uuid, providers, address, this.logger);
+      deployment.next({ status: 'deployed', api, address });
     } catch (e) {
       this.logger.error(e);
       deployment.next({ status: 'failed', error: e instanceof Error ? e : new Error(String(e)) });
@@ -62,11 +63,12 @@ class Manager implements DeployedAccountAPIProvider {
     providers: BankProviders,
     deployment: BehaviorSubject<AccountDeployment>,
     contractAddress: ContractAddress,
+    userId?: string,
   ): Promise<void> {
     try {
-      const uuid = crypto.randomUUID();
-      const api = await BankAPI.subscribe(uuid, providers, contractAddress, this.logger);
-      deployment.next({ status: 'deployed', api, address: api.deployedContractAddress });
+      const privateStateId = userId ?? crypto.randomUUID();
+      const api = await BankAPI.subscribe(privateStateId, providers, contractAddress, this.logger);
+      deployment.next({ status: 'deployed', api, address: contractAddress });
     } catch (e) {
       this.logger.error(e);
       deployment.next({ status: 'failed', error: e instanceof Error ? e : new Error(String(e)), address: contractAddress });

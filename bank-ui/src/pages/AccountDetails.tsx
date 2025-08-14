@@ -5,11 +5,13 @@ import { ArrowBack, Visibility, VisibilityOff } from '@mui/icons-material';
 import { useBankWallet } from '../components/BankWallet';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
 import { touchAccount } from '../utils/AccountsLocalState';
+import { AuthorizationPanel } from '../components/AuthorizationPanel';
+import { AuthorizationNotifications } from '../components/AuthorizationNotifications';
 import type { BankAPI, BankDerivedState } from '@midnight-bank/bank-api';
 import { utils } from '@midnight-bank/bank-api';
 
 export const AccountDetails: React.FC = () => {
-  const { addr } = useParams<{ addr: string }>();
+  const { bankAddress, userId } = useParams<{ bankAddress: string; userId: string }>();
   const navigate = useNavigate();
   const { providers, isConnected } = useBankWallet();
   const { addAccount } = useDeployedAccountContext();
@@ -17,23 +19,22 @@ export const AccountDetails: React.FC = () => {
   const [bankAPI, setBankAPI] = useState<BankAPI | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [accountState, setAccountState] = useState<BankDerivedState | null>(null);
   const [showBalance, setShowBalance] = useState(false);
+  const [userPin, setUserPin] = useState<string>('');
   const lastAuthRef = useRef<number | null>(null);
   
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
   useEffect(() => {
-    if (!addr) return;
+    if (!bankAddress || !userId) return;
     
-    // Clear session storage debug data after use
-    sessionStorage.removeItem('lastAccountCreation');
+    // Touch account to update last used
+    touchAccount(bankAddress, userId);
     
-    // Touch account to update last used timestamp
-    touchAccount(addr);
-    
-    // Subscribe to the account
-    const accountItem = addAccount(providers, addr);
+    // Subscribe to the bank contract
+    const accountItem = addAccount(providers, bankAddress, userId);
     
     const subscription = accountItem.observable.subscribe({
       next: (deployment) => {
@@ -52,7 +53,7 @@ export const AccountDetails: React.FC = () => {
     });
 
     return () => subscription.unsubscribe();
-  }, [addr, providers, addAccount]);
+  }, [bankAddress, userId, providers, addAccount]);
 
   // Subscribe to account state updates when bankAPI is available
   useEffect(() => {
@@ -72,6 +73,7 @@ export const AccountDetails: React.FC = () => {
     const timeoutCheck = setInterval(() => {
       if (lastAuthRef.current && Date.now() - lastAuthRef.current > SESSION_TIMEOUT_MS) {
         setShowBalance(false);
+        setUserPin('');
         lastAuthRef.current = null;
       }
     }, 5000);
@@ -82,6 +84,16 @@ export const AccountDetails: React.FC = () => {
     };
   }, [bankAPI, SESSION_TIMEOUT_MS]);
 
+  // Clear success messages after 5 seconds
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => {
+        setSuccess(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
+
   const handleShowBalance = async () => {
     if (!bankAPI || !isConnected) return;
     
@@ -89,22 +101,19 @@ export const AccountDetails: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      // Ask for PIN and authenticate balance access
       const pinInput = prompt('Enter your PIN to reveal balance:') ?? '';
       if (!pinInput) { 
         setLoading(false); 
         return; 
       }
       
-      // This creates an audit trail but doesn't change the balance value
       await bankAPI.authenticateBalanceAccess(pinInput);
       
-      // Update auth timestamp and show balance
       lastAuthRef.current = Date.now();
+      setUserPin(pinInput);
       setShowBalance(true);
       setLoading(false);
       
-      // Balance authentication completed successfully
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to authenticate balance');
       setLoading(false);
@@ -146,11 +155,11 @@ export const AccountDetails: React.FC = () => {
     }
   };
 
-  if (!addr) {
+  if (!bankAddress || !userId) {
     return (
       <Card>
         <CardContent>
-          <Typography color="error">Invalid account address</Typography>
+          <Typography color="error">Invalid bank address or user ID</Typography>
         </CardContent>
       </Card>
     );
@@ -162,10 +171,10 @@ export const AccountDetails: React.FC = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
           <Button
             startIcon={<ArrowBack />}
-            onClick={() => navigate('/accounts')}
+            onClick={() => navigate(`/bank/${bankAddress}`)}
             sx={{ mr: 2 }}
           >
-            Back to Accounts
+            Back to Bank
           </Button>
           <Typography variant="h4" component="h1" sx={{ flexGrow: 1 }}>
             Account Details
@@ -175,21 +184,30 @@ export const AccountDetails: React.FC = () => {
         <Box display="flex" flexDirection="column" gap={3}>
           <Box>
             <Typography variant="h6" gutterBottom>
-              Contract Address
+              Account Information
+            </Typography>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              User ID: {userId}
             </Typography>
             <Typography 
               variant="body2" 
+              color="text.secondary"
               sx={{ 
                 fontFamily: 'monospace', 
-                backgroundColor: '#f5f5f5', 
-                p: 1, 
-                borderRadius: 1,
-                wordBreak: 'break-all'
+                fontSize: '0.75rem'
               }}
             >
-              {addr}
+              Bank: {bankAddress}
             </Typography>
           </Box>
+
+          {bankAPI && (
+            <AuthorizationNotifications
+              bankAPI={bankAPI}
+              onError={setError}
+              onSuccess={setSuccess}
+            />
+          )}
 
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
@@ -229,6 +247,7 @@ export const AccountDetails: React.FC = () => {
                   startIcon={<VisibilityOff />}
                   onClick={() => {
                     setShowBalance(false);
+                    setUserPin('');
                     lastAuthRef.current = null;
                   }}
                   size="small"
@@ -241,7 +260,7 @@ export const AccountDetails: React.FC = () => {
 
           <Box>
             <Typography variant="h6" gutterBottom>
-              Actions
+              Account Actions
             </Typography>
             
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -271,12 +290,33 @@ export const AccountDetails: React.FC = () => {
             </Box>
           </Box>
 
+          {bankAPI && (
+            <AuthorizationPanel 
+              bankAPI={bankAPI}
+              isConnected={isConnected}
+              onError={setError}
+              onSuccess={setSuccess}
+            />
+          )}
+
           {!isConnected && (
             <Box>
               <Card sx={{ backgroundColor: '#fff3cd' }}>
                 <CardContent>
                   <Typography color="warning.dark">
                     Connect your wallet to perform transactions
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Box>
+          )}
+
+          {success && (
+            <Box>
+              <Card sx={{ backgroundColor: '#d4edda' }}>
+                <CardContent>
+                  <Typography color="success.dark">
+                    {success}
                   </Typography>
                 </CardContent>
               </Card>
