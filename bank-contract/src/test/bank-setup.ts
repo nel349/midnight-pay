@@ -9,7 +9,7 @@ import {
 
 // Local transaction record (user maintains this separately)
 interface TransactionRecord {
-  type: 'create' | 'deposit' | 'withdraw' | 'balance_check' | 'verify' | 'transfer_out' | 'transfer_in' | 'auth_request' | 'auth_approve' | 'auth_transfer';
+  type: 'create' | 'deposit' | 'withdraw' | 'balance_check' | 'verify' | 'transfer_out' | 'transfer_in' | 'auth_request' | 'auth_approve' | 'auth_transfer' | 'claim_transfer';
   amount?: bigint;
   timestamp: Date;
   balanceAfter: bigint;
@@ -229,6 +229,37 @@ export class BankTestSetup {
       balanceAfter: this.getUserBalance(senderId),
       pin: pin,
       counterparty: recipientId
+    });
+    
+    return ledger;
+  }
+
+  // Test method: Claim Authorized Transfer (NEW!)
+  claimAuthorizedTransfer(recipientId: string, senderId: string, pin: string): Ledger {
+    console.log(`💰 User ${recipientId} claiming transfer from ${senderId}`);
+    
+    const recipientIdBytes = this.stringToBytes32(recipientId);
+    const senderIdBytes = this.stringToBytes32(senderId);
+    const pinBytes = this.stringToBytes32(pin);
+    
+    // Track balance before claim
+    const balanceBeforeClaim = this.getUserBalance(recipientId);
+    
+    const results = this.contract.impureCircuits.claim_authorized_transfer(this.turnContext, recipientIdBytes, senderIdBytes, pinBytes);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Calculate claimed amount
+    const balanceAfterClaim = this.getUserBalance(recipientId);
+    const claimedAmount = balanceAfterClaim - balanceBeforeClaim;
+    
+    // Record transaction locally for recipient
+    this.recordTransaction(recipientId, {
+      type: 'claim_transfer',
+      amount: claimedAmount,
+      timestamp: new Date(),
+      balanceAfter: balanceAfterClaim,
+      pin: pin,
+      counterparty: senderId
     });
     
     return ledger;

@@ -46,6 +46,8 @@ export interface DeployedBankAPI {
   requestTransferAuthorization(pin: string, recipientUserId: string): Promise<void>;
   approveTransferAuthorization(pin: string, senderUserId: string, maxAmount: string): Promise<void>;
   sendToAuthorizedUser(pin: string, recipientUserId: string, amount: string): Promise<void>;
+  claimAuthorizedTransfer(pin: string, senderUserId: string): Promise<void>;
+  getPendingClaims(pin: string): Promise<Array<{ senderUserId: string; amount: bigint }>>
 }
 
 export class BankAPI implements DeployedBankAPI {
@@ -652,6 +654,99 @@ export class BankAPI implements DeployedBankAPI {
       timestamp: new Date(),
       counterparty: recipientUserId,
     });
+  }
+
+  async claimAuthorizedTransfer(pin: string, senderUserId: string): Promise<void> {
+    this.logger?.info({ claimAuthorizedTransfer: { recipient: this.userId, sender: senderUserId } });
+    
+    const userIdBytes = this.stringToBytes32(this.userId);
+    const normalizedSenderId = this.normalizeUserId(senderUserId);
+    const senderIdBytes = this.stringToBytes32(normalizedSenderId);
+    const pinBytes = this.stringToBytes32(pin);
+    
+    // Ensure the recipient exists in shared private state before invoking witness-dependent circuit
+    const startingBalance = await this.getCurrentUserBalance();
+    await this.ensureUserInPrivateState(this.userId, pin, startingBalance);
+    
+    const txData = await this.deployedContract.callTx.claim_authorized_transfer(
+      userIdBytes,
+      senderIdBytes,
+      pinBytes
+    );
+    
+    this.logger?.trace({
+      transferClaimed: {
+        recipient: this.userId,
+        sender: senderUserId,
+        txHash: txData.public.txHash,
+        blockHeight: txData.public.blockHeight,
+      },
+    });
+    
+    // Force refresh of private state for all observers (contract already updated it)
+    await this.refreshSharedPrivateState();
+
+    await this.appendDetailedLog({
+      type: 'claim_transfer',
+      balanceAfter: await this.getCurrentUserBalance(),
+      timestamp: new Date(),
+      counterparty: senderUserId,
+    });
+  }
+
+  async getPendingClaims(pin: string): Promise<Array<{ senderUserId: string; amount: bigint }>> {
+    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (!state) return [];
+    
+    const l = ledger(state.data);
+    const normalizedUserId = this.normalizeUserId(this.userId);
+    const userIdBytes = this.stringToBytes32(normalizedUserId);
+    
+    if (!l.user_as_recipient_auths.member(userIdBytes)) return [];
+    
+    const authVector = l.user_as_recipient_auths.lookup(userIdBytes) as Uint8Array[];
+    const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+    const decoder = new TextDecoder();
+    const claims: Array<{ senderUserId: string; amount: bigint }> = [];
+    
+    for (const authId of authVector) {
+      if (!authId || isZeroBytes(authId)) continue;
+      if (!l.active_authorizations.member(authId)) continue;
+      if (!l.encrypted_balances.member(authId)) continue;
+      
+      const auth = l.active_authorizations.lookup(authId);
+      const encryptedAmount = l.encrypted_balances.lookup(authId);
+      const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+      
+      // Try to decrypt the amount using the shared key
+      // Note: This requires the user's pin to reconstruct the shared key
+      try {
+        const pinBytes = this.stringToBytes32(pin);
+        const userIdBytes = this.stringToBytes32(this.userId);
+        const senderIdBytes = this.stringToBytes32(senderId);
+        
+        // Reconstruct shared key (same as in contract)
+        const pinHash = hashPin(pin);
+        const sharedKey = this.stringToBytes32(`${this.userId}-${senderId}-${Buffer.from(pinHash).toString('hex')}`);
+        
+        // For now, we'll indicate there's a pending claim if encrypted balance exists
+        // The actual amount will be revealed when claimed
+        // This is a simplified version - in production you'd want proper decryption
+        const hasEncryptedData = !isZeroBytes(encryptedAmount);
+        
+        if (hasEncryptedData) {
+          claims.push({ 
+            senderUserId: senderId, 
+            amount: 0n // Amount hidden until claimed - shows there's a pending transfer
+          });
+        }
+      } catch (error) {
+        // If decryption fails, skip this claim
+        this.logger?.warn({ getPendingClaims: { error: error instanceof Error ? error.message : 'Unknown error' } });
+      }
+    }
+    
+    return claims;
   }
 
   async getTransactionHistoryHex(): Promise<string[]> {
