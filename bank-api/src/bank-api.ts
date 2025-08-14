@@ -777,12 +777,18 @@ export class BankAPI implements DeployedBankAPI {
       },
     });
 
-    // Preserve any existing private state for this userId; don't overwrite with a fresh empty state
-    const existingPrivateState = (await providers.privateStateProvider.get(userId as AccountId)) ?? createBankPrivateState();
+    // Normalize userId to ensure private state key matches any statically-seeded state
+    const encoder = new TextEncoder();
+    const encoded = encoder.encode(userId);
+    const normalizedUserId = encoded.length <= 32 ? userId : new TextDecoder().decode(encoded.slice(0, 32));
+    const stateKey = normalizedUserId as AccountId;
+
+    // Preserve any existing private state for this user; don't overwrite with a fresh empty state
+    const existingPrivateState = (await providers.privateStateProvider.get(stateKey)) ?? createBankPrivateState();
     const deployedBankContract = await findDeployedContract(providers, {
       contractAddress,
       contract: bankContract,
-      privateStateId: userId as AccountId, // Each user has their own private state
+      privateStateId: stateKey, // Each user has their own private state (normalized)
       initialPrivateState: existingPrivateState,
     });
 
@@ -793,7 +799,7 @@ export class BankAPI implements DeployedBankAPI {
       },
     });
 
-    const bankAPI = new BankAPI(userId as AccountId, userId, deployedBankContract, providers, logger);
+    const bankAPI = new BankAPI(stateKey, userId, deployedBankContract, providers, logger);
     await bankAPI.syncUserToSharedState();
     
     return bankAPI;
@@ -870,6 +876,19 @@ export class BankAPI implements DeployedBankAPI {
       userTransactionHistories: newUserHistories,
       pendingTransferAmounts: new Map(currentState.pendingTransferAmounts ?? new Map()),
     });
+
+    // Write initial detailed log entry for account creation under the same normalized key
+    try {
+      const dlogKey = `${normalizedUserId}:dlog` as AccountId;
+      const existingLog = (await providers.privateStateProvider.get(dlogKey)) as unknown as DetailedTransaction[] | null;
+      const updatedLog: DetailedTransaction[] = [...(existingLog ?? []), {
+        type: 'create',
+        amount: utils.parseAmount(initialDeposit),
+        balanceAfter: utils.parseAmount(initialDeposit),
+        timestamp: new Date(),
+      }];
+      await providers.privateStateProvider.set(dlogKey, updatedLog as unknown as BankPrivateState);
+    } catch {}
   }
 
   static async getSharedPrivateState(
