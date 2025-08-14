@@ -54,8 +54,20 @@ export const BankDetails: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      // Create account in the bank
-      await bankAPI.createAccount(userIdInput.trim(), pinInput, initialDeposit);
+      // Create a user-bound API so privateStateId matches the new userId
+      const userItem = addAccount(providers, bankAddress!, userIdInput.trim());
+      const userApi: BankAPI = await new Promise((resolve, reject) => {
+        const sub = userItem.observable.subscribe({
+          next: (deployment) => {
+            if (deployment.status === 'deployed') { sub.unsubscribe(); resolve(deployment.api); }
+            else if (deployment.status === 'failed') { sub.unsubscribe(); reject(deployment.error); }
+          },
+          error: (err) => { sub.unsubscribe(); reject(err); }
+        });
+      });
+
+      // Create account in the bank (initial deposit applied to the correct private state)
+      await userApi.createAccount(userIdInput.trim(), pinInput, initialDeposit);
       
       // Save account to local storage
       saveAccount({

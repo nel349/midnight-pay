@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
-import { Button, Card, CardContent, Typography, Box, Divider, Chip } from '@mui/material';
-import { AccountBalance, Add, Launch } from '@mui/icons-material';
+import { Button, Card, CardContent, Typography, Box, Divider, Chip, Alert, CircularProgress } from '@mui/material';
+import { AccountBalance, Add, Launch, AccountBalanceWallet } from '@mui/icons-material';
 import { listBanks, listAccountsForBank } from '../utils/AccountsLocalState';
 import { useBankWallet } from '../components/BankWallet';
 
@@ -12,7 +12,8 @@ export const AccountsHome: React.FC<{
 
 
   // check if midnight lace is installed and connected, if connected, we should be able to see accounts and use those instead of creating new ones
-  const { isConnected } = useBankWallet();
+  const { isConnected, connect } = useBankWallet();
+  const [connecting, setConnecting] = React.useState(false);
 
   useEffect(() => {
     console.log('isConnected', isConnected);
@@ -23,6 +24,17 @@ export const AccountsHome: React.FC<{
   }, [isConnected]);
 
   const banks = useMemo(() => listBanks(), []);
+
+  const handleConnect = async () => {
+    try {
+      setConnecting(true);
+      await connect();
+    } catch (error) {
+      console.error('Failed to connect wallet:', error);
+    } finally {
+      setConnecting(false);
+    }
+  };
   
   return (
     <Card sx={{ backgroundColor: 'transparent' }}>
@@ -32,6 +44,30 @@ export const AccountsHome: React.FC<{
         </Typography>
         
         <Box display="flex" flexDirection="column" alignItems="center" gap={3}>
+          {!isConnected && (
+            <Alert severity="warning" sx={{ width: '100%', maxWidth: 600 }}>
+              <Typography variant="body2" gutterBottom>
+                Connect your Lace wallet to access banking features
+              </Typography>
+              <Button 
+                variant="outlined" 
+                startIcon={connecting ? <CircularProgress size={16} /> : <AccountBalanceWallet />}
+                onClick={handleConnect}
+                disabled={connecting}
+                sx={{ mt: 1 }}
+              >
+                {connecting ? 'Connecting...' : 'Connect Lace Wallet'}
+              </Button>
+            </Alert>
+          )}
+
+          {isConnected && (
+            <Alert severity="success" sx={{ width: '100%', maxWidth: 600 }}>
+              <Typography variant="body2">
+                ✅ Wallet connected! You can now create banks and accounts.
+              </Typography>
+            </Alert>
+          )}
           {banks.length === 0 ? (
             <>
               <Box textAlign="center">
@@ -44,6 +80,7 @@ export const AccountsHome: React.FC<{
                   variant="contained" 
                   startIcon={<Add />}
                   onClick={onCreateBank}
+                  disabled={!isConnected}
                 >
                   Create New Bank
                 </Button>
@@ -51,6 +88,7 @@ export const AccountsHome: React.FC<{
                   variant="outlined"
                   startIcon={<Launch />}
                   onClick={onJoinBank}
+                  disabled={!isConnected}
                 >
                   Join Existing Bank
                 </Button>
@@ -63,6 +101,7 @@ export const AccountsHome: React.FC<{
                   variant="contained" 
                   startIcon={<Add />}
                   onClick={onCreateBank}
+                  disabled={!isConnected}
                 >
                   Create New Bank
                 </Button>
@@ -70,6 +109,7 @@ export const AccountsHome: React.FC<{
                   variant="outlined"
                   startIcon={<Launch />}
                   onClick={onJoinBank}
+                  disabled={!isConnected}
                 >
                   Join Existing Bank
                 </Button>
@@ -109,6 +149,7 @@ export const AccountsHome: React.FC<{
                       <Button 
                         size="small" 
                         onClick={() => onOpenBank(bank.contractAddress)}
+                        disabled={!isConnected}
                       >
                         Create Account
                       </Button>
@@ -131,6 +172,7 @@ export const AccountsHome: React.FC<{
                         size="small" 
                         variant="outlined"
                         onClick={() => onOpenBank(bank.contractAddress)}
+                        disabled={!isConnected}
                         sx={{ alignSelf: 'flex-start', mt: 1 }}
                       >
                         + Create New Account

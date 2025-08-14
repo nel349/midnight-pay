@@ -316,9 +316,8 @@ export class BankAPI implements DeployedBankAPI {
         },
       });
 
-      // Add user to shared private state
-      await this.ensureUserInPrivateState(userId, pin, utils.parseAmount(initialDeposit));
-      
+      // Ensure the new user's private state reflects the initial deposit immediately
+      await this.updateUserPrivateState(pin, utils.parseAmount(initialDeposit));
       await this.refreshSharedPrivateState();
     } catch (error) {
       this.logger?.error(error, `createAccount failed for ${userId}`);
@@ -361,18 +360,13 @@ export class BankAPI implements DeployedBankAPI {
         },
       });
       
-      // Get current user balance and update
-      const currentBalance = await this.getCurrentUserBalance();
-      const newBalance = currentBalance + utils.parseAmount(amount);
-      await this.updateUserPrivateState(pin, newBalance);
-      
-      // Force refresh of private state for all observers
+      // Force refresh of private state for all observers (contract already updated it)
       await this.refreshSharedPrivateState();
-      
+
       await this.appendDetailedLog({
         type: 'deposit',
         amount: utils.parseAmount(amount),
-        balanceAfter: newBalance,
+        balanceAfter: await this.getCurrentUserBalance(),
         timestamp: new Date(),
       });
     } catch (e) {
@@ -423,18 +417,13 @@ export class BankAPI implements DeployedBankAPI {
         },
       });
       
-      // Get current user balance and update
-      const currentBalance = await this.getCurrentUserBalance();
-      const newBalance = currentBalance - utils.parseAmount(amount);
-      await this.updateUserPrivateState(pin, newBalance);
-      
-      // Force refresh of private state for all observers
+      // Force refresh of private state for all observers (contract already updated it)
       await this.refreshSharedPrivateState();
-      
+
       await this.appendDetailedLog({
         type: 'withdraw',
         amount: utils.parseAmount(amount),
-        balanceAfter: newBalance,
+        balanceAfter: await this.getCurrentUserBalance(),
         timestamp: new Date(),
       });
     } catch (e) {
@@ -630,18 +619,13 @@ export class BankAPI implements DeployedBankAPI {
       },
     });
     
-    // Update sender's balance in shared private state
-    const currentSenderBalance = await this.getCurrentUserBalance();
-    const newSenderBalance = currentSenderBalance - utils.parseAmount(amount);
-    await this.updateUserPrivateState(pin, newSenderBalance);
-    
-    // Force refresh of private state for all observers
+    // Force refresh of private state for all observers (contract already updated it)
     await this.refreshSharedPrivateState();
-    
+
     await this.appendDetailedLog({
       type: 'auth_transfer',
       amount: utils.parseAmount(amount),
-      balanceAfter: newSenderBalance,
+      balanceAfter: await this.getCurrentUserBalance(),
       timestamp: new Date(),
       counterparty: recipientUserId,
     });
@@ -737,11 +721,13 @@ export class BankAPI implements DeployedBankAPI {
       },
     });
 
+    // Preserve any existing private state for this userId; don't overwrite with a fresh empty state
+    const existingPrivateState = (await providers.privateStateProvider.get(userId as AccountId)) ?? createBankPrivateState();
     const deployedBankContract = await findDeployedContract(providers, {
       contractAddress,
       contract: bankContract,
       privateStateId: userId as AccountId, // Each user has their own private state
-      initialPrivateState: createBankPrivateState(), // Empty initial state for this user
+      initialPrivateState: existingPrivateState,
     });
 
     logger.trace({
@@ -752,9 +738,6 @@ export class BankAPI implements DeployedBankAPI {
     });
 
     const bankAPI = new BankAPI(userId as AccountId, userId, deployedBankContract, providers, logger);
-    
-    // When subscribing, ensure this user is in the shared private state
-    // This is important for transfers where the contract needs access to all user balances
     await bankAPI.syncUserToSharedState();
     
     return bankAPI;
