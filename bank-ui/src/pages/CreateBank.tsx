@@ -1,9 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Button, 
-  Card, 
-  CardContent, 
   CircularProgress, 
   TextField, 
   Typography, 
@@ -15,6 +12,8 @@ import type { Logger } from 'pino';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { useBankWallet } from '../components/BankWallet';
 import { saveBank } from '../utils/AccountsLocalState';
+import { ThemedButton, ThemedCard, ThemedCardContent, ThemeToggle } from '../components';
+import { useThemeValues } from '../theme';
 
 export interface CreateBankProps { 
   logger: Logger; 
@@ -62,22 +61,44 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
     }
   }, [providers, logger, bankLabel, onComplete]);
 
+  const theme = useThemeValues();
+
   return (
-    <Card sx={{ maxWidth: 600, margin: 'auto', mt: 4 }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <Button
-            startIcon={<ArrowBack />}
-            onClick={() => navigate('/accounts')}
-            sx={{ mr: 2 }}
-            disabled={working}
-          >
-            Back to Accounts
-          </Button>
-          <Typography variant="h4" component="h1" sx={{ flexGrow: 1 }}>
-            Create New Bank
-          </Typography>
-        </Box>
+    <Box sx={{ position: 'relative', minHeight: '100vh' }}>
+      {/* Theme Toggle in top-right corner */}
+      <ThemeToggle 
+        sx={{ 
+          position: 'fixed',
+          top: 16,
+          right: 16,
+          zIndex: 1000,
+        }} 
+      />
+      
+      <ThemedCard sx={{ maxWidth: 600, margin: 'auto', mt: 4 }}>
+        <ThemedCardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <ThemedButton
+              variant="outlined"
+              startIcon={<ArrowBack />}
+              onClick={() => navigate('/accounts')}
+              sx={{ mr: 2 }}
+              disabled={working}
+            >
+              Back to Accounts
+            </ThemedButton>
+            <Typography 
+              variant="h4" 
+              component="h1" 
+              sx={{ 
+                flexGrow: 1,
+                color: theme.colors.text.primary,
+                fontWeight: theme.typography.fontWeight.bold,
+              }}
+            >
+              Create New Bank
+            </Typography>
+          </Box>
 
         <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
           Deploy a new Midnight Bank contract. This will create a shared banking environment 
@@ -90,14 +111,14 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
               <Typography variant="body2">
                 Please connect your Lace wallet to deploy a new bank contract.
               </Typography>
-              <Button 
+              <ThemedButton 
                 variant="outlined" 
                 onClick={() => void connect()} 
                 disabled={working}
                 sx={{ mt: 1 }}
               >
                 {working ? <CircularProgress size={16} /> : 'Connect Lace Wallet'}
-              </Button>
+              </ThemedButton>
             </Alert>
           )}
 
@@ -118,16 +139,21 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
             </Typography>
           </Alert>
 
-          <Button 
-            variant="contained" 
+          <ThemedButton 
+            variant="primary" 
             startIcon={working ? <CircularProgress size={16} /> : <AccountBalance />}
             onClick={onDeployBank} 
             disabled={!isConnected || working}
             size="large"
-            sx={{ minWidth: 200 }}
+            sx={{ 
+              minWidth: 250,
+              fontSize: theme.typography.fontSize.base,
+              fontWeight: theme.typography.fontWeight.medium,
+              padding: `${theme.spacing[3]} ${theme.spacing[6]}`,
+            }}
           >
             {working ? 'Deploying Bank...' : 'Deploy Bank Contract'}
-          </Button>
+          </ThemedButton>
 
           {error && (
             <Alert severity="error" sx={{ width: '100%' }}>
@@ -135,8 +161,9 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
             </Alert>
           )}
         </Box>
-      </CardContent>
-    </Card>
+        </ThemedCardContent>
+      </ThemedCard>
+    </Box>
   );
 };
 

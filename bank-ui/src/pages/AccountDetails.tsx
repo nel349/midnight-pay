@@ -226,7 +226,7 @@ export const AccountDetails: React.FC = () => {
                   color: showBalance ? 'text.primary' : 'text.secondary'
                 }}
               >
-                {showBalance && accountState?.balance !== undefined 
+                {showBalance && accountState?.balance !== undefined && accountState.balance !== null
                   ? `${utils.formatBalance(accountState.balance)} MBT`
                   : '*** MBT'
                 }

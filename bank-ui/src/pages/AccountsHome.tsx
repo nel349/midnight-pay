@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo } from 'react';
-import { Button, Card, CardContent, Typography, Box, Divider, Chip, Alert, CircularProgress } from '@mui/material';
+import { Typography, Box, Divider, Chip, Alert, CircularProgress } from '@mui/material';
 import { AccountBalance, Add, Launch, AccountBalanceWallet } from '@mui/icons-material';
 import { listBanks, listAccountsForBank } from '../utils/AccountsLocalState';
 import { useBankWallet } from '../components/BankWallet';
+import { ThemedButton } from '../components/ThemedButton';
+import { ThemedCard, ThemedCardContent } from '../components/ThemedCard';
+import { ThemeToggle } from '../components/ThemeToggle';
+import { useThemeValues } from '../theme';
 
 export const AccountsHome: React.FC<{ 
   onCreateBank: () => void; 
@@ -36,10 +40,33 @@ export const AccountsHome: React.FC<{
     }
   };
   
+  const theme = useThemeValues();
+  
   return (
-    <Card sx={{ backgroundColor: 'transparent' }}>
-      <CardContent>
-        <Typography variant="h1" color="primary.dark" align="center" gutterBottom>
+    <Box sx={{ position: 'relative', minHeight: '100vh' }}>
+      {/* Theme Toggle in top-right corner */}
+      <ThemeToggle 
+        sx={{ 
+          position: 'fixed',
+          top: 16,
+          right: 16,
+          zIndex: 1000,
+        }} 
+      />
+      
+      <ThemedCard sx={{ backgroundColor: 'transparent' }}>
+        <ThemedCardContent>
+        <Typography 
+          variant="h1" 
+          align="center" 
+          gutterBottom
+          sx={{
+            color: theme.colors.text.primary,
+            fontWeight: theme.typography.fontWeight.bold,
+            fontSize: theme.typography.fontSize['3xl'],
+            marginBottom: theme.spacing[6],
+          }}
+        >
           Welcome to Midnight Bank
         </Typography>
         
@@ -49,7 +76,7 @@ export const AccountsHome: React.FC<{
               <Typography variant="body2" gutterBottom>
                 Connect your Lace wallet to access banking features
               </Typography>
-              <Button 
+              <ThemedButton 
                 variant="outlined" 
                 startIcon={connecting ? <CircularProgress size={16} /> : <AccountBalanceWallet />}
                 onClick={handleConnect}
@@ -57,7 +84,7 @@ export const AccountsHome: React.FC<{
                 sx={{ mt: 1 }}
               >
                 {connecting ? 'Connecting...' : 'Connect Lace Wallet'}
-              </Button>
+              </ThemedButton>
             </Alert>
           )}
 
@@ -76,43 +103,43 @@ export const AccountsHome: React.FC<{
                 </Typography>
               </Box>
               <Box display="flex" gap={2}>
-                <Button 
-                  variant="contained" 
+                <ThemedButton 
+                  variant="primary" 
                   startIcon={<Add />}
                   onClick={onCreateBank}
                   disabled={!isConnected}
                 >
                   Create New Bank
-                </Button>
-                <Button 
+                </ThemedButton>
+                <ThemedButton 
                   variant="outlined"
                   startIcon={<Launch />}
                   onClick={onJoinBank}
                   disabled={!isConnected}
                 >
                   Join Existing Bank
-                </Button>
+                </ThemedButton>
               </Box>
             </>
           ) : (
             <>
               <Box display="flex" gap={2}>
-                <Button 
-                  variant="contained" 
+                <ThemedButton 
+                  variant="primary" 
                   startIcon={<Add />}
                   onClick={onCreateBank}
                   disabled={!isConnected}
                 >
                   Create New Bank
-                </Button>
-                <Button 
+                </ThemedButton>
+                <ThemedButton 
                   variant="outlined"
                   startIcon={<Launch />}
                   onClick={onJoinBank}
                   disabled={!isConnected}
                 >
                   Join Existing Bank
-                </Button>
+                </ThemedButton>
               </Box>
               <Divider sx={{ width: '100%' }} />
               <Typography variant="h6">Your Banks</Typography>
@@ -122,8 +149,8 @@ export const AccountsHome: React.FC<{
           {banks.map((bank) => {
             const accounts = listAccountsForBank(bank.contractAddress);
             return (
-              <Card key={bank.contractAddress} sx={{ width: '100%', maxWidth: 'fit-content' }}>
-                <CardContent>
+              <ThemedCard key={bank.contractAddress} sx={{ width: '100%', maxWidth: 'fit-content' }}>
+                <ThemedCardContent>
                   <Box display="flex" alignItems="center" gap={2} mb={2}>
                     <AccountBalance color="primary" />
                     <Box flexGrow={1}>
@@ -146,29 +173,29 @@ export const AccountsHome: React.FC<{
                       <Typography color="text.secondary" gutterBottom>
                         No accounts in this bank yet
                       </Typography>
-                      <Button 
+                      <ThemedButton 
                         size="small" 
                         onClick={() => onOpenBank(bank.contractAddress)}
                         disabled={!isConnected}
                       >
                         Create Account
-                      </Button>
+                      </ThemedButton>
                     </Box>
                   ) : (
                     <Box display="flex" flexDirection="column" gap={1}>
                       {accounts.map((account) => (
-                        <Button
+                        <ThemedButton
                           key={`${account.bankContractAddress}-${account.userId}`}
-                          variant="text"
+                          variant="outlined"
                           onClick={() => onOpenBank(account.bankContractAddress, account.userId)}
                           sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
                         >
                           <Typography variant="body2">
                             {account.label || account.userId}
                           </Typography>
-                        </Button>
+                        </ThemedButton>
                       ))}
-                      <Button 
+                      <ThemedButton 
                         size="small" 
                         variant="outlined"
                         onClick={() => onOpenBank(bank.contractAddress)}
@@ -176,16 +203,17 @@ export const AccountsHome: React.FC<{
                         sx={{ alignSelf: 'flex-start', mt: 1 }}
                       >
                         + Create New Account
-                      </Button>
+                      </ThemedButton>
                     </Box>
                   )}
-                </CardContent>
-              </Card>
+                </ThemedCardContent>
+              </ThemedCard>
             );
           })}
         </Box>
-      </CardContent>
-    </Card>
+        </ThemedCardContent>
+      </ThemedCard>
+    </Box>
   );
 };
 
