@@ -57,23 +57,35 @@ export ledger user_as_sender_auths: Map<Bytes<32>, Vector<20, Bytes<32>>>;   // 
 // Encrypted token amount mappings (contract-wide accessible)
 export ledger encrypted_amount_mappings: Map<Bytes<32>, Uint<64>>;          // encrypted_balance -> actual_amount
 
+// Bank Token System (Custom Token Implementation)
+export ledger bank_token_color: Bytes<32>;                                  // Our custom token type ID
+export ledger token_balances: Map<Bytes<32>, Uint<64>>;                     // user_id -> token_balance
+export ledger total_token_supply: Uint<64>;                                 // Total bank tokens in circulation
+export ledger token_nonce_counter: Counter;                                 // For unique token nonces
+export ledger bank_token_nonce: Bytes<32>;                                  // Master nonce for token operations
+
 // Private data (user-specific, stored per user)
 witness user_pin_hash(user_id: Bytes<32>): Bytes<32>;
 witness user_balance(user_id: Bytes<32>): Uint<64>;
 witness set_user_balance(user_id: Bytes<32>, balance: Uint<64>): [];
 // Note: Transaction history removed - API handles detailed transaction logging
 
-// Constructor - Initialize empty shared bank
-constructor() {
+// Constructor - Initialize empty shared bank with custom token
+constructor(init_nonce: Bytes<32>) {
   last_global_transaction = pad(32, "bank_initialized");
+  
+  // Initialize bank token system
+  bank_token_color = tokenType(pad(32, "midnight_bank_token"), kernel.self());
+  bank_token_nonce = disclose(init_nonce);
+  total_token_supply = 0 as Uint<64>;
 }
 
-// Circuit 1: Create Account in Shared Bank
+// Circuit 1: Create Account in Shared Bank with Token Deposit
 export circuit create_account(user_id: Bytes<32>, initial_pin: Bytes<32>, deposit_amount: Uint<64>): [] {
   // Check account doesn't already exist
   assert (!all_accounts.member(disclose(user_id)), "Account already exists");
   
-  assert (deposit_amount >= 10 as Uint<64>, "Minimum deposit is 10 coins");
+  assert (deposit_amount >= 10 as Uint<64>, "Minimum deposit is 10 tokens");
   assert (valid_pin_format(initial_pin), "PIN must be valid format");
   
   // Create account identity
@@ -94,11 +106,24 @@ export circuit create_account(user_id: Bytes<32>, initial_pin: Bytes<32>, deposi
   total_accounts.increment(1);
   last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "account_created"), user_id]));
   
-  // Initialize private state for this user
-  set_user_balance(user_id, deposit_amount);
+  // Mint initial tokens for new account
+  token_nonce_counter.increment(1);
+  const new_nonce = evolveNonce(token_nonce_counter, bank_token_nonce);
+  const initial_tokens = mintToken(
+    pad(32, "midnight_bank_token"),
+    disclose(deposit_amount),
+    new_nonce,
+    right<ZswapCoinPublicKey, ContractAddress>(kernel.self())
+  );
+  
+  // Receive tokens and set initial balance
+  receive(disclose(initial_tokens));
+  token_balances.insert(disclose(user_id), disclose(deposit_amount));
+  total_token_supply = disclose((total_token_supply + deposit_amount) as Uint<64>);
+  bank_token_nonce = new_nonce;
 }
 
-// Circuit 2: Deposit to User Account
+// Circuit 2: Deposit to User Account (Token-Based)
 export circuit deposit(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): [] {
   assert (amount > 0 as Uint<64>, "Deposit amount must be positive");
   
@@ -110,27 +135,42 @@ export circuit deposit(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): []
   const expected_owner = public_key(pin);
   assert (account.owner_hash == expected_owner, "Authentication failed");
   
-  // Update private balance
-  const current_balance = user_balance(user_id);
-  const new_balance = current_balance + amount;
-  set_user_balance(user_id, new_balance as Uint<64>);
+  // Mint new bank tokens
+  token_nonce_counter.increment(1);
+  const new_nonce = evolveNonce(token_nonce_counter, bank_token_nonce);
+  const minted_coin = mintToken(
+    pad(32, "midnight_bank_token"),
+    disclose(amount),
+    new_nonce,
+    right<ZswapCoinPublicKey, ContractAddress>(kernel.self())
+  );
   
-  // Update public account state
+  // Receive the minted tokens into contract
+  receive(disclose(minted_coin));
+  
+  // Update user token balance and total supply
+  const current_balance = token_balances.member(disclose(user_id)) ? 
+    token_balances.lookup(disclose(user_id)) : 0 as Uint<64>;
+  token_balances.insert(disclose(user_id), disclose((current_balance + amount) as Uint<64>));
+  total_token_supply = disclose((total_token_supply + amount) as Uint<64>);
+  
+  // Update nonce and account state
+  bank_token_nonce = new_nonce;
   const updated_account = BankAccount {
     exists: account.exists,
     owner_hash: account.owner_hash,
     public_key: account.public_key,
     transaction_count: (account.transaction_count + 1) as Uint<32>,
-    last_transaction: persistentHash<Bytes<32>>(pad(32, "deposit")),
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "token_deposit")),
     status: pad(32, "active"),
     created_at: account.created_at
   };
   all_accounts.insert(disclose(user_id), updated_account);
   
-  last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "deposit"), user_id]));
+  last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "token_deposit"), user_id]));
 }
 
-// Circuit 3: Withdraw from User Account  
+// Circuit 3: Withdraw from User Account (Token-Based with Burning)
 export circuit withdraw(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): [] {
   assert (amount > 0 as Uint<64>, "Withdrawal amount must be positive");
   
@@ -142,25 +182,31 @@ export circuit withdraw(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): [
   const expected_owner = public_key(pin);
   assert (account.owner_hash == expected_owner, "Authentication failed");
   
-  // Check and update private balance
-  const current_balance = user_balance(user_id);
-  assert (current_balance >= amount, "Insufficient funds");
-  const new_balance = current_balance - amount;
-  set_user_balance(user_id, new_balance as Uint<64>);
+  // Check token balance and burn tokens
+  assert (token_balances.member(disclose(user_id)), "No token balance found");
+  const current_balance = token_balances.lookup(disclose(user_id));
+  assert (current_balance >= amount, "Insufficient token balance");
   
-  // Update public account state
+  // Update token balance and total supply (burn tokens)
+  token_balances.insert(disclose(user_id), disclose((current_balance - amount) as Uint<64>));
+  total_token_supply = disclose((total_token_supply - amount) as Uint<64>);
+  
+  // Send equivalent value to user (in practice, this would send external coins)
+  // For now, we just burn the tokens - external coin sending would be handled by API
+  
+  // Update account state
   const updated_account = BankAccount {
     exists: account.exists,
     owner_hash: account.owner_hash,
     public_key: account.public_key,
     transaction_count: (account.transaction_count + 1) as Uint<32>,
-    last_transaction: persistentHash<Bytes<32>>(pad(32, "withdrawal")),
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "token_withdrawal")),
     status: account.status,
     created_at: account.created_at
   };
   all_accounts.insert(disclose(user_id), updated_account);
   
-  last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "withdrawal"), user_id]));
+  last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "token_withdrawal"), user_id]));
 }
 
 // Circuit 4: Request Transfer Authorization (Like Adding Contact on Zelle)
@@ -257,7 +303,7 @@ export circuit approve_transfer_authorization(user_id: Bytes<32>, sender_id: Byt
   all_accounts.insert(disclose(user_id), updated_account);
 }
 
-// Circuit 6: Send to Authorized User (Simplified for now)
+// Circuit 6: Send Tokens to Authorized User
 export circuit send_to_authorized_user(user_id: Bytes<32>, recipient_id: Bytes<32>, amount: Uint<64>, pin: Bytes<32>): [] {
   assert (amount > 0 as Uint<64>, "Transfer amount must be positive");
   assert (user_id != recipient_id, "Cannot transfer to yourself");
@@ -274,10 +320,13 @@ export circuit send_to_authorized_user(user_id: Bytes<32>, recipient_id: Bytes<3
   const sender_account = all_accounts.lookup(disclose(user_id));
   assert (sender_account.owner_hash == public_key(pin), "Authentication failed");
   
-  // 3. Verify sender has sufficient funds and transfer
-  const sender_balance = user_balance(user_id);
-  assert (sender_balance >= amount, "Insufficient funds");
-  set_user_balance(user_id, (sender_balance - amount) as Uint<64>);
+  // 3. Verify sender has sufficient token balance and transfer
+  assert (token_balances.member(disclose(user_id)), "Sender has no token balance");
+  const sender_balance = token_balances.lookup(disclose(user_id));
+  assert (sender_balance >= amount, "Insufficient token balance");
+  
+  // Deduct from sender's token balance
+  token_balances.insert(disclose(user_id), disclose((sender_balance - amount) as Uint<64>));
   
   // 4. Store/accumulate pending transfer for recipient to claim later
   const pending_amount = encrypted_balances.member(disclose(auth_id)) ?
@@ -304,18 +353,16 @@ export circuit send_to_authorized_user(user_id: Bytes<32>, recipient_id: Bytes<3
     owner_hash: sender_account.owner_hash,
     public_key: sender_account.public_key,
     transaction_count: (sender_account.transaction_count + 1) as Uint<32>,
-    last_transaction: persistentHash<Bytes<32>>(pad(32, "auth_transfer_sent")),
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "token_transfer_sent")),
     status: sender_account.status,
     created_at: sender_account.created_at
   };
   all_accounts.insert(disclose(user_id), updated_sender);
   
-  // Transaction completed - history tracked by API
-  
-  last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "auth_transfer"), user_id, recipient_id]));
+  last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "token_transfer"), user_id, recipient_id]));
 }
 
-// Circuit 7: Claim Authorized Transfer
+// Circuit 7: Claim Authorized Token Transfer
 export circuit claim_authorized_transfer(user_id: Bytes<32>, sender_id: Bytes<32>, pin: Bytes<32>): [] {
   // 1. Verify authorization exists
   const auth_id = persistentHash<Vector<2, Bytes<32>>>([sender_id, user_id]);
@@ -340,9 +387,10 @@ export circuit claim_authorized_transfer(user_id: Bytes<32>, sender_id: Bytes<32
   const pending_amount = encrypted_amount_mappings.lookup(encrypted_amount);
   assert (pending_amount > 0 as Uint<64>, "No pending amount to claim");
   
-  // 6. Add to recipient's balance
-  const current_balance = user_balance(user_id);
-  set_user_balance(user_id, (current_balance + pending_amount) as Uint<64>);
+  // 6. Add tokens to recipient's balance
+  const current_balance = token_balances.member(disclose(user_id)) ? 
+    token_balances.lookup(disclose(user_id)) : 0 as Uint<64>;
+  token_balances.insert(disclose(user_id), (current_balance + pending_amount) as Uint<64>);
   
   // 7. Clear the claimed transfer (set to zero) 
   const zero_encrypted = encrypt_balance(0 as Uint<64>, disclose(shared_key));
@@ -351,25 +399,23 @@ export circuit claim_authorized_transfer(user_id: Bytes<32>, sender_id: Bytes<32
   // Clear the amount mapping from public ledger
   encrypted_amount_mappings.insert(encrypted_amount, 0 as Uint<64>);
   
-  // 8. Update recipient's account and transaction history
+  // 8. Update recipient's account
   const updated_account = BankAccount {
     exists: account.exists,
     owner_hash: account.owner_hash,
     public_key: account.public_key,
     transaction_count: (account.transaction_count + 1) as Uint<32>,
-    last_transaction: persistentHash<Bytes<32>>(pad(32, "transfer_claimed")),
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "token_transfer_claimed")),
     status: account.status,
     created_at: account.created_at
   };
   all_accounts.insert(disclose(user_id), updated_account);
   
-  // Transfer claimed - history tracked by API
-  
-  last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "transfer_claimed"), sender_id, user_id]));
+  last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "token_transfer_claimed"), sender_id, user_id]));
 }
 
-// Circuit 5: Authenticate Balance Access
-export circuit authenticate_balance_access(user_id: Bytes<32>, pin: Bytes<32>): [] {
+// Circuit 8: Get Token Balance
+export circuit get_token_balance(user_id: Bytes<32>, pin: Bytes<32>): [] {
   assert (all_accounts.member(disclose(user_id)), "Account does not exist");
   const account = all_accounts.lookup(disclose(user_id));
   
@@ -377,20 +423,24 @@ export circuit authenticate_balance_access(user_id: Bytes<32>, pin: Bytes<32>): 
   const expected_owner = public_key(pin);
   assert (account.owner_hash == expected_owner, "Authentication failed");
   
+  // Token balance is publicly accessible for authenticated users
+  const balance = token_balances.member(disclose(user_id)) ? 
+    token_balances.lookup(disclose(user_id)) : 0 as Uint<64>;
+  
   // Update last transaction to show balance was checked
   const updated_account = BankAccount {
     exists: account.exists,
     owner_hash: account.owner_hash,
     public_key: account.public_key,
     transaction_count: account.transaction_count,
-    last_transaction: persistentHash<Bytes<32>>(pad(32, "balance_check")),
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "token_balance_check")),
     status: account.status,
     created_at: account.created_at
   };
   all_accounts.insert(disclose(user_id), updated_account);
 }
 
-// Circuit 6: Verify Account Status
+// Circuit 9: Verify Account Status (Token-Based)
 export circuit verify_account_status(user_id: Bytes<32>, pin: Bytes<32>): [] {
   assert (all_accounts.member(disclose(user_id)), "Account does not exist");
   const account = all_accounts.lookup(disclose(user_id));
@@ -399,9 +449,10 @@ export circuit verify_account_status(user_id: Bytes<32>, pin: Bytes<32>): [] {
   const expected_owner = public_key(pin);
   assert (account.owner_hash == expected_owner, "Authentication failed");
   
-  // Verify account properties
-  const balance = user_balance(user_id);
-  assert (balance >= 5 as Uint<64>, "Account balance too low for verification");
+  // Verify account properties with token balance
+  const token_balance = token_balances.member(disclose(user_id)) ? 
+    token_balances.lookup(disclose(user_id)) : 0 as Uint<64>;
+  assert (token_balance >= 5 as Uint<64>, "Token balance too low for verification");
   assert (account.transaction_count >= 1 as Uint<32>, "Insufficient transaction history");
   
   // Update verification status

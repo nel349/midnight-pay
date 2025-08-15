@@ -34,8 +34,11 @@ export class BankTestSetup {
     const initialPrivateState = createBankPrivateState();
     
     // Get initial state from contract (empty shared bank)
+    const initNonce = new Uint8Array(32);
+    initNonce.fill(1); // Fill with 1s for initial nonce
     const { currentPrivateState, currentContractState, currentZswapLocalState } = this.contract.initialState(
       constructorContext(initialPrivateState, '0'.repeat(64)),
+      initNonce // init_nonce parameter for token system as Bytes<32>
     );
     
     // Set up turn context
@@ -141,14 +144,14 @@ export class BankTestSetup {
   }
 
 
-  // Test method: Authenticate balance access
-  authenticateBalanceAccess(userId: string, pin: string): Ledger {
-    console.log(`👁️ User ${userId} checking balance access`);
+  // Test method: Get token balance
+  getTokenBalance(userId: string, pin: string): Ledger {
+    console.log(`👁️ User ${userId} checking token balance`);
     
     const userIdBytes = this.stringToBytes32(userId);
     const pinBytes = this.stringToBytes32(pin);
     
-    const results = this.contract.impureCircuits.authenticate_balance_access(this.turnContext, userIdBytes, pinBytes);
+    const results = this.contract.impureCircuits.get_token_balance(this.turnContext, userIdBytes, pinBytes);
     return this.updateStateAndGetLedger(results);
   }
 
@@ -274,11 +277,16 @@ export class BankTestSetup {
     return this.turnContext.currentPrivateState;
   }
 
-  // Helper: Get user's current balance (from private state)
+  // Helper: Get user's current token balance (from public ledger)
   getUserBalance(userId: string): bigint {
-    // Get balance from the shared private state
-    const balance = this.turnContext.currentPrivateState.userBalances.get(userId);
-    return balance ?? 0n;
+    // Get token balance from the public ledger
+    const userIdBytes = this.stringToBytes32(userId);
+    const ledgerState = this.getLedgerState();
+    const hasBalance = ledgerState.token_balances.member(userIdBytes);
+    if (hasBalance) {
+      return ledgerState.token_balances.lookup(userIdBytes);
+    }
+    return 0n;
   }
 
   // Helper: Check if account exists for user in shared bank
