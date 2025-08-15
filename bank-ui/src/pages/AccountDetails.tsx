@@ -1,15 +1,23 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Card, CardContent, Typography, Box, Chip } from '@mui/material';
-import { ArrowBack, Visibility, VisibilityOff } from '@mui/icons-material';
+import { Typography, Box, Chip } from '@mui/material';
+import { ArrowBack, Visibility, VisibilityOff, AccountBalance, Notifications } from '@mui/icons-material';
 import { useBankWallet } from '../components/BankWallet';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
 import { touchAccount } from '../utils/AccountsLocalState';
 import { AuthorizationPanel } from '../components/AuthorizationPanel';
 import { AuthorizationNotifications } from '../components/AuthorizationNotifications';
 import { ErrorAlert } from '../components/ErrorAlert';
+import { 
+  ThemedButton, 
+  ThemedCard, 
+  ThemedCardContent, 
+  GradientBackground, 
+  AppHeader 
+} from '../components';
 import type { BankAPI, BankDerivedState } from '@midnight-bank/bank-api';
 import { utils } from '@midnight-bank/bank-api';
+import { useTheme } from '../theme/ThemeProvider';
 
 export const AccountDetails: React.FC = () => {
   const { bankAddress, userId } = useParams<{ bankAddress: string; userId: string }>();
@@ -25,6 +33,7 @@ export const AccountDetails: React.FC = () => {
   const [showBalance, setShowBalance] = useState(false);
   const [, setUserPin] = useState<string>('');
   const lastAuthRef = useRef<number | null>(null);
+  const { theme, mode } = useTheme();
   
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -158,170 +167,406 @@ export const AccountDetails: React.FC = () => {
 
   if (!bankAddress || !userId) {
     return (
-      <Card>
-        <CardContent>
-          <Typography color="error">Invalid bank address or user ID</Typography>
-        </CardContent>
-      </Card>
+      <GradientBackground variant="subtle">
+        <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ThemedCard sx={{ maxWidth: 500 }}>
+            <ThemedCardContent>
+              <Typography 
+                color="error" 
+                variant="h6" 
+                sx={{ textAlign: 'center', color: theme.colors.error[500] }}
+              >
+                Invalid bank address or user ID
+              </Typography>
+            </ThemedCardContent>
+          </ThemedCard>
+        </Box>
+      </GradientBackground>
     );
   }
 
   return (
-    <Card sx={{ maxWidth: 800, margin: 'auto' }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <Button
-            startIcon={<ArrowBack />}
-            onClick={() => navigate(`/bank/${bankAddress}`)}
-            sx={{ mr: 2 }}
-          >
-            Back to Bank
-          </Button>
-          <Typography variant="h4" component="h1" sx={{ flexGrow: 1 }}>
-            Account Details
-          </Typography>
-        </Box>
-
-        <Box display="flex" flexDirection="column" gap={3}>
-          <Box>
-            <Typography variant="h6" gutterBottom>
-              Account Information
-            </Typography>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              User ID: {userId}
-            </Typography>
-            <Typography 
-              variant="body2" 
-              color="text.secondary"
+    <GradientBackground variant="subtle">
+      <Box sx={{ minHeight: '100vh', p: theme.spacing[4] }}>
+        {/* Compact Header */}
+        <Box sx={{ maxWidth: 1200, margin: '0 auto', mb: theme.spacing[6] }}>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            mb: theme.spacing[4],
+          }}>
+            <ThemedButton
+              variant="outlined"
+              startIcon={<ArrowBack />}
+              onClick={() => navigate(`/bank/${bankAddress}`)}
               sx={{ 
-                fontFamily: 'monospace', 
-                fontSize: '0.75rem'
+                textTransform: 'none',
+                borderRadius: theme.borderRadius.lg,
               }}
             >
-              Bank: {bankAddress}
-            </Typography>
-          </Box>
-
-          {bankAPI && (
-            <AuthorizationNotifications
-              bankAPI={bankAPI}
-              onError={setError}
-              onSuccess={setSuccess}
-            />
-          )}
-
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <Typography variant="h6">Balance</Typography>
-              <Chip label="MBT" size="small" variant="outlined" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }} />
-              {loading && <Chip label="Loading..." size="small" />}
-              {error && <Chip label="Error" color="error" size="small" />}
-              {accountState && <Chip label={`Account Exists: ${accountState.accountExists}`} size="small" variant="outlined" />}
-            </Box>
+              Back to Bank
+            </ThemedButton>
             
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography 
-                variant="h4" 
-                sx={{ 
-                  fontFamily: 'monospace',
-                  color: showBalance ? 'text.primary' : 'text.secondary'
-                }}
-              >
-                {showBalance && accountState?.balance !== undefined && accountState.balance !== null
-                  ? `${utils.formatBalance(accountState.balance)} MBT`
-                  : '*** MBT'
-                }
-              </Typography>
-              
-              {!showBalance && (
-                <Button
-                  startIcon={<Visibility />}
-                  onClick={handleShowBalance}
-                  disabled={loading || !isConnected}
-                  size="small"
-                >
-                  Show Balance
-                </Button>
-              )}
-              
-              {showBalance && (
-                <Button
-                  startIcon={<VisibilityOff />}
-                  onClick={() => {
-                    setShowBalance(false);
-                    setUserPin('');
-                    lastAuthRef.current = null;
-                  }}
-                  size="small"
-                >
-                  Hide
-                </Button>
-              )}
-            </Box>
-          </Box>
-
-          <Box>
-            <Typography variant="h6" gutterBottom>
-              Account Actions
+            {/* Centered Title */}
+            <Typography
+              variant="h4"
+              sx={{
+                color: theme.colors.text.primary,
+                fontWeight: theme.typography.fontWeight.bold,
+                textAlign: 'center',
+                flex: 1,
+                mx: theme.spacing[4],
+              }}
+            >
+              Account Details
             </Typography>
             
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <Button
-                variant="contained"
-                onClick={handleDeposit}
-                disabled={loading || !isConnected}
-              >
-                Deposit
-              </Button>
+            {/* Spacer to balance the layout */}
+            <Box sx={{ width: '120px' }} />
+          </Box>
+        </Box>
+        
+        <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
+
+          {/* Main Content Grid */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: theme.spacing[6] }}>
+            
+            {/* Left Column - Account Info & Balance */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[4] }}>
               
-              <Button
-                variant="outlined"
-                onClick={handleWithdraw}
-                disabled={loading || !isConnected}
-              >
-                Withdraw
-              </Button>
+              {/* Account Information Card */}
+              <ThemedCard>
+                <ThemedCardContent>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: theme.spacing[3] }}>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: theme.borderRadius.md,
+                        background: mode === 'dark'
+                          ? `linear-gradient(135deg, ${theme.colors.secondary[600]}33 0%, ${theme.colors.secondary[500]}33 100%)`
+                          : `linear-gradient(135deg, ${theme.colors.secondary[500]}1A 0%, ${theme.colors.secondary[600]}1A 100%)`,
+                        mr: theme.spacing[3],
+                      }}
+                    >
+                      <AccountBalance 
+                        sx={{ 
+                          fontSize: '1.5rem',
+                          color: theme.colors.text.primary,
+                        }} 
+                      />
+                    </Box>
+                    <Typography 
+                      variant="h6" 
+                      sx={{ 
+                        color: theme.colors.text.primary,
+                        fontWeight: theme.typography.fontWeight.bold,
+                      }}
+                    >
+                      Account Information
+                    </Typography>
+                  </Box>
+                  
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[3] }}>
+                    {/* User ID Field */}
+                    <Box>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: theme.colors.text.secondary, 
+                          fontWeight: theme.typography.fontWeight.medium,
+                          mb: theme.spacing[1],
+                          textTransform: 'uppercase',
+                          fontSize: '0.75rem',
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        User ID
+                      </Typography>
+                      <Typography 
+                        variant="body1" 
+                        sx={{ 
+                          color: theme.colors.text.primary,
+                          fontFamily: theme.typography.fontFamily.mono,
+                          fontSize: '0.95rem',
+                          fontWeight: theme.typography.fontWeight.medium,
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        {userId}
+                      </Typography>
+                    </Box>
+                    
+                    {/* Bank Contract Field */}
+                    <Box>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: theme.colors.text.secondary, 
+                          fontWeight: theme.typography.fontWeight.medium,
+                          mb: theme.spacing[1],
+                          textTransform: 'uppercase',
+                          fontSize: '0.75rem',
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        Bank Contract
+                      </Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: theme.colors.text.primary,
+                          fontFamily: theme.typography.fontFamily.mono, 
+                          fontSize: '0.8rem',
+                          fontWeight: theme.typography.fontWeight.normal,
+                          wordBreak: 'break-all',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {bankAddress}
+                      </Typography>
+                    </Box>
+                    
+                    {/* Account Status Field */}
+                    {accountState && (
+                      <Box>
+                        <Typography 
+                          variant="body2" 
+                          sx={{ 
+                            color: theme.colors.text.secondary, 
+                            fontWeight: theme.typography.fontWeight.medium,
+                            mb: theme.spacing[1],
+                            textTransform: 'uppercase',
+                            fontSize: '0.75rem',
+                            letterSpacing: '0.5px',
+                          }}
+                        >
+                          Account Status
+                        </Typography>
+                        <Typography 
+                          variant="body1"
+                          sx={{ 
+                            color: accountState.accountExists 
+                              ? theme.colors.success[500] 
+                              : theme.colors.warning[500],
+                            fontWeight: theme.typography.fontWeight.medium,
+                            fontSize: '0.9rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: theme.spacing[1],
+                          }}
+                        >
+                          {accountState.accountExists ? '✅' : '⚠️'}
+                          {accountState.accountExists ? 'Active' : 'Inactive'}
+                        </Typography>
+                        
+                        {loading && (
+                          <Typography 
+                            variant="body2"
+                            sx={{ 
+                              color: theme.colors.text.secondary, 
+                              mt: theme.spacing[1],
+                              fontSize: '0.8rem',
+                              fontStyle: 'italic',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: theme.spacing[1],
+                            }}
+                          >
+                            🔄 Loading...
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
+                </ThemedCardContent>
+              </ThemedCard>
+
+              {/* Balance & Account Actions Card */}
+              <ThemedCard>
+                <ThemedCardContent>
+                  {/* Balance Section */}
+                  <Box sx={{ mb: theme.spacing[4] }}>
+                    <Typography 
+                      variant="h6" 
+                      sx={{ 
+                        color: theme.colors.text.primary,
+                        fontWeight: theme.typography.fontWeight.bold,
+                        mb: theme.spacing[3],
+                      }}
+                    >
+                      Balance
+                    </Typography>
+                    
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[3], mb: theme.spacing[3] }}>
+                      <Typography 
+                        variant="h3" 
+                        sx={{ 
+                          fontFamily: 'monospace',
+                          fontWeight: 'bold',
+                          color: showBalance ? theme.colors.text.primary : theme.colors.text.secondary,
+                        }}
+                      >
+                        {showBalance && accountState?.balance !== undefined && accountState.balance !== null
+                          ? `${utils.formatBalance(accountState.balance)}`
+                          : '***'
+                        }
+                      </Typography>
+                      
+                      <Typography 
+                        variant="h5" 
+                        sx={{ 
+                          color: theme.colors.text.secondary,
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        MBT
+                      </Typography>
+                    </Box>
+                    
+                    <Box sx={{ display: 'flex', gap: theme.spacing[2] }}>
+                      {!showBalance && (
+                        <ThemedButton
+                          variant="outlined"
+                          startIcon={<Visibility />}
+                          onClick={handleShowBalance}
+                          disabled={loading || !isConnected}
+                        >
+                          Show Balance
+                        </ThemedButton>
+                      )}
+                      
+                      {showBalance && (
+                        <ThemedButton
+                          variant="outlined"
+                          size="small"
+                          startIcon={<VisibilityOff />}
+                          onClick={() => {
+                            setShowBalance(false);
+                            setUserPin('');
+                            lastAuthRef.current = null;
+                          }}
+                        >
+                          Hide Balance
+                        </ThemedButton>
+                      )}
+                    </Box>
+                  </Box>
+                  
+                  {/* Divider */}
+                  <Box 
+                    sx={{ 
+                      height: '1px',
+                      backgroundColor: mode === 'dark' 
+                        ? 'rgba(255, 255, 255, 0.1)' 
+                        : 'rgba(0, 0, 0, 0.05)',
+                      mb: theme.spacing[4],
+                    }} 
+                  />
+                  
+                  {/* Account Actions Section */}
+                  <Box>
+                    <Typography 
+                      variant="h6" 
+                      sx={{ 
+                        color: theme.colors.text.primary,
+                        fontWeight: theme.typography.fontWeight.bold,
+                        mb: theme.spacing[3],
+                      }}
+                    >
+                      Account Actions
+                    </Typography>
+                    
+                    <Box sx={{ display: 'flex', gap: theme.spacing[2], flexWrap: 'wrap' }}>
+                      <ThemedButton
+                        variant="primary"
+                        onClick={handleDeposit}
+                        disabled={loading || !isConnected}
+                        sx={{ minWidth: 100 }}
+                      >
+                        Deposit
+                      </ThemedButton>
+                      
+                      <ThemedButton
+                        variant="outlined"
+                        onClick={handleWithdraw}
+                        disabled={loading || !isConnected}
+                        sx={{ minWidth: 100 }}
+                      >
+                        Withdraw
+                      </ThemedButton>
+                      
+                      <ThemedButton
+                        variant="outlined"
+                        onClick={() => alert('Verify functionality not implemented yet')}
+                        disabled={loading}
+                        sx={{ minWidth: 120 }}
+                      >
+                        Verify Account
+                      </ThemedButton>
+                    </Box>
+                  </Box>
+                </ThemedCardContent>
+              </ThemedCard>
+            </Box>
+
+            {/* Right Column - Notifications & Authorizations */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[4] }}>
               
-              <Button
-                variant="outlined"
-                onClick={() => alert('Verify functionality not implemented yet')}
-                disabled={loading}
-              >
-                Verify Account
-              </Button>
+              {/* Real-time Notifications */}
+              {bankAPI && (
+                <AuthorizationNotifications
+                  bankAPI={bankAPI}
+                  onError={setError}
+                  onSuccess={setSuccess}
+                />
+              )}
+
+              {/* Authorization System */}
+              {bankAPI && (
+                <AuthorizationPanel 
+                  bankAPI={bankAPI}
+                  isConnected={isConnected}
+                  userId={userId}
+                  onError={setError}
+                  onSuccess={setSuccess}
+                />
+              )}
             </Box>
           </Box>
 
-          {bankAPI && (
-            <AuthorizationPanel 
-              bankAPI={bankAPI}
-              isConnected={isConnected}
-              onError={setError}
-              onSuccess={setSuccess}
-            />
-          )}
-
+          {/* Status Messages */}
           {!isConnected && (
-            <Box>
-              <Card sx={{ backgroundColor: '#fff3cd' }}>
-                <CardContent>
-                  <Typography color="warning.dark">
+            <Box sx={{ mt: theme.spacing[4] }}>
+              <ThemedCard>
+                <ThemedCardContent>
+                  <Typography 
+                    sx={{ 
+                      color: theme.colors.warning[500],
+                      textAlign: 'center',
+                    }}
+                  >
                     Connect your wallet to perform transactions
                   </Typography>
-                </CardContent>
-              </Card>
+                </ThemedCardContent>
+              </ThemedCard>
             </Box>
           )}
 
           {success && (
-            <Box>
-              <Card sx={{ backgroundColor: '#d4edda' }}>
-                <CardContent>
-                  <Typography color="success.dark">
+            <Box sx={{ mt: theme.spacing[4] }}>
+              <ThemedCard>
+                <ThemedCardContent>
+                  <Typography 
+                    sx={{ 
+                      color: theme.colors.success[500],
+                      textAlign: 'center',
+                    }}
+                  >
                     {success}
                   </Typography>
-                </CardContent>
-              </Card>
+                </ThemedCardContent>
+              </ThemedCard>
             </Box>
           )}
 
@@ -331,7 +576,7 @@ export const AccountDetails: React.FC = () => {
             showDetails={true}
           />
         </Box>
-      </CardContent>
-    </Card>
+      </Box>
+    </GradientBackground>
   );
 };
