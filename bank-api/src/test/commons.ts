@@ -30,7 +30,7 @@ import { expect } from 'vitest';
 
 export const GENESIS_MINT_WALLET_SEED = '0000000000000000000000000000000000000000000000000000000000000001';
 
-export type BankCircuitKeys = 'create_account' | 'deposit' | 'withdraw' | 'authenticate_balance_access' | 'verify_account_status';
+export type BankCircuitKeys = 'create_account' | 'deposit' | 'withdraw' | 'get_token_balance' | 'verify_account_status';
 
 export type BankProviders = MidnightProviders<BankCircuitKeys, string, BankPrivateState>;
 

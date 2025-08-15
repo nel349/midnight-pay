@@ -37,7 +37,7 @@ export interface DeployedBankAPI {
   deposit(pin: string, amount: string): Promise<void>;
   withdraw(pin: string, amount: string): Promise<void>;
   transferToUser(pin: string, recipientUserId: string, amount: string): Promise<void>;
-  authenticateBalanceAccess(pin: string): Promise<void>;
+  getTokenBalance(pin: string): Promise<void>;
   verifyAccountStatus(pin: string): Promise<void>;
   getAuthorizedContacts(): Promise<Array<{ userId: string; maxAmount: bigint }>>;
   
@@ -97,14 +97,15 @@ export class BankAPI implements DeployedBankAPI {
         const accountExists = ledgerState.all_accounts.member(userIdBytes);
         const userAccount = accountExists ? ledgerState.all_accounts.lookup(userIdBytes) : undefined;
         
-        // Get user-specific private data (use normalized userId)
-        const userBalance = privateState.userBalances.get(normalizedUserId) ?? 0n;
+        // Get user-specific data
+        // Token balance is now stored on public ledger
+        const userTokenBalance = ledgerState.token_balances.member(userIdBytes) ? 
+          ledgerState.token_balances.lookup(userIdBytes) : 0n;
         const userPinHash = privateState.userPinHashes.get(normalizedUserId) ?? new Uint8Array(32);
         
         // Debug logging
-        if (userBalance === 0n && accountExists) {
-          console.log(`DEBUG: User ${this.userId} has account but balance is 0. Private state users:`, Array.from(privateState.userBalances.keys()));
-          console.log(`DEBUG: Private state balances:`, Object.fromEntries(privateState.userBalances));
+        if (userTokenBalance === 0n && accountExists) {
+          console.log(`DEBUG: User ${this.userId} has account but token balance is 0.`);
         }
         
         const whoami = pureCircuits.public_key ? pureCircuits.public_key(userPinHash) : new Uint8Array(32);
@@ -115,7 +116,7 @@ export class BankAPI implements DeployedBankAPI {
           transactionCount: userAccount?.transaction_count ?? 0n,
           lastTransactionHash: userAccount ? toHex(userAccount.last_transaction) : '',
           whoami: toHex(whoami),
-          balance: userBalance,
+          balance: userTokenBalance,
           transactionHistory: [], // Use getDetailedTransactionHistory() for transaction history
           lastTransaction: userActions.transaction,
           lastCancelledTransaction: userActions.cancelledTransaction,
@@ -414,13 +415,13 @@ export class BankAPI implements DeployedBankAPI {
     }
   }
 
-  async authenticateBalanceAccess(pin: string): Promise<void> {
+  async getTokenBalance(pin: string): Promise<void> {
     this.logger?.info({ authenticateBalanceAccess: { userId: this.userId } });
     
     const userIdBytes = this.stringToBytes32(this.userId);
     
     const pinBytes = this.stringToBytes32(pin);
-    const txData = await this.deployedContract.callTx.authenticate_balance_access(
+    const txData = await this.deployedContract.callTx.get_token_balance(
       userIdBytes,
       pinBytes
     );
@@ -620,6 +621,11 @@ export class BankAPI implements DeployedBankAPI {
     const normalizedSenderId = this.normalizeUserId(senderUserId);
     const senderIdBytes = this.stringToBytes32(normalizedSenderId);
     
+    // Get the pending claim amount BEFORE claiming it
+    const pendingClaims = await this.getPendingClaims();
+    const claimForSender = pendingClaims.find(claim => this.normalizeUserId(claim.senderUserId) === normalizedSenderId);
+    const expectedClaimAmount = claimForSender?.amount ?? 0n;
+    
     // Ensure the recipient exists in shared private state before invoking witness-dependent circuit
     const startingBalance = await this.getCurrentUserBalance();
     await this.ensureUserInPrivateState(this.userId, pin, startingBalance);
@@ -637,18 +643,21 @@ export class BankAPI implements DeployedBankAPI {
         sender: senderUserId,
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
+        claimedAmount: expectedClaimAmount,
       },
     });
     
-    // Force refresh of private state for all observers (contract already updated it)
+    // Update the private state balance manually since the contract updated it
+    const newBalance = startingBalance + expectedClaimAmount;
+    await this.updateUserPrivateState(pin, newBalance);
+    
+    // Force refresh of private state for all observers 
     await this.refreshSharedPrivateState();
-    const newBalance = await this.getCurrentUserBalance();
-    const claimedAmount = newBalance > startingBalance ? (newBalance - startingBalance) : 0n;
 
     await this.appendDetailedLog({
       type: 'claim_transfer',
-      amount: claimedAmount,
-      balanceAfter: await this.getCurrentUserBalance(),
+      amount: expectedClaimAmount,
+      balanceAfter: newBalance,
       timestamp: new Date(),
       counterparty: senderUserId,
     });
@@ -774,10 +783,15 @@ export class BankAPI implements DeployedBankAPI {
     let deployedBankContract: DeployedBankContract | undefined;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        // Generate init nonce for token system
+        const initNonce = new Uint8Array(32);
+        crypto.getRandomValues(initNonce);
+        
         deployedBankContract = await deployContract(providers, {
           privateStateId: 'deploy' as AccountId, // Neutral state for deployment
           contract: bankContract,
           initialPrivateState: createBankPrivateState(), // Empty initial state for this user
+          args: [initNonce] // Required init_nonce for token system
         });
         break;
       } catch (err) {

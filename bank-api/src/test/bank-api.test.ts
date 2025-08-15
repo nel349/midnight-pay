@@ -130,7 +130,7 @@ describe('BankAPI', () => {
       expect(afterCreate.balance).toBe(5000n);
 
       // Authenticate balance access (no state changes expected)
-      await bankAPI.authenticateBalanceAccess('1234');
+      await bankAPI.getTokenBalance('1234');
 
       // Deposit $25.00 -> 7500
       await bankAPI.deposit('1234', '25.00');
