@@ -11,12 +11,13 @@ import {
 } from '@mui/material';
 import { ArrowBack, Launch } from '@mui/icons-material';
 import { saveBank } from '../utils/AccountsLocalState';
+import { ErrorAlert } from '../components/ErrorAlert';
 
 export const JoinBank: React.FC = () => {
   const navigate = useNavigate();
   const [contractAddress, setContractAddress] = useState('');
   const [bankLabel, setBankLabel] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const handleJoinBank = async () => {
@@ -45,7 +46,7 @@ export const JoinBank: React.FC = () => {
       navigate(`/bank/${contractAddress.trim()}`);
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to join bank');
+      setError(err);
       setLoading(false);
     }
   };
@@ -108,11 +109,10 @@ export const JoinBank: React.FC = () => {
             {loading ? 'Joining Bank...' : 'Join Bank'}
           </Button>
 
-          {error && (
-            <Alert severity="error">
-              {error}
-            </Alert>
-          )}
+          <ErrorAlert 
+            error={error}
+            onClose={() => setError(null)}
+          />
         </Box>
       </CardContent>
     </Card>

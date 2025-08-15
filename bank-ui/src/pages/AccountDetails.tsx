@@ -7,6 +7,7 @@ import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderCo
 import { touchAccount } from '../utils/AccountsLocalState';
 import { AuthorizationPanel } from '../components/AuthorizationPanel';
 import { AuthorizationNotifications } from '../components/AuthorizationNotifications';
+import { ErrorAlert } from '../components/ErrorAlert';
 import type { BankAPI, BankDerivedState } from '@midnight-bank/bank-api';
 import { utils } from '@midnight-bank/bank-api';
 
@@ -18,7 +19,7 @@ export const AccountDetails: React.FC = () => {
   
   const [bankAPI, setBankAPI] = useState<BankAPI | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<any>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [accountState, setAccountState] = useState<BankDerivedState | null>(null);
   const [showBalance, setShowBalance] = useState(false);
@@ -42,12 +43,12 @@ export const AccountDetails: React.FC = () => {
           setBankAPI(deployment.api);
           setLoading(false);
         } else if (deployment.status === 'failed') {
-          setError(deployment.error.message);
+          setError(deployment.error);
           setLoading(false);
         }
       },
       error: (err) => {
-        setError(err.message);
+        setError(err);
         setLoading(false);
       }
     });
@@ -65,7 +66,7 @@ export const AccountDetails: React.FC = () => {
       },
       error: (err) => {
         console.error('State subscription error:', err);
-        setError(err.message);
+        setError(err);
       }
     });
 
@@ -115,7 +116,7 @@ export const AccountDetails: React.FC = () => {
       setLoading(false);
       
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to authenticate balance');
+      setError(err);
       setLoading(false);
       setShowBalance(false);
     }
@@ -133,7 +134,7 @@ export const AccountDetails: React.FC = () => {
       await bankAPI.deposit(pinInput, amountInput);
       setLoading(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Deposit failed');
+      setError(err);
       setLoading(false);
     }
   };
@@ -150,7 +151,7 @@ export const AccountDetails: React.FC = () => {
       await bankAPI.withdraw(pinInput, amountInput);
       setLoading(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Withdrawal failed');
+      setError(err);
       setLoading(false);
     }
   };
@@ -324,17 +325,11 @@ export const AccountDetails: React.FC = () => {
             </Box>
           )}
 
-          {error && (
-            <Box>
-              <Card sx={{ backgroundColor: '#f8d7da' }}>
-                <CardContent>
-                  <Typography color="error">
-                    Error: {error}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Box>
-          )}
+          <ErrorAlert 
+            error={error}
+            onClose={() => setError(null)}
+            showDetails={true}
+          />
         </Box>
       </CardContent>
     </Card>

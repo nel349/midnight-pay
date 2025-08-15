@@ -12,7 +12,8 @@ import type { Logger } from 'pino';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { useBankWallet } from '../components/BankWallet';
 import { saveBank } from '../utils/AccountsLocalState';
-import { ThemedButton, ThemedCard, ThemedCardContent, ThemeToggle } from '../components';
+import { ThemedButton, ThemedCard, ThemedCardContent, ThemeToggle, ErrorAlert } from '../components';
+import { getErrorSummary } from '../utils/errorHandling';
 import { useThemeValues } from '../theme';
 
 export interface CreateBankProps { 
@@ -25,7 +26,7 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
   const { providers, isConnected, connect } = useBankWallet();
   const [bankLabel, setBankLabel] = useState('');
   const [working, setWorking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<any>(null);
 
   const onDeployBank = useCallback(async () => {
     logger.info('onDeployBank: Starting bank deployment...');
@@ -54,8 +55,15 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
       
       onComplete(contractAddress);
     } catch (e) {
-      logger.error(e, 'Failed to deploy bank contract');
-      setError(e instanceof Error ? e.message : 'Failed to deploy bank contract');
+      // Log with user-friendly summary for readability
+      logger.error({ 
+        error: e,
+        summary: getErrorSummary(e),
+        context: 'bank_deployment_failed'
+      }, 'Failed to deploy bank contract');
+      
+      // Store the full error object for ErrorAlert to parse
+      setError(e);
     } finally {
       setWorking(false);
     }
@@ -155,11 +163,11 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
             {working ? 'Deploying Bank...' : 'Deploy Bank Contract'}
           </ThemedButton>
 
-          {error && (
-            <Alert severity="error" sx={{ width: '100%' }}>
-              {error}
-            </Alert>
-          )}
+          <ErrorAlert 
+            error={error}
+            onClose={() => setError(null)}
+            showDetails={true}
+          />
         </Box>
         </ThemedCardContent>
       </ThemedCard>
