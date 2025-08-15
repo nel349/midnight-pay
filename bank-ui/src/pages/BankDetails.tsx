@@ -40,23 +40,55 @@ export const BankDetails: React.FC = () => {
   }, [bankAddress, providers, addAccount]);
 
   const handleCreateAccount = async () => {
-    if (!bankAPI || !isConnected) return;
+    console.log('🚀 [DEBUG UI] handleCreateAccount called');
+    console.log('🔍 [DEBUG UI] Initial state check:', { 
+      hasBankAPI: !!bankAPI, 
+      isConnected, 
+      bankAddress 
+    });
+    
+    if (!bankAPI || !isConnected) {
+      console.log('❌ [DEBUG UI] Aborting - missing bankAPI or not connected:', { 
+        hasBankAPI: !!bankAPI, 
+        isConnected 
+      });
+      return;
+    }
     
     try {
+      console.log('💬 [DEBUG UI] Requesting user input...');
       const userIdInput = prompt('Enter a unique user ID for this account (e.g., alice-123):') ?? '';
-      if (!userIdInput.trim()) return;
+      if (!userIdInput.trim()) {
+        console.log('❌ [DEBUG UI] User cancelled or empty userId');
+        return;
+      }
+      console.log('✅ [DEBUG UI] Got userId:', userIdInput.trim());
       
       const pinInput = prompt('Enter a PIN for this account:') ?? '';
-      if (!pinInput.trim()) return;
+      if (!pinInput.trim()) {
+        console.log('❌ [DEBUG UI] User cancelled or empty PIN');
+        return;
+      }
+      console.log('✅ [DEBUG UI] Got PIN (length):', pinInput.length);
       
       const initialDeposit = prompt('Enter initial deposit amount:') ?? '';
-      if (!initialDeposit.trim()) return;
+      if (!initialDeposit.trim()) {
+        console.log('❌ [DEBUG UI] User cancelled or empty initial deposit');
+        return;
+      }
+      console.log('✅ [DEBUG UI] Got initial deposit:', initialDeposit);
       
+      console.log('🔄 [DEBUG UI] Setting loading state and clearing errors...');
       setLoading(true);
       setError(null);
       
-
-
+      console.log('📞 [DEBUG UI] About to call BankAPI.createAccount with:', {
+        providersType: typeof providers,
+        bankAddress: bankAddress!,
+        userId: userIdInput.trim(),
+        pinLength: pinInput.length,
+        initialDeposit
+      });
 
       // Create account in the bank using static API, then the subscribed userApi reflects it
       await BankAPI.createAccount(
@@ -68,20 +100,34 @@ export const BankDetails: React.FC = () => {
         (console as unknown as Logger),
       );
       
+      console.log('✅ [DEBUG UI] BankAPI.createAccount completed successfully');
+      
+      console.log('💾 [DEBUG UI] Saving account to local storage...');
       // Save account to local storage
       saveAccount({
         bankContractAddress: bankAddress!,
         userId: userIdInput.trim(),
         createdAt: new Date().toISOString()
       });
+      console.log('✅ [DEBUG UI] Account saved to local storage');
       
+      console.log('👆 [DEBUG UI] Touching bank to update last used...');
       // Touch the bank to update last used
       touchBank(bankAddress!);
+      console.log('✅ [DEBUG UI] Bank touched');
       
+      console.log('🧭 [DEBUG UI] Navigating to new account page...');
       // Navigate to the new account
       navigate(`/bank/${bankAddress}/account/${userIdInput.trim()}`);
+      console.log('✅ [DEBUG UI] Navigation completed');
       
     } catch (err) {
+      console.log('💥 [DEBUG UI] Error in handleCreateAccount:', err);
+      console.log('📊 [DEBUG UI] Error details:', {
+        message: err instanceof Error ? err.message : 'Failed to create account',
+        stack: err instanceof Error ? err.stack : undefined,
+        type: typeof err
+      });
       setError(err instanceof Error ? err.message : 'Failed to create account');
       setLoading(false);
     }

@@ -18,6 +18,12 @@ interface OutgoingRequest {
   status: number;
 }
 
+export interface AuthorizedContact {
+  userId: string;
+  maxAmount: bigint;
+}
+
+
 export function useAuthorizationUpdates(bankAPI: BankAPI | null) {
   const [lastUpdate, setLastUpdate] = useState(Date.now());
   
@@ -69,13 +75,26 @@ export function useAuthorizationUpdates(bankAPI: BankAPI | null) {
     staleTime: 1000,
   });
 
+  const { data: authorizedContacts, refetch: refetchContacts } = useQuery({
+    queryKey: ['authorizedContacts', bankAPI?.userId],
+    queryFn: async () => {
+      if (!bankAPI) return [];
+      return bankAPI.getAuthorizedContacts();
+    },
+    enabled: !!bankAPI,
+    staleTime: 1000,
+    refetchInterval: 3000,
+  });
+
   const refresh = () => {
     refetchRequests();
     refetchOutgoing();
     refetchClaims();
+    refetchContacts();
   };
 
   return {
+    authorizedContacts: (authorizedContacts || []) as AuthorizedContact[],
     // Incoming requests (for recipients)
     pendingRequests: (pendingRequests || []) as PendingRequest[],
     

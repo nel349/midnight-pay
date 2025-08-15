@@ -774,6 +774,7 @@ export class BankAPI implements DeployedBankAPI {
     providers: BankProviders,
     logger: Logger,
   ): Promise<ContractAddress> {
+    console.log('🚀 [DEBUG DEPLOY] Bank deploy started');
     logger.info({ deployBankContract: {} });
     // Deploys can occasionally fail transiently if the node/indexer/proof server
     // are not fully ready at the very start of the test run. Add a short
@@ -783,19 +784,22 @@ export class BankAPI implements DeployedBankAPI {
     let deployedBankContract: DeployedBankContract | undefined;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        // Generate init nonce for token system
-        const initNonce = new Uint8Array(32);
-        crypto.getRandomValues(initNonce);
-        
+        console.log(`🔄 [DEBUG DEPLOY] Attempt ${attempt}/${maxAttempts} - calling deployContract...`);
         deployedBankContract = await deployContract(providers, {
           privateStateId: 'deploy' as AccountId, // Neutral state for deployment
           contract: bankContract,
           initialPrivateState: createBankPrivateState(), // Empty initial state for this user
-          args: [initNonce] // Required init_nonce for token system
         });
+        console.log('✅ [DEBUG DEPLOY] deployContract succeeded');
         break;
       } catch (err) {
         lastError = err;
+        console.log(`❌ [DEBUG DEPLOY] Attempt ${attempt} failed:`, err instanceof Error ? err.message : err);
+        console.log(`📊 [DEBUG DEPLOY] Error details:`, {
+          message: err instanceof Error ? err.message : 'unknown error',
+          stack: err instanceof Error ? err.stack : undefined,
+          type: typeof err
+        });
         const backoffMs = attempt === maxAttempts ? 0 : 1000 * Math.pow(2, attempt - 1);
         logger.warn({
           deployRetry: {
@@ -811,8 +815,13 @@ export class BankAPI implements DeployedBankAPI {
       }
     }
     if (deployedBankContract === undefined) {
+      console.log('💥 [DEBUG DEPLOY] All deployment attempts failed');
+      console.log('💥 [DEBUG DEPLOY] Final error:', lastError);
       throw lastError instanceof Error ? lastError : new Error('Unknown deploy error');
     }
+
+    console.log('🎉 [DEBUG DEPLOY] Bank deployment successful!');
+    console.log('📋 [DEBUG DEPLOY] Contract address:', deployedBankContract.deployTxData.public.contractAddress);
 
     logger.trace({
       bankContractDeployed: {
@@ -873,12 +882,14 @@ export class BankAPI implements DeployedBankAPI {
     initialDeposit: string,
     logger: Logger,
   ): Promise<void> {
+    console.log('🚀 [DEBUG] createAccount called with:', { userId, pin: '***', initialDeposit, contractAddress });
     const normalizedUserId = (() => {
       const enc = new TextEncoder();
       const bytes = enc.encode(userId);
       if (bytes.length <= 32) return userId;
       return new TextDecoder().decode(bytes.slice(0, 32));
     })();
+    console.log('🔧 [DEBUG] Normalized userId:', normalizedUserId);
 
     const userIdBytes = (() => {
       const out = new Uint8Array(32);
@@ -895,19 +906,30 @@ export class BankAPI implements DeployedBankAPI {
       return out;
     })();
 
+    console.log('🔍 [DEBUG] Finding deployed contract...');
     const deployed = await findDeployedContract(providers, {
       contractAddress,
       contract: bankContract,
       privateStateId: normalizedUserId as AccountId,
       initialPrivateState: createBankPrivateState(),
     });
+    console.log('✅ [DEBUG] Deployed contract found');
 
+    console.log('📝 [DEBUG] Calling create_account circuit with:', {
+      userIdLength: userIdBytes.length,
+      pinLength: pinBytes.length,
+      amount: utils.parseAmount(initialDeposit)
+    });
+    
+    console.log('⏳ [DEBUG] Waiting for Lace signing...');
     const txData = await deployed.callTx.create_account(
       userIdBytes,
       pinBytes,
       utils.parseAmount(initialDeposit),
     );
+    console.log('✅ [DEBUG] Transaction signed and submitted:', txData.public.txHash);
 
+    console.log('🎯 [DEBUG] Account creation successful!');
     logger?.trace({
       createAccount: {
         userId: normalizedUserId,
@@ -942,7 +964,9 @@ export class BankAPI implements DeployedBankAPI {
         timestamp: new Date(),
       }];
       await providers.privateStateProvider.set(dlogKey, updatedLog as unknown as BankPrivateState);
-    } catch {}
+    } catch (error) {
+      console.log('⚠️ [DEBUG] Error saving detailed transaction log:', error);
+    }
   }
 
   static async getSharedPrivateState(

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -22,10 +22,10 @@ import {
   PersonAdd,
   Send,
   CheckCircle,
-  Cancel,
   Info
 } from '@mui/icons-material';
 import type { BankAPI } from '@midnight-bank/bank-api';
+import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
 
 interface AuthorizationPanelProps {
   bankAPI: BankAPI;
@@ -34,7 +34,6 @@ interface AuthorizationPanelProps {
   onSuccess: (message: string) => void;
 }
 
-type AuthorizedContact = { userId: string; maxAmount: string; status: 'can_send' };
 
 export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   bankAPI,
@@ -52,23 +51,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
 
-  // In a real app, this would come from the backend/contract state
-  // For now, we'll simulate it with localStorage
-  const [authorizedContacts, setAuthorizedContacts] = useState<AuthorizedContact[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const contacts = await bankAPI.getAuthorizedContacts();
-        if (!active) return;
-        setAuthorizedContacts(
-          contacts.map((c) => ({ userId: c.userId, maxAmount: (Number(c.maxAmount) / 100).toFixed(2), status: 'can_send' }))
-        );
-      } catch {}
-    })();
-    return () => { active = false; };
-  }, [bankAPI]);
+  const { authorizedContacts } = useAuthorizationUpdates(bankAPI);
 
   const handleRequestAuthorization = async () => {
     if (!bankAPI || !isConnected || !recipientUserId.trim()) return;
@@ -212,9 +195,9 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
                   secondary={`Max: $${contact.maxAmount}`}
                 />
                 <Chip
-                  label={contact.status === 'can_send' ? 'Can Send' : contact.status}
+                  label={`Can Send`}
                   size="small"
-                  color={contact.status === 'can_send' ? 'success' : 'default'}
+                  color="success"
                 />
               </ListItem>
             ))}

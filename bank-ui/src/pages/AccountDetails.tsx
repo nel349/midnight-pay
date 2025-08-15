@@ -22,7 +22,7 @@ export const AccountDetails: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [accountState, setAccountState] = useState<BankDerivedState | null>(null);
   const [showBalance, setShowBalance] = useState(false);
-  const [userPin, setUserPin] = useState<string>('');
+  const [, setUserPin] = useState<string>('');
   const lastAuthRef = useRef<number | null>(null);
   
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -107,7 +107,7 @@ export const AccountDetails: React.FC = () => {
         return; 
       }
       
-      await bankAPI.authenticateBalanceAccess(pinInput);
+      await bankAPI.getTokenBalance(pinInput);
       
       lastAuthRef.current = Date.now();
       setUserPin(pinInput);
@@ -212,6 +212,7 @@ export const AccountDetails: React.FC = () => {
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
               <Typography variant="h6">Balance</Typography>
+              <Chip label="MBT" size="small" variant="outlined" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }} />
               {loading && <Chip label="Loading..." size="small" />}
               {error && <Chip label="Error" color="error" size="small" />}
               {accountState && <Chip label={`Account Exists: ${accountState.accountExists}`} size="small" variant="outlined" />}
@@ -226,8 +227,8 @@ export const AccountDetails: React.FC = () => {
                 }}
               >
                 {showBalance && accountState?.balance !== undefined 
-                  ? utils.formatBalance(accountState.balance)
-                  : '***'
+                  ? `${utils.formatBalance(accountState.balance)} MBT`
+                  : '*** MBT'
                 }
               </Typography>
               

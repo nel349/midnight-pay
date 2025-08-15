@@ -57,12 +57,11 @@ export ledger user_as_sender_auths: Map<Bytes<32>, Vector<20, Bytes<32>>>;   // 
 // Encrypted token amount mappings (contract-wide accessible)
 export ledger encrypted_amount_mappings: Map<Bytes<32>, Uint<64>>;          // encrypted_balance -> actual_amount
 
-// Bank Token System (Custom Token Implementation)
-export ledger bank_token_color: Bytes<32>;                                  // Our custom token type ID
+// Bank Token System (Custom Implementation - No Native Token Operations)
+export ledger bank_token_id: Bytes<32>;                                     // Our custom bank token identifier
 export ledger token_balances: Map<Bytes<32>, Uint<64>>;                     // user_id -> token_balance
 export ledger total_token_supply: Uint<64>;                                 // Total bank tokens in circulation
-export ledger token_nonce_counter: Counter;                                 // For unique token nonces
-export ledger bank_token_nonce: Bytes<32>;                                  // Master nonce for token operations
+export ledger token_mint_authority: Bytes<32>;                              // Authority that can mint tokens (contract itself)
 
 // Private data (user-specific, stored per user)
 witness user_pin_hash(user_id: Bytes<32>): Bytes<32>;
@@ -70,13 +69,13 @@ witness user_balance(user_id: Bytes<32>): Uint<64>;
 witness set_user_balance(user_id: Bytes<32>, balance: Uint<64>): [];
 // Note: Transaction history removed - API handles detailed transaction logging
 
-// Constructor - Initialize empty shared bank with custom token
-constructor(init_nonce: Bytes<32>) {
+// Constructor - Initialize empty shared bank with custom token system
+constructor() {
   last_global_transaction = pad(32, "bank_initialized");
   
-  // Initialize bank token system
-  bank_token_color = tokenType(pad(32, "midnight_bank_token"), kernel.self());
-  bank_token_nonce = disclose(init_nonce);
+  // Initialize our custom bank token system
+  bank_token_id = persistentHash<Bytes<32>>(pad(32, "midnight_bank_token_v1"));
+  token_mint_authority = persistentHash<Bytes<32>>(pad(32, "bank_contract_authority"));
   total_token_supply = 0 as Uint<64>;
 }
 
@@ -106,21 +105,9 @@ export circuit create_account(user_id: Bytes<32>, initial_pin: Bytes<32>, deposi
   total_accounts.increment(1);
   last_global_transaction = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "account_created"), user_id]));
   
-  // Mint initial tokens for new account
-  token_nonce_counter.increment(1);
-  const new_nonce = evolveNonce(token_nonce_counter, bank_token_nonce);
-  const initial_tokens = mintToken(
-    pad(32, "midnight_bank_token"),
-    disclose(deposit_amount),
-    new_nonce,
-    right<ZswapCoinPublicKey, ContractAddress>(kernel.self())
-  );
-  
-  // Receive tokens and set initial balance
-  receive(disclose(initial_tokens));
-  token_balances.insert(disclose(user_id), disclose(deposit_amount));
-  total_token_supply = disclose((total_token_supply + deposit_amount) as Uint<64>);
-  bank_token_nonce = new_nonce;
+  // Mint initial bank tokens for the new account (custom token system)
+  // This creates tokens in our internal ledger without using Midnight's native token operations
+  mint_bank_tokens(disclose(user_id), disclose(deposit_amount));
 }
 
 // Circuit 2: Deposit to User Account (Token-Based)
@@ -135,27 +122,8 @@ export circuit deposit(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): []
   const expected_owner = public_key(pin);
   assert (account.owner_hash == expected_owner, "Authentication failed");
   
-  // Mint new bank tokens
-  token_nonce_counter.increment(1);
-  const new_nonce = evolveNonce(token_nonce_counter, bank_token_nonce);
-  const minted_coin = mintToken(
-    pad(32, "midnight_bank_token"),
-    disclose(amount),
-    new_nonce,
-    right<ZswapCoinPublicKey, ContractAddress>(kernel.self())
-  );
-  
-  // Receive the minted tokens into contract
-  receive(disclose(minted_coin));
-  
-  // Update user token balance and total supply
-  const current_balance = token_balances.member(disclose(user_id)) ? 
-    token_balances.lookup(disclose(user_id)) : 0 as Uint<64>;
-  token_balances.insert(disclose(user_id), disclose((current_balance + amount) as Uint<64>));
-  total_token_supply = disclose((total_token_supply + amount) as Uint<64>);
-  
-  // Update nonce and account state
-  bank_token_nonce = new_nonce;
+  // Mint bank tokens for deposit (custom token system)
+  mint_bank_tokens(disclose(user_id), disclose(amount));
   const updated_account = BankAccount {
     exists: account.exists,
     owner_hash: account.owner_hash,
@@ -182,14 +150,8 @@ export circuit withdraw(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): [
   const expected_owner = public_key(pin);
   assert (account.owner_hash == expected_owner, "Authentication failed");
   
-  // Check token balance and burn tokens
-  assert (token_balances.member(disclose(user_id)), "No token balance found");
-  const current_balance = token_balances.lookup(disclose(user_id));
-  assert (current_balance >= amount, "Insufficient token balance");
-  
-  // Update token balance and total supply (burn tokens)
-  token_balances.insert(disclose(user_id), disclose((current_balance - amount) as Uint<64>));
-  total_token_supply = disclose((total_token_supply - amount) as Uint<64>);
+  // Burn bank tokens for withdrawal (custom token system)
+  burn_bank_tokens(disclose(user_id), disclose(amount));
   
   // Send equivalent value to user (in practice, this would send external coins)
   // For now, we just burn the tokens - external coin sending would be handled by API
@@ -476,6 +438,50 @@ pure circuit valid_pin_format(pin: Bytes<32>): Boolean {
 
 export pure circuit public_key(sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midnight:bank:pk:"), sk]);
+}
+
+// Custom Bank Token Operations (Internal Ledger-Based)
+// These functions handle token operations without using Midnight's native token system
+
+// Mint new bank tokens for a user (internal accounting only)
+circuit mint_bank_tokens(user_id: Bytes<32>, amount: Uint<64>): [] {
+  // Update user's token balance
+  const current_balance = token_balances.member(user_id) ? 
+    token_balances.lookup(user_id) : 0 as Uint<64>;
+  token_balances.insert(user_id, (current_balance + amount) as Uint<64>);
+  
+  // Update total supply
+  total_token_supply = (total_token_supply + amount) as Uint<64>;
+}
+
+// Burn bank tokens from a user (internal accounting only)
+circuit burn_bank_tokens(user_id: Bytes<32>, amount: Uint<64>): [] {
+  // Verify user has sufficient balance
+  assert (token_balances.member(user_id), "User has no token balance");
+  const current_balance = token_balances.lookup(user_id);
+  assert (current_balance >= amount, "Insufficient token balance to burn");
+  
+  // Update user's token balance
+  token_balances.insert(user_id, (current_balance - amount) as Uint<64>);
+  
+  // Update total supply
+  total_token_supply = (total_token_supply - amount) as Uint<64>;
+}
+
+// Transfer bank tokens between users (internal accounting only)
+circuit transfer_bank_tokens(from_user: Bytes<32>, to_user: Bytes<32>, amount: Uint<64>): [] {
+  // Verify sender has sufficient balance
+  assert (token_balances.member(from_user), "Sender has no token balance");
+  const sender_balance = token_balances.lookup(from_user);
+  assert (sender_balance >= amount, "Insufficient token balance for transfer");
+  
+  // Update sender's balance
+  token_balances.insert(from_user, (sender_balance - amount) as Uint<64>);
+  
+  // Update recipient's balance
+  const recipient_balance = token_balances.member(to_user) ? 
+    token_balances.lookup(to_user) : 0 as Uint<64>;
+  token_balances.insert(to_user, (recipient_balance + amount) as Uint<64>);
 }
 
 // Helper Functions for Encryption (Authorization System)

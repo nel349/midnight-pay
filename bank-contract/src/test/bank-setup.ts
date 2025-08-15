@@ -34,11 +34,8 @@ export class BankTestSetup {
     const initialPrivateState = createBankPrivateState();
     
     // Get initial state from contract (empty shared bank)
-    const initNonce = new Uint8Array(32);
-    initNonce.fill(1); // Fill with 1s for initial nonce
     const { currentPrivateState, currentContractState, currentZswapLocalState } = this.contract.initialState(
-      constructorContext(initialPrivateState, '0'.repeat(64)),
-      initNonce // init_nonce parameter for token system as Bytes<32>
+      constructorContext(initialPrivateState, '0'.repeat(64))
     );
     
     // Set up turn context
