@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, ButtonProps } from '@mui/material';
-import { useThemeValues, createButtonStyles } from '../theme';
+import { useTheme, createButtonStyles } from '../theme';
 
 interface ThemedButtonProps extends Omit<ButtonProps, 'variant'> {
   variant?: 'primary' | 'secondary' | 'outlined';
@@ -14,7 +14,7 @@ export const ThemedButton: React.FC<ThemedButtonProps> = ({
   children,
   ...props
 }) => {
-  const theme = useThemeValues();
+  const { theme } = useTheme();
   
   // Use themeVariant if provided, otherwise use variant
   const buttonVariant = themeVariant || variant;

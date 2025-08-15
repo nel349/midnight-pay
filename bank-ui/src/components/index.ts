@@ -3,6 +3,10 @@ export { ThemedButton } from './ThemedButton';
 export { ThemedCard, ThemedCardContent } from './ThemedCard';
 export { ThemeToggle } from './ThemeToggle';
 export { ErrorAlert } from './ErrorAlert';
+export { MidnightLogo } from './MidnightLogo';
+export { GradientBackground } from './GradientBackground';
+export { AppHeader } from './AppHeader';
+export { BankCard } from './BankCard';
 
 // Existing components
 export { useBankWallet } from './BankWallet';

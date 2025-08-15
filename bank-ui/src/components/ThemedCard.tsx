@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardProps, CardContent, CardContentProps } from '@mui/material';
-import { useThemeValues, createCardStyles } from '../theme';
+import { useTheme, createCardStyles } from '../theme';
 
 interface ThemedCardProps extends Omit<CardProps, 'elevation'> {
   elevation?: 'none' | 'sm' | 'default' | 'md' | 'lg' | 'xl' | '2xl';
@@ -12,7 +12,7 @@ export const ThemedCard: React.FC<ThemedCardProps> = ({
   children,
   ...props
 }) => {
-  const theme = useThemeValues();
+  const { theme } = useTheme();
   const cardStyles = createCardStyles(theme);
   
   return (
@@ -38,7 +38,7 @@ export const ThemedCardContent: React.FC<ThemedCardContentProps> = ({
   children,
   ...props
 }) => {
-  const theme = useThemeValues();
+  const { theme } = useTheme();
   
   return (
     <CardContent
