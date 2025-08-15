@@ -27,6 +27,20 @@ export const BankCard: React.FC<BankCardProps> = ({
 }) => {
   const { theme, mode } = useTheme();
   
+  const handleBankCardClick = () => {
+    onOpenBank(bank.contractAddress);
+  };
+  
+  const handleAccountClick = (e: React.MouseEvent, accountUserId: string) => {
+    e.stopPropagation(); // Prevent bank card click
+    onOpenBank(bank.contractAddress, accountUserId);
+  };
+  
+  const handleCreateAccountClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent bank card click
+    onOpenBank(bank.contractAddress);
+  };
+  
   return (
     <Box
       sx={{
@@ -51,6 +65,7 @@ export const BankCard: React.FC<BankCardProps> = ({
       }}
     >
       <ThemedCard 
+        onClick={handleBankCardClick}
         sx={{ 
           width: '100%', 
           maxWidth: 500,
@@ -62,6 +77,7 @@ export const BankCard: React.FC<BankCardProps> = ({
             : '0 8px 32px rgba(0, 0, 0, 0.1)',
           position: 'relative',
           zIndex: 1,
+          cursor: 'pointer',
           transition: 'all 0.3s ease',
           '&:hover': {
             transform: 'translateY(-4px)',
@@ -146,7 +162,7 @@ export const BankCard: React.FC<BankCardProps> = ({
               </Typography>
               <ThemedButton 
                 variant="primary"
-                onClick={() => onOpenBank(bank.contractAddress)}
+                onClick={handleCreateAccountClick}
                 disabled={!isConnected}
               >
                 Create Account
@@ -164,7 +180,7 @@ export const BankCard: React.FC<BankCardProps> = ({
                   <ThemedButton
                     key={`${account.bankContractAddress}-${account.userId}`}
                     variant="outlined"
-                    onClick={() => onOpenBank(account.bankContractAddress, account.userId)}
+                    onClick={(e) => handleAccountClick(e, account.userId)}
                     sx={{ 
                       justifyContent: 'flex-start', 
                       textTransform: 'none',
@@ -190,7 +206,7 @@ export const BankCard: React.FC<BankCardProps> = ({
                 <ThemedButton 
                   size="small" 
                   variant="outlined"
-                  onClick={() => onOpenBank(bank.contractAddress)}
+                  onClick={handleCreateAccountClick}
                   disabled={!isConnected}
                   sx={{ 
                     alignSelf: 'flex-start', 

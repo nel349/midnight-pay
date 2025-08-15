@@ -1,7 +1,36 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Card, CardContent, Typography, Box, Alert } from '@mui/material';
-import { ArrowBack, Add } from '@mui/icons-material';
+import { 
+  Typography, 
+  Box, 
+  Alert, 
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  IconButton
+} from '@mui/material';
+import { 
+  ArrowBack, 
+  Add, 
+  AccountBalance, 
+  Person,
+  ContentCopy,
+  Business
+} from '@mui/icons-material';
+import { 
+  ThemedButton, 
+  ThemedCard, 
+  ThemedCardContent, 
+  GradientBackground,
+  ThemeToggle
+} from '../components';
+import { useTheme } from '../theme/ThemeProvider';
 import { useBankWallet } from '../components/BankWallet';
 import { listAccountsForBank, saveAccount, touchBank } from '../utils/AccountsLocalState';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
@@ -13,10 +42,16 @@ export const BankDetails: React.FC = () => {
   const navigate = useNavigate();
   const { providers, isConnected } = useBankWallet();
   const { addAccount } = useDeployedAccountContext();
+  const { theme, mode } = useTheme();
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [bankAPI, setBankAPI] = useState<BankAPI | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newUserId, setNewUserId] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [initialDeposit, setInitialDeposit] = useState('');
 
   // Subscribe to bank contract when component mounts
   React.useEffect(() => {
@@ -39,196 +74,497 @@ export const BankDetails: React.FC = () => {
     return () => subscription.unsubscribe();
   }, [bankAddress, providers, addAccount]);
 
-  const handleCreateAccount = async () => {
-    console.log('🚀 [DEBUG UI] handleCreateAccount called');
-    console.log('🔍 [DEBUG UI] Initial state check:', { 
-      hasBankAPI: !!bankAPI, 
-      isConnected, 
-      bankAddress 
-    });
-    
-    if (!bankAPI || !isConnected) {
-      console.log('❌ [DEBUG UI] Aborting - missing bankAPI or not connected:', { 
-        hasBankAPI: !!bankAPI, 
-        isConnected 
-      });
-      return;
-    }
-    
-    try {
-      console.log('💬 [DEBUG UI] Requesting user input...');
-      const userIdInput = prompt('Enter a unique user ID for this account (e.g., alice-123):') ?? '';
-      if (!userIdInput.trim()) {
-        console.log('❌ [DEBUG UI] User cancelled or empty userId');
-        return;
-      }
-      console.log('✅ [DEBUG UI] Got userId:', userIdInput.trim());
-      
-      const pinInput = prompt('Enter a PIN for this account:') ?? '';
-      if (!pinInput.trim()) {
-        console.log('❌ [DEBUG UI] User cancelled or empty PIN');
-        return;
-      }
-      console.log('✅ [DEBUG UI] Got PIN (length):', pinInput.length);
-      
-      const initialDeposit = prompt('Enter initial deposit amount:') ?? '';
-      if (!initialDeposit.trim()) {
-        console.log('❌ [DEBUG UI] User cancelled or empty initial deposit');
-        return;
-      }
-      console.log('✅ [DEBUG UI] Got initial deposit:', initialDeposit);
-      
-      console.log('🔄 [DEBUG UI] Setting loading state and clearing errors...');
-      setLoading(true);
-      setError(null);
-      
-      console.log('📞 [DEBUG UI] About to call BankAPI.createAccount with:', {
-        providersType: typeof providers,
-        bankAddress: bankAddress!,
-        userId: userIdInput.trim(),
-        pinLength: pinInput.length,
-        initialDeposit
-      });
 
-      // Create account in the bank using static API, then the subscribed userApi reflects it
-      await BankAPI.createAccount(
-        providers,
-        bankAddress!,
-        userIdInput.trim(),
-        pinInput,
-        initialDeposit,
-        (console as unknown as Logger),
-      );
-      
-      console.log('✅ [DEBUG UI] BankAPI.createAccount completed successfully');
-      
-      console.log('💾 [DEBUG UI] Saving account to local storage...');
+  // Clear success messages after 5 seconds
+  React.useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => {
+        setSuccess(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
+
+  const handleCreateAccountDialog = () => {
+    if (!bankAPI || !isConnected || !newUserId.trim() || !newPin.trim() || !initialDeposit.trim()) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    BankAPI.createAccount(
+      providers,
+      bankAddress!,
+      newUserId.trim(),
+      newPin,
+      initialDeposit,
+      (console as unknown as Logger),
+    )
+    .then(() => {
       // Save account to local storage
       saveAccount({
         bankContractAddress: bankAddress!,
-        userId: userIdInput.trim(),
+        userId: newUserId.trim(),
         createdAt: new Date().toISOString()
       });
-      console.log('✅ [DEBUG UI] Account saved to local storage');
       
-      console.log('👆 [DEBUG UI] Touching bank to update last used...');
       // Touch the bank to update last used
       touchBank(bankAddress!);
-      console.log('✅ [DEBUG UI] Bank touched');
       
-      console.log('🧭 [DEBUG UI] Navigating to new account page...');
-      // Navigate to the new account
-      navigate(`/bank/${bankAddress}/account/${userIdInput.trim()}`);
-      console.log('✅ [DEBUG UI] Navigation completed');
+      setSuccess(`Account "${newUserId}" created successfully!`);
+      setShowCreateDialog(false);
+      setNewUserId('');
+      setNewPin('');
+      setInitialDeposit('');
+      setLoading(false);
       
-    } catch (err) {
-      console.log('💥 [DEBUG UI] Error in handleCreateAccount:', err);
-      console.log('📊 [DEBUG UI] Error details:', {
-        message: err instanceof Error ? err.message : 'Failed to create account',
-        stack: err instanceof Error ? err.stack : undefined,
-        type: typeof err
-      });
+      // Navigate to the new account after a brief delay
+      setTimeout(() => {
+        navigate(`/bank/${bankAddress}/account/${newUserId.trim()}`);
+      }, 1500);
+    })
+    .catch((err) => {
       setError(err instanceof Error ? err.message : 'Failed to create account');
       setLoading(false);
-    }
+    });
+  };
+
+  const copyBankAddress = () => {
+    navigator.clipboard?.writeText(bankAddress!);
+    setSuccess('Bank address copied to clipboard!');
   };
 
   if (!bankAddress) {
     return (
-      <Card>
-        <CardContent>
-          <Typography color="error">Invalid bank address</Typography>
-        </CardContent>
-      </Card>
+      <GradientBackground variant="subtle">
+        <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ThemedCard sx={{ maxWidth: 500 }}>
+            <ThemedCardContent>
+              <Typography 
+                color="error" 
+                variant="h6" 
+                sx={{ textAlign: 'center', color: theme.colors.error[500] }}
+              >
+                Invalid bank address
+              </Typography>
+            </ThemedCardContent>
+          </ThemedCard>
+        </Box>
+      </GradientBackground>
     );
   }
 
   const accounts = listAccountsForBank(bankAddress);
 
   return (
-    <Card sx={{ maxWidth: 800, margin: 'auto' }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <Button
-            startIcon={<ArrowBack />}
-            onClick={() => navigate('/accounts')}
-            sx={{ mr: 2 }}
-          >
-            Back to Banks
-          </Button>
-          <Typography variant="h4" component="h1" sx={{ flexGrow: 1 }}>
-            Bank Details
-          </Typography>
-        </Box>
-
-        <Box display="flex" flexDirection="column" gap={3}>
-          <Box>
-            <Typography variant="h6" gutterBottom>
-              Bank Contract Address
-            </Typography>
-            <Typography 
-              variant="body2" 
+    <GradientBackground variant="subtle">
+      {/* Theme Toggle in top-right corner */}
+      <ThemeToggle 
+        sx={{ 
+          position: 'fixed',
+          top: 24,
+          right: 24,
+          zIndex: 1000,
+        }} 
+      />
+      
+      <Box sx={{ minHeight: '100vh', p: theme.spacing[4] }}>
+        {/* Header */}
+        <Box sx={{ maxWidth: 1200, margin: '0 auto', mb: theme.spacing[6] }}>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            mb: theme.spacing[4],
+          }}>
+            <ThemedButton
+              variant="outlined"
+              startIcon={<ArrowBack />}
+              onClick={() => navigate('/accounts')}
               sx={{ 
-                fontFamily: 'monospace', 
-                backgroundColor: '#f5f5f5', 
-                p: 1, 
-                borderRadius: 1,
-                wordBreak: 'break-all'
+                textTransform: 'none',
+                borderRadius: theme.borderRadius.lg,
               }}
             >
-              {bankAddress}
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography variant="h6" gutterBottom>
-              Accounts in this Bank
+              Back to Banks
+            </ThemedButton>
+            
+            {/* Centered Title */}
+            <Typography
+              variant="h4"
+              sx={{
+                color: theme.colors.text.primary,
+                fontWeight: theme.typography.fontWeight.bold,
+                textAlign: 'center',
+                flex: 1,
+                mx: theme.spacing[4],
+              }}
+            >
+              🏦 Bank Details
             </Typography>
             
-            {accounts.length === 0 ? (
-              <Alert severity="info" sx={{ mb: 2 }}>
-                No accounts in this bank yet. Create your first account to start banking!
-              </Alert>
-            ) : (
-              <Box display="flex" flexDirection="column" gap={1} mb={2}>
-                {accounts.map((account) => (
-                  <Button
-                    key={account.userId}
-                    variant="outlined"
-                    onClick={() => navigate(`/bank/${bankAddress}/account/${account.userId}`)}
-                    sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
-                  >
-                    <Typography variant="body1">
-                      {account.label || account.userId}
+            {/* Spacer to balance the layout */}
+            <Box sx={{ width: '120px' }} />
+          </Box>
+        </Box>
+        
+        <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
+          {/* Main Content Grid */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: theme.spacing[6] }}>
+            
+            {/* Left Column - Bank Information */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[4] }}>
+              
+              {/* Bank Information Card */}
+              <ThemedCard>
+                <ThemedCardContent>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: theme.spacing[3] }}>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: theme.borderRadius.md,
+                        background: mode === 'dark'
+                          ? `linear-gradient(135deg, ${theme.colors.secondary[600]}33 0%, ${theme.colors.secondary[500]}33 100%)`
+                          : `linear-gradient(135deg, ${theme.colors.secondary[500]}1A 0%, ${theme.colors.secondary[600]}1A 100%)`,
+                        mr: theme.spacing[3],
+                      }}
+                    >
+                      <Business 
+                        sx={{ 
+                          fontSize: '1.5rem',
+                          color: theme.colors.text.primary,
+                        }} 
+                      />
+                    </Box>
+                    <Typography 
+                      variant="h6" 
+                      sx={{ 
+                        color: theme.colors.text.primary,
+                        fontWeight: theme.typography.fontWeight.bold,
+                      }}
+                    >
+                      Bank Information
                     </Typography>
-                  </Button>
-                ))}
-              </Box>
-            )}
+                  </Box>
+                  
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[3] }}>
+                    {/* Bank Contract Address Field */}
+                    <Box>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: theme.colors.text.secondary, 
+                          fontWeight: theme.typography.fontWeight.medium,
+                          mb: theme.spacing[1],
+                          textTransform: 'uppercase',
+                          fontSize: '0.75rem',
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        Contract Address
+                      </Typography>
+                      <Box sx={{ 
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: theme.spacing[2],
+                        p: theme.spacing[2],
+                        bgcolor: theme.colors.background.surface,
+                        borderRadius: theme.borderRadius.md,
+                        border: '1px solid',
+                        borderColor: theme.colors.border.light,
+                      }}>
+                        <Typography 
+                          variant="body2" 
+                          sx={{ 
+                            color: theme.colors.text.primary,
+                            fontFamily: theme.typography.fontFamily.mono, 
+                            fontSize: '0.8rem',
+                            fontWeight: theme.typography.fontWeight.normal,
+                            wordBreak: 'break-all',
+                            lineHeight: 1.4,
+                            flex: 1,
+                          }}
+                        >
+                          {bankAddress}
+                        </Typography>
+                        <IconButton 
+                          size="small" 
+                          onClick={copyBankAddress}
+                          sx={{ color: theme.colors.text.secondary }}
+                          title="Copy address"
+                        >
+                          <ContentCopy sx={{ fontSize: '1rem' }} />
+                        </IconButton>
+                      </Box>
+                    </Box>
+                    
+                    {/* Bank Status */}
+                    <Box>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: theme.colors.text.secondary, 
+                          fontWeight: theme.typography.fontWeight.medium,
+                          mb: theme.spacing[1],
+                          textTransform: 'uppercase',
+                          fontSize: '0.75rem',
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        Bank Status
+                      </Typography>
+                      <Typography 
+                        variant="body1"
+                        sx={{ 
+                          color: bankAPI 
+                            ? theme.colors.success[500] 
+                            : theme.colors.warning[500],
+                          fontWeight: theme.typography.fontWeight.medium,
+                          fontSize: '0.9rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: theme.spacing[1],
+                        }}
+                      >
+                        {bankAPI ? '✅' : '⚠️'}
+                        {bankAPI ? 'Connected' : 'Connecting...'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </ThemedCardContent>
+              </ThemedCard>
+            </Box>
 
-            <Button
-              startIcon={<Add />}
-              variant="contained"
-              onClick={handleCreateAccount}
-              disabled={loading || !isConnected}
-            >
-              {loading ? 'Creating Account...' : 'Create New Account'}
-            </Button>
+            {/* Right Column - Accounts Management */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[4] }}>
+              
+              {/* Accounts List Card */}
+              <ThemedCard>
+                <ThemedCardContent>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: theme.spacing[3] }}>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: theme.borderRadius.md,
+                        background: mode === 'dark'
+                          ? `linear-gradient(135deg, ${theme.colors.primary[600]}33 0%, ${theme.colors.primary[500]}33 100%)`
+                          : `linear-gradient(135deg, ${theme.colors.primary[500]}1A 0%, ${theme.colors.primary[600]}1A 100%)`,
+                        mr: theme.spacing[3],
+                      }}
+                    >
+                      <AccountBalance 
+                        sx={{ 
+                          fontSize: '1.5rem',
+                          color: theme.colors.text.primary,
+                        }} 
+                      />
+                    </Box>
+                    <Typography 
+                      variant="h6" 
+                      sx={{ 
+                        color: theme.colors.text.primary,
+                        fontWeight: theme.typography.fontWeight.bold,
+                      }}
+                    >
+                      Your Accounts
+                    </Typography>
+                  </Box>
+                  
+                  {accounts.length === 0 ? (
+                    <Box sx={{ textAlign: 'center', py: theme.spacing[4] }}>
+                      <Person 
+                        sx={{ 
+                          fontSize: 48, 
+                          color: theme.colors.text.secondary, 
+                          mb: theme.spacing[2] 
+                        }} 
+                      />
+                      <Typography 
+                        variant="h6" 
+                        sx={{ 
+                          mb: theme.spacing[1],
+                          color: theme.colors.text.primary,
+                        }}
+                      >
+                        No Accounts Yet
+                      </Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: theme.colors.text.secondary,
+                          mb: theme.spacing[3],
+                        }}
+                      >
+                        Create your first account to start banking with privacy
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <List sx={{ mb: theme.spacing[2] }}>
+                      {accounts.map((account, index) => (
+                        <ListItem 
+                          key={account.userId}
+                          sx={{
+                            borderRadius: theme.borderRadius.md,
+                            mb: theme.spacing[1],
+                            border: '1px solid',
+                            borderColor: theme.colors.border.light,
+                            cursor: 'pointer',
+                            '&:hover': {
+                              bgcolor: theme.colors.background.surface,
+                            }
+                          }}
+                          onClick={() => navigate(`/bank/${bankAddress}/account/${account.userId}`)}
+                        >
+                          <ListItemIcon>
+                            <Person sx={{ color: theme.colors.primary[500] }} />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={
+                              <Typography sx={{ 
+                                fontWeight: theme.typography.fontWeight.medium,
+                                color: theme.colors.text.primary,
+                              }}>
+                                {account.label || account.userId}
+                              </Typography>
+                            }
+                            secondary={
+                              <Typography sx={{ 
+                                fontSize: '0.75rem',
+                                color: theme.colors.text.secondary,
+                              }}>
+                                Created {new Date(account.createdAt).toLocaleDateString()}
+                              </Typography>
+                            }
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  )}
+                  
+                  <ThemedButton
+                    variant="primary"
+                    startIcon={<Add />}
+                    onClick={() => setShowCreateDialog(true)}
+                    disabled={loading || !isConnected}
+                    fullWidth
+                    sx={{ mt: theme.spacing[2] }}
+                  >
+                    {loading ? 'Creating Account...' : 'Create New Account'}
+                  </ThemedButton>
+                </ThemedCardContent>
+              </ThemedCard>
+            </Box>
           </Box>
 
+          {/* Status Messages */}
           {!isConnected && (
-            <Alert severity="warning">
-              Connect your wallet to create accounts in this bank
-            </Alert>
+            <Box sx={{ mt: theme.spacing[4] }}>
+              <ThemedCard>
+                <ThemedCardContent>
+                  <Typography 
+                    sx={{ 
+                      color: theme.colors.warning[500],
+                      textAlign: 'center',
+                    }}
+                  >
+                    Connect your wallet to create accounts in this bank
+                  </Typography>
+                </ThemedCardContent>
+              </ThemedCard>
+            </Box>
+          )}
+
+          {success && (
+            <Box sx={{ mt: theme.spacing[4] }}>
+              <ThemedCard>
+                <ThemedCardContent>
+                  <Typography 
+                    sx={{ 
+                      color: theme.colors.success[500],
+                      textAlign: 'center',
+                    }}
+                  >
+                    {success}
+                  </Typography>
+                </ThemedCardContent>
+              </ThemedCard>
+            </Box>
           )}
 
           {error && (
-            <Alert severity="error">
-              Error: {error}
-            </Alert>
+            <Box sx={{ mt: theme.spacing[4] }}>
+              <ThemedCard>
+                <ThemedCardContent>
+                  <Typography 
+                    sx={{ 
+                      color: theme.colors.error[500],
+                      textAlign: 'center',
+                    }}
+                  >
+                    Error: {error}
+                  </Typography>
+                </ThemedCardContent>
+              </ThemedCard>
+            </Box>
           )}
         </Box>
-      </CardContent>
-    </Card>
+      </Box>
+      
+      {/* Create Account Dialog */}
+      <Dialog 
+        open={showCreateDialog} 
+        onClose={() => setShowCreateDialog(false)} 
+        maxWidth="sm" 
+        fullWidth
+      >
+        <DialogTitle>
+          <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Add /> Create New Account
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Create a new private banking account. Your account will be secured with zero-knowledge proofs.
+          </Typography>
+          <TextField
+            autoFocus
+            label="User ID"
+            placeholder="e.g., alice-123"
+            fullWidth
+            value={newUserId}
+            onChange={(e) => setNewUserId(e.target.value)}
+            sx={{ mb: 2 }}
+            helperText="Choose a unique identifier for your account"
+          />
+          <TextField
+            label="PIN"
+            type="password"
+            placeholder="Enter a secure PIN"
+            fullWidth
+            value={newPin}
+            onChange={(e) => setNewPin(e.target.value)}
+            sx={{ mb: 2 }}
+            helperText="This PIN will be required for all transactions"
+          />
+          <TextField
+            label="Initial Deposit (MBT)"
+            placeholder="e.g., 100.00"
+            fullWidth
+            value={initialDeposit}
+            onChange={(e) => setInitialDeposit(e.target.value)}
+            helperText="Starting balance for your account"
+          />
+        </DialogContent>
+        <DialogActions>
+          <ThemedButton onClick={() => setShowCreateDialog(false)}>Cancel</ThemedButton>
+          <ThemedButton
+            variant="primary"
+            onClick={handleCreateAccountDialog}
+            disabled={loading || !newUserId.trim() || !newPin.trim() || !initialDeposit.trim()}
+          >
+            {loading ? 'Creating...' : 'Create Account'}
+          </ThemedButton>
+        </DialogActions>
+      </Dialog>
+    </GradientBackground>
   );
 };
