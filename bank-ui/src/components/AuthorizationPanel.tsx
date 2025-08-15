@@ -24,7 +24,7 @@ import {
   CheckCircle,
   Info
 } from '@mui/icons-material';
-import type { BankAPI } from '@midnight-bank/bank-api';
+import { utils, type BankAPI } from '@midnight-bank/bank-api';
 import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
 
 interface AuthorizationPanelProps {
@@ -192,7 +192,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
               <ListItem key={index} divider>
                 <ListItemText
                   primary={contact.userId}
-                  secondary={`Max: $${contact.maxAmount}`}
+                  secondary={`Max: $${utils.formatBalance(contact.maxAmount)}`}
                 />
                 <Chip
                   label={`Can Send`}

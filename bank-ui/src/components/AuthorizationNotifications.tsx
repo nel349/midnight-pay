@@ -41,8 +41,11 @@ export function AuthorizationNotifications({
     });
   };
 
-  const handleApproveRequest = async (senderUserId: string, maxAmount = '100.00') => {
+  const handleApproveRequest = async (senderUserId: string) => {
     if (!bankAPI) return;
+    
+    const maxAmount = prompt('Enter the maximum amount they can send you (e.g., 500.00):');
+    if (!maxAmount || !maxAmount.trim()) return;
     
     const pin = prompt('Enter your PIN to approve authorization:');
     if (!pin) return;
@@ -154,7 +157,7 @@ export function AuthorizationNotifications({
                       >
                         {isProcessing(`approve-${request.senderUserId}`) 
                           ? '⏳ Approving...' 
-                          : '✅ Approve ($100 limit)'
+                          : '✅ Set Limit & Approve'
                         }
                       </Button>
                     </Box>
