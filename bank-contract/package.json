@@ -18,7 +18,7 @@
     "clean": "rm -rf dist/ && rm -rf src/managed/",
     "compact": "compact compile src/bank.compact ./src/managed/bank",
     "typecheck": "tsc --noEmit",
-    "build": "npm run compact && rm -rf dist && tsc && cp -Rf ./src/managed ./dist/managed",
+    "build": "rm -rf dist && tsc && cp -Rf ./src/managed ./dist/managed",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "lint": "eslint src --ext .ts",

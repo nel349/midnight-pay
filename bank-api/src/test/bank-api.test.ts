@@ -11,7 +11,7 @@ import { currentDir } from './config.js';
 describe('BankAPI', () => {
   test('should have correct initial empty state', () => {
     expect(emptyBankState.accountExists).toBe(false);
-    expect(emptyBankState.balance).toBe(0n);
+    expect(emptyBankState.balance).toBe(null); // Encrypted balance system - null until authenticated
     expect(emptyBankState.transactionCount).toBe(0n);
     expect(emptyBankState.whoami).toBe('unknown');
     expect(emptyBankState.accountStatus).toBe(ACCOUNT_STATE.inactive);

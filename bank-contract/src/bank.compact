@@ -114,6 +114,7 @@ export circuit create_account(user_id: Bytes<32>, initial_pin: Bytes<32>, deposi
 
 // Circuit 2: Deposit to User Account (Token-Based)
 export circuit deposit(user_id: Bytes<32>, pin: Bytes<32>, amount: Uint<64>): [] {
+  
   assert (amount > 0 as Uint<64>, "Deposit amount must be positive");
   
   // Get account from shared ledger

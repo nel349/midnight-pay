@@ -14,8 +14,6 @@ services:
     image: 'midnightntwrk/indexer-standalone:latest'
     ports:
       - '8088:8088'
-    volumes:
-      - indexer_data:/data
     environment:
       RUST_LOG: 'indexer=info,chain_indexer=info,indexer_api=info,wallet_indexer=info,indexer_common=info,fastrace_opentelemetry=off,info'
       APP__INFRA__SECRET: '303132333435363738393031323334353637383930313233343536373839303132'
@@ -45,6 +43,3 @@ services:
 networks:
   bank-network:
     driver: bridge
-
-volumes:
-  indexer_data:

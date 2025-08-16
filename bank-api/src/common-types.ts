@@ -52,7 +52,7 @@ export type BankDerivedState = {
   readonly transactionCount: bigint;
   readonly lastTransactionHash: string;
   readonly whoami: string;
-  readonly balance: bigint; // From private state
+  readonly balance: bigint | null; // Encrypted balance system - null until authenticated with PIN
   readonly transactionHistory: Uint8Array[]; // From private state
   readonly lastTransaction?: BankTransaction;
   readonly lastCancelledTransaction?: BankTransaction;
@@ -65,7 +65,7 @@ export const emptyBankState: BankDerivedState = {
   transactionCount: 0n,
   lastTransactionHash: '',
   whoami: 'unknown',
-  balance: 0n,
+  balance: null, // Encrypted balance system - requires PIN authentication
   transactionHistory: [],
   lastTransaction: undefined,
   lastCancelledTransaction: undefined,
