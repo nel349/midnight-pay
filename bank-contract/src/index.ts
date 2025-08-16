@@ -15,7 +15,6 @@ export type Contract<T, W extends Witnesses<T> = Witnesses<T>> = ContractType<T,
 export type BankPrivateState = {
   readonly userPinHashes: Map<string, Uint8Array>;        // user_id -> PIN hash
   readonly userBalances: Map<string, bigint>;             // user_id -> balance
-  readonly userTransactionHistories: Map<string, Uint8Array[]>; // user_id -> transaction history
   readonly pendingTransferAmounts: Map<string, bigint>;   // auth_id -> actual amount (for demo decryption)
 };
 
@@ -23,7 +22,6 @@ export type BankPrivateState = {
 export const createBankPrivateState = (): BankPrivateState => ({
   userPinHashes: new Map(),
   userBalances: new Map(),
-  userTransactionHistories: new Map(),
   pendingTransferAmounts: new Map()
 });
 
@@ -36,7 +34,6 @@ export const addUserToPrivateState = (
 ): BankPrivateState => ({
   userPinHashes: new Map(state.userPinHashes).set(userId, pinHash),
   userBalances: new Map(state.userBalances).set(userId, initialBalance),
-  userTransactionHistories: new Map(state.userTransactionHistories).set(userId, Array(10).fill(new Uint8Array(32))),
   pendingTransferAmounts: new Map(state.pendingTransferAmounts || new Map())
 });
 
@@ -68,21 +65,7 @@ export const bankWitnesses = {
     return [privateState, balance ?? 0n];
   },
 
-  // Witness 3: Provides user's transaction history (user-specific, private) - exactly 10 entries
-  user_transaction_history: ({ 
-    privateState 
-  }: WitnessContext<Ledger, BankPrivateState>, 
-    userId: Uint8Array
-  ): [BankPrivateState, Uint8Array[]] => {
-    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
-    const history = privateState.userTransactionHistories.get(userIdStr);
-    if (!history) {
-      throw new Error(`User ${userIdStr} transaction history not found in private state`);
-    }
-    return [privateState, history.length === 10 ? history : Array(10).fill(new Uint8Array(32))];
-  },
-
-  // Witness 4: Updates user's balance in private state (user-specific)
+  // Witness 3: Updates user's balance in private state (user-specific)
   set_user_balance: (
     { privateState }: WitnessContext<Ledger, BankPrivateState>,
     userId: Uint8Array,
@@ -99,28 +82,9 @@ export const bankWitnesses = {
       },
       []
     ];
-  },
+  }
 
-  // Witness 5: Updates user's transaction history in private state (user-specific, exactly 10 entries)
-  set_user_transaction_history: (
-    { privateState }: WitnessContext<Ledger, BankPrivateState>,
-    userId: Uint8Array,
-    newHistory: Uint8Array[]
-  ): [BankPrivateState, []] => {
-    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
-    const newUserHistories = new Map(privateState.userTransactionHistories);
-    newUserHistories.set(userIdStr, newHistory.slice(0, 10)); // Ensure max 10 entries
-    
-    return [
-      {
-        ...privateState,
-        userTransactionHistories: newUserHistories
-      },
-      []
-    ];
-  },
-
-  // Note: store_pending_amount and decrypt_balance_witness removed - using public ledger instead
+  // Note: Transaction history witnesses removed - API handles detailed transaction logging
 };
 
 // Utility functions for PIN handling

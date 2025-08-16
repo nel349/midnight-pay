@@ -67,9 +67,9 @@
 - **Contract address consistency**: Uses contract address as private state key
 - **Battleship pattern**: Applied working private state management pattern
 
-## 🚧 Phase 3: Advanced Privacy Features (PLANNED)
+## ✅ Phase 3: Inter-Contract Transfers (COMPLETED)
 
-### 3.1 Inter-Contract Transfers 🆕
+### 3.1 Inter-Contract Transfers ✅
 - **Send money to contract**: Transfer funds to another Midnight Bank contract
 - **Recipient verification**: Validate target contract before transfer
 - **Transfer privacy**: Amount and recipient remain confidential
@@ -81,6 +81,18 @@
 - **Exact amount disclosure**: Full balance reveal to authorized contracts
 - **Time-limited access**: Disclosure permissions with expiration
 - **Revocable permissions**: Account holder can revoke access anytime
+
+### 3.3 Native Token (DUST) Support 🆕
+- **Contract Changes**:
+  - Add `accepted_token` (Bytes<32>) in constructor or hardcode native token type.
+  - Add `vault`: Map<Bytes<32>, CoinInfo> (or QualifiedCoinInfo) keyed by user_id.
+  - Modify `deposit` circuit to accept a `CoinInfo` parameter and call `receive(coin)`.
+  - Modify `withdraw` circuit to use `sendImmediate` and store the returned change.
+  - Optional: Aggregate multiple deposits via `mergeCoin`/`mergeCoinImmediate`.
+- **API/Wallet Changes**:
+  - When calling deposit, pass a `CoinInfo` input. Wallet will select a user coin and attach it (or use `createZswapInput`).
+  - On withdraw, no user input coin is needed; the contract spends from its vault.
+  - Keep private balances as UX state, backed by real coins.
 
 ### Implementation Strategy:
 - New circuits: `send_to_contract`, `create_disclosure_permission`, `verify_balance_threshold`

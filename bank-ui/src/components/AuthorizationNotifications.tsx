@@ -3,6 +3,7 @@ import { Box, Card, CardContent, Typography, Button, Chip, IconButton } from '@m
 import { Refresh, Notifications } from '@mui/icons-material';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
+import { ThemedButton } from './ThemedButton';
 
 interface AuthorizationNotificationsProps {
   bankAPI: BankAPI | null;
@@ -41,8 +42,11 @@ export function AuthorizationNotifications({
     });
   };
 
-  const handleApproveRequest = async (senderUserId: string, maxAmount = '100.00') => {
+  const handleApproveRequest = async (senderUserId: string) => {
     if (!bankAPI) return;
+    
+    const maxAmount = prompt('Enter the maximum amount they can send you (e.g., 500.00):');
+    if (!maxAmount || !maxAmount.trim()) return;
     
     const pin = prompt('Enter your PIN to approve authorization:');
     if (!pin) return;
@@ -113,8 +117,18 @@ export function AuthorizationNotifications({
             {totalNotifications > 0 && (
               <Chip 
                 label={totalNotifications} 
-                color="error" 
-                size="small" 
+                size="small"
+                sx={{
+                  backgroundColor: '#f44336',
+                  color: 'white',
+                  fontSize: '0.75rem',
+                  height: '24px',
+                  minWidth: '24px',
+                  '& .MuiChip-label': {
+                    padding: '0 6px',
+                    fontSize: '0.75rem',
+                  }
+                }}
               />
             )}
           </Box>
@@ -145,18 +159,19 @@ export function AuthorizationNotifications({
                           Requested: {new Date(request.requestedAt * 1000).toLocaleString()}
                         </Typography>
                       </Box>
-                      <Button
+                      <ThemedButton
                         onClick={() => handleApproveRequest(request.senderUserId)}
                         disabled={isProcessing(`approve-${request.senderUserId}`)}
-                        variant="contained"
-                        color="success"
-                        size="small"
+                        variant="outlined"
+                        sx={{
+                          marginLeft: 'auto',
+                        }}
                       >
                         {isProcessing(`approve-${request.senderUserId}`) 
                           ? '⏳ Approving...' 
-                          : '✅ Approve ($100 limit)'
+                          : '✅ Set Limit & Approve'
                         }
-                      </Button>
+                      </ThemedButton>
                     </Box>
                   </CardContent>
                 </Card>

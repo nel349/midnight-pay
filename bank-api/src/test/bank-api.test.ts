@@ -11,7 +11,7 @@ import { currentDir } from './config.js';
 describe('BankAPI', () => {
   test('should have correct initial empty state', () => {
     expect(emptyBankState.accountExists).toBe(false);
-    expect(emptyBankState.balance).toBe(0n);
+    expect(emptyBankState.balance).toBe(null); // Encrypted balance system - null until authenticated
     expect(emptyBankState.transactionCount).toBe(0n);
     expect(emptyBankState.whoami).toBe('unknown');
     expect(emptyBankState.accountStatus).toBe(ACCOUNT_STATE.inactive);
@@ -130,7 +130,7 @@ describe('BankAPI', () => {
       expect(afterCreate.balance).toBe(5000n);
 
       // Authenticate balance access (no state changes expected)
-      await bankAPI.authenticateBalanceAccess('1234');
+      await bankAPI.getTokenBalance('1234');
 
       // Deposit $25.00 -> 7500
       await bankAPI.deposit('1234', '25.00');
@@ -152,13 +152,6 @@ describe('BankAPI', () => {
         bankAPI.state$.pipe(filter((s) => s.accountStatus === ACCOUNT_STATE.verified)),
       );
       expect(afterVerify.accountStatus).toBe(ACCOUNT_STATE.verified);
-
-      logger.info('Fetching hex-encoded transaction history…');
-      // Fetch hex-encoded transaction history from convenience API
-      const historyHex = await bankAPI.getTransactionHistoryHex();
-      logger.info({ event: 'historyHex', recent: historyHex.slice(0, 3) });
-      expect(Array.isArray(historyHex)).toBe(true);
-      expect(historyHex.length).toBe(10);
 
       logger.info('Fetching detailed transaction history…');
       // Assert detailed client-side log order and fields

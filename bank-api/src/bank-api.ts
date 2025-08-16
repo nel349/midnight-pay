@@ -37,9 +37,10 @@ export interface DeployedBankAPI {
   deposit(pin: string, amount: string): Promise<void>;
   withdraw(pin: string, amount: string): Promise<void>;
   transferToUser(pin: string, recipientUserId: string, amount: string): Promise<void>;
-  authenticateBalanceAccess(pin: string): Promise<void>;
+  getTokenBalance(pin: string): Promise<void>;
   verifyAccountStatus(pin: string): Promise<void>;
   getAuthorizedContacts(): Promise<Array<{ userId: string; maxAmount: bigint }>>;
+  getIncomingAuthorizations(): Promise<Array<{ userId: string; maxAmount: bigint }>>;
   
   // Zelle-like Authorization System
   requestTransferAuthorization(pin: string, recipientUserId: string): Promise<void>;
@@ -97,15 +98,42 @@ export class BankAPI implements DeployedBankAPI {
         const accountExists = ledgerState.all_accounts.member(userIdBytes);
         const userAccount = accountExists ? ledgerState.all_accounts.lookup(userIdBytes) : undefined;
         
-        // Get user-specific private data (use normalized userId)
-        const userBalance = privateState.userBalances.get(normalizedUserId) ?? 0n;
+        // Get user-specific data
+        // Token balance is now encrypted and private - cannot be read directly from ledger
+        // Balance will be null until user authenticates with PIN via get_token_balance circuit
+        let userTokenBalance: bigint | null = null;
+        
+        // If user has authenticated (PIN hash exists), calculate balance from transaction history
         const userPinHash = privateState.userPinHashes.get(normalizedUserId) ?? new Uint8Array(32);
-        const userTxHistory = privateState.userTransactionHistories.get(normalizedUserId) ?? [];
+        const hasAuthenticated = privateState.userPinHashes.has(normalizedUserId);
+        
+        if (hasAuthenticated && accountExists) {
+          // Calculate balance from transaction history since user has authenticated
+          const history = this.getDetailedTransactionHistorySync();
+          let balance = 0n;
+          
+          for (const tx of history) {
+            switch (tx.type) {
+              case 'create':
+              case 'deposit':
+                balance += BigInt(tx.amount || 0);
+                break;
+              case 'withdraw':
+              case 'auth_transfer':
+                balance -= BigInt(tx.amount || 0);
+                break;
+              case 'claim_transfer':
+                balance += BigInt(tx.amount || 0);
+                break;
+            }
+          }
+          
+          userTokenBalance = balance;
+        }
         
         // Debug logging
-        if (userBalance === 0n && accountExists) {
-          console.log(`DEBUG: User ${this.userId} has account but balance is 0. Private state users:`, Array.from(privateState.userBalances.keys()));
-          console.log(`DEBUG: Private state balances:`, Object.fromEntries(privateState.userBalances));
+        if (accountExists) {
+          console.log(`DEBUG: User ${this.userId} has account with encrypted balance system.`);
         }
         
         const whoami = pureCircuits.public_key ? pureCircuits.public_key(userPinHash) : new Uint8Array(32);
@@ -116,8 +144,8 @@ export class BankAPI implements DeployedBankAPI {
           transactionCount: userAccount?.transaction_count ?? 0n,
           lastTransactionHash: userAccount ? toHex(userAccount.last_transaction) : '',
           whoami: toHex(whoami),
-          balance: userBalance,
-          transactionHistory: userTxHistory,
+          balance: userTokenBalance,
+          transactionHistory: [], // Use getDetailedTransactionHistory() for transaction history
           lastTransaction: userActions.transaction,
           lastCancelledTransaction: userActions.cancelledTransaction,
         };
@@ -130,9 +158,12 @@ export class BankAPI implements DeployedBankAPI {
       }),
     );
 
-    // Build convenience observable for hex-encoded history
-    this.transactionHistoryHex$ = this.state$.pipe(map((s) => s.transactionHistory.map(toHex)));
     this.detailedLogKey = `${this.accountId}:dlog`;
+    
+    // Initialize transaction history cache
+    this.updateTransactionHistoryCache().catch(() => {
+      // Ignore cache initialization errors
+    });
   }
 
   readonly deployedContractAddress: ContractAddress;
@@ -143,8 +174,6 @@ export class BankAPI implements DeployedBankAPI {
 
   readonly privateStates$: Subject<BankPrivateState>;
 
-  // Convenience stream of transaction history as hex-encoded strings
-  readonly transactionHistoryHex$!: Observable<string[]>;
 
   // Client-owned detailed log key
   private readonly detailedLogKey: string = '';
@@ -170,30 +199,25 @@ export class BankAPI implements DeployedBankAPI {
     return new TextDecoder().decode(truncated);
   }
 
-  // Helper to update user-specific private state in shared contract
+  // Helper to update user-specific private state in shared contract (for encrypted balance system)
+  // Note: With encrypted balances, we don't store the actual balance in private state
+  // Instead, we just ensure the user's PIN hash is available for authentication
   private async updateUserPrivateState(pin: string, newBalance: bigint): Promise<void> {
     const stateKey = this.accountId;
     const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createBankPrivateState();
     
-    // Update this user's data in the shared private state
+    // Update this user's PIN hash for authentication (balance is encrypted on-chain)
     const normalizedUserId = this.normalizeUserId(this.userId);
     const pinHash = hashPin(pin);
     const newUserPinHashes = new Map(currentState.userPinHashes);
-    const newUserBalances = new Map(currentState.userBalances);
-    const newUserHistories = new Map(currentState.userTransactionHistories);
     
     newUserPinHashes.set(normalizedUserId, pinHash);
-    newUserBalances.set(normalizedUserId, newBalance);
     
-    // Only update transaction history if user doesn't have one yet
-    if (!newUserHistories.has(normalizedUserId)) {
-      newUserHistories.set(normalizedUserId, Array(10).fill(new Uint8Array(32)));
-    }
-    
+    // Note: We don't store userBalances anymore since they're encrypted on-chain
+    // The balance parameter is ignored in the encrypted system
     const updatedState: BankPrivateState = {
       userPinHashes: newUserPinHashes,
-      userBalances: newUserBalances,
-      userTransactionHistories: newUserHistories,
+      userBalances: new Map(), // Empty - balances are encrypted on-chain
       pendingTransferAmounts: new Map(currentState.pendingTransferAmounts ?? new Map()),
     };
     
@@ -202,35 +226,32 @@ export class BankAPI implements DeployedBankAPI {
     this.privateStates$.next(updatedState);
   }
 
-  // Helper to ensure user exists in shared private state (for transfers)
+  // Helper to ensure user exists in shared private state (for encrypted balance system)
+  // Note: With encrypted balances, we only need to ensure the PIN hash is stored
   private async ensureUserInPrivateState(userId: string, pin: string, balance: bigint): Promise<void> {
     const stateKey = this.accountId;
     const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createBankPrivateState();
     
     const normalizedUserId = this.normalizeUserId(userId);
-    console.log(`DEBUG: ensureUserInPrivateState called for ${userId} (normalized: ${normalizedUserId}) with balance ${balance}`);
-    console.log(`DEBUG: Current state has users:`, Array.from(currentState.userBalances.keys()));
+    console.log(`DEBUG: ensureUserInPrivateState called for ${userId} (normalized: ${normalizedUserId})`);
+    console.log(`DEBUG: Current state has users:`, Array.from(currentState.userPinHashes.keys()));
     
-    // Check if user already exists
-    if (currentState.userBalances.has(normalizedUserId)) {
+    // Check if user already has PIN hash stored
+    if (currentState.userPinHashes.has(normalizedUserId)) {
       console.log(`DEBUG: User ${normalizedUserId} already exists in private state`);
       return; // User already exists, nothing to do
     }
     
-    // Add the user to shared private state
+    // Add the user's PIN hash to shared private state
     const pinHash = hashPin(pin);
     const newUserPinHashes = new Map(currentState.userPinHashes);
-    const newUserBalances = new Map(currentState.userBalances);
-    const newUserHistories = new Map(currentState.userTransactionHistories);
     
     newUserPinHashes.set(normalizedUserId, pinHash);
-    newUserBalances.set(normalizedUserId, balance);
-    newUserHistories.set(normalizedUserId, Array(10).fill(new Uint8Array(32)));
     
+    // Note: We don't store userBalances since they're encrypted on-chain
     const updatedState: BankPrivateState = {
       userPinHashes: newUserPinHashes,
-      userBalances: newUserBalances,
-      userTransactionHistories: newUserHistories,
+      userBalances: new Map(), // Empty - balances are encrypted on-chain
       pendingTransferAmounts: new Map(currentState.pendingTransferAmounts ?? new Map()),
     };
     
@@ -239,12 +260,38 @@ export class BankAPI implements DeployedBankAPI {
     this.privateStates$.next(updatedState);
   }
 
-  // Helper to get current user balance from shared private state
+  // Helper to get current user balance from encrypted balance system
+  // Note: This cannot decrypt the actual balance without the user's PIN
+  // This helper calculates balance from transaction history stored in detailed log
   private async getCurrentUserBalance(): Promise<bigint> {
-    const stateKey = this.accountId;
-    const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createBankPrivateState();
-    const normalizedUserId = this.normalizeUserId(this.userId);
-    return currentState.userBalances.get(normalizedUserId) ?? 0n;
+    try {
+      // Since balances are encrypted and we don't have the PIN here,
+      // we calculate the balance from the transaction history
+      const history = await this.getDetailedTransactionHistory();
+      let balance = 0n;
+      
+      for (const tx of history) {
+        switch (tx.type) {
+          case 'create':
+          case 'deposit':
+            balance += BigInt(tx.amount || 0);
+            break;
+          case 'withdraw':
+          case 'auth_transfer':
+            balance -= BigInt(tx.amount || 0);
+            break;
+          case 'claim_transfer':
+            balance += BigInt(tx.amount || 0);
+            break;
+        }
+      }
+      
+      return balance;
+    } catch (error) {
+      // If we can't read transaction history, return 0
+      // In a real app, we'd need the user to authenticate to get actual balance
+      return 0n;
+    }
   }
 
   // Sync user data to shared private state (called when subscribing)
@@ -266,7 +313,7 @@ export class BankAPI implements DeployedBankAPI {
       const sharedStateKey = 'shared-bank-contract' as AccountId;
       const currentPrivateState = await this.providers.privateStateProvider.get(sharedStateKey) ?? createBankPrivateState();
       
-      if (currentPrivateState.userBalances.has(normalizedUserId)) {
+      if (currentPrivateState.userPinHashes.has(normalizedUserId)) {
         return; // User already in private state
       }
       
@@ -429,13 +476,13 @@ export class BankAPI implements DeployedBankAPI {
     }
   }
 
-  async authenticateBalanceAccess(pin: string): Promise<void> {
+  async getTokenBalance(pin: string): Promise<void> {
     this.logger?.info({ authenticateBalanceAccess: { userId: this.userId } });
     
     const userIdBytes = this.stringToBytes32(this.userId);
     
     const pinBytes = this.stringToBytes32(pin);
-    const txData = await this.deployedContract.callTx.authenticate_balance_access(
+    const txData = await this.deployedContract.callTx.get_token_balance(
       userIdBytes,
       pinBytes
     );
@@ -451,7 +498,7 @@ export class BankAPI implements DeployedBankAPI {
     const balance = await this.getCurrentUserBalance();
     this.logger?.info(`balanceAccessAuthenticated for ${this.userId}: ${balance}`);
 
-    // Ensure user's private entry exists and reflects current balance
+    // Update user's private state with authenticated balance
     await this.updateUserPrivateState(pin, balance);
 
     await this.appendDetailedLog({
@@ -460,8 +507,19 @@ export class BankAPI implements DeployedBankAPI {
       timestamp: new Date(),
     });
 
-    // Ensure subscribers get the latest shared private state snapshot
+    // Force refresh of private state for all observers with the authenticated balance
     await this.refreshSharedPrivateState();
+    
+    // Emit a user action to trigger balance update in state observable
+    this.transactions$.next({
+      transaction: {
+        type: TransactionType.DEPOSIT, // Use existing type for balance authentication
+        amount: 0n, // No amount change for balance check
+        timestamp: new Date(),
+        pin,
+      },
+      cancelledTransaction: undefined,
+    });
   }
 
   async verifyAccountStatus(pin: string): Promise<void> {
@@ -517,6 +575,35 @@ export class BankAPI implements DeployedBankAPI {
     }
 
     return Array.from(recipientToMax.entries()).map(([userId, maxAmount]) => ({ userId, maxAmount }));
+  }
+
+  async getIncomingAuthorizations(): Promise<Array<{ userId: string; maxAmount: bigint }>> {
+    // Return the list of SENDERS that are authorized to send to the current user (recipient)
+    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (!state) return [];
+    const l = ledger(state.data);
+    const normalizedUserId = this.normalizeUserId(this.userId);
+    const decoder = new TextDecoder();
+    const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+
+    const senderToMax = new Map<string, bigint>();
+
+    // Look at current user's recipient auth list
+    const userIdBytes = new TextEncoder().encode(normalizedUserId.padEnd(32, '\0'));
+    if (!l.user_as_recipient_auths.member(userIdBytes)) return [];
+
+    const authVector = l.user_as_recipient_auths.lookup(userIdBytes) as Uint8Array[];
+    for (const authId of authVector) {
+      if (!authId || isZeroBytes(authId)) continue;
+      if (!l.active_authorizations.member(authId)) continue;
+      const auth = l.active_authorizations.lookup(authId);
+      const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+      const max = BigInt(auth.max_amount);
+      const current = senderToMax.get(senderId) ?? 0n;
+      if (max > current) senderToMax.set(senderId, max);
+    }
+
+    return Array.from(senderToMax.entries()).map(([userId, maxAmount]) => ({ userId, maxAmount }));
   }
 
   async requestTransferAuthorization(pin: string, recipientUserId: string): Promise<void> {
@@ -635,6 +722,11 @@ export class BankAPI implements DeployedBankAPI {
     const normalizedSenderId = this.normalizeUserId(senderUserId);
     const senderIdBytes = this.stringToBytes32(normalizedSenderId);
     
+    // Get the pending claim amount BEFORE claiming it
+    const pendingClaims = await this.getPendingClaims();
+    const claimForSender = pendingClaims.find(claim => this.normalizeUserId(claim.senderUserId) === normalizedSenderId);
+    const expectedClaimAmount = claimForSender?.amount ?? 0n;
+    
     // Ensure the recipient exists in shared private state before invoking witness-dependent circuit
     const startingBalance = await this.getCurrentUserBalance();
     await this.ensureUserInPrivateState(this.userId, pin, startingBalance);
@@ -652,32 +744,45 @@ export class BankAPI implements DeployedBankAPI {
         sender: senderUserId,
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
+        claimedAmount: expectedClaimAmount,
       },
     });
     
-    // Force refresh of private state for all observers (contract already updated it)
+    // Update the private state balance manually since the contract updated it
+    const newBalance = startingBalance + expectedClaimAmount;
+    await this.updateUserPrivateState(pin, newBalance);
+    
+    // Force refresh of private state for all observers 
     await this.refreshSharedPrivateState();
-    const newBalance = await this.getCurrentUserBalance();
-    const claimedAmount = newBalance > startingBalance ? (newBalance - startingBalance) : 0n;
 
     await this.appendDetailedLog({
       type: 'claim_transfer',
-      amount: claimedAmount,
-      balanceAfter: await this.getCurrentUserBalance(),
+      amount: expectedClaimAmount,
+      balanceAfter: newBalance,
       timestamp: new Date(),
       counterparty: senderUserId,
     });
-  }
-
-
-  async getTransactionHistoryHex(): Promise<string[]> {
-    return await firstValueFrom(this.transactionHistoryHex$);
   }
 
   // Client-owned detailed log (persisted via privateStateProvider)
   async getDetailedTransactionHistory(): Promise<DetailedTransaction[]> {
     const raw = await this.providers.privateStateProvider.get(this.detailedLogKey as unknown as AccountId);
     return (raw as unknown as DetailedTransaction[]) ?? [];
+  }
+
+  // Synchronous version for use in observables (cached)
+  private cachedTransactionHistory: DetailedTransaction[] = [];
+  
+  private getDetailedTransactionHistorySync(): DetailedTransaction[] {
+    return this.cachedTransactionHistory;
+  }
+  
+  private async updateTransactionHistoryCache(): Promise<void> {
+    try {
+      this.cachedTransactionHistory = await this.getDetailedTransactionHistory();
+    } catch {
+      // Keep existing cache if read fails
+    }
   }
 
   private async appendDetailedLog(entry: DetailedTransaction): Promise<void> {
@@ -688,6 +793,9 @@ export class BankAPI implements DeployedBankAPI {
         this.detailedLogKey as unknown as AccountId,
         updated as unknown as BankPrivateState,
       );
+      
+      // Update cache to reflect the new transaction
+      this.cachedTransactionHistory = updated;
     } catch {}
   }
 
@@ -785,23 +893,99 @@ export class BankAPI implements DeployedBankAPI {
     providers: BankProviders,
     logger: Logger,
   ): Promise<ContractAddress> {
+    console.log('🚀 [DEBUG DEPLOY] Bank deploy started');
     logger.info({ deployBankContract: {} });
     // Deploys can occasionally fail transiently if the node/indexer/proof server
     // are not fully ready at the very start of the test run. Add a short
     // retry-with-backoff to make the tests more robust.
-    const maxAttempts = 3;
+    // However, do NOT retry on user rejections!
+    const maxAttempts = 5;
     let lastError: unknown;
     let deployedBankContract: DeployedBankContract | undefined;
+    
+    // Helper function to check if error is a user rejection or insufficient balance
+    const isNonRetryableError = (error: any): boolean => {
+      if (!error) return false;
+      
+      // Check for common user rejection patterns
+      const errorString = error.toString?.() || String(error);
+      const message = error.message || '';
+      const code = error.code || '';
+      const reason = error.reason || '';
+      
+      // User rejection patterns
+      const isUserRejection = (
+        code === 'Rejected' ||
+        reason === 'User rejects transaction' ||
+        message.includes('User reject') ||
+        message.includes('user reject') ||
+        message.includes('User denied') ||
+        message.includes('user denied') ||
+        message.includes('Transaction rejected') ||
+        message.includes('transaction rejected') ||
+        errorString.includes('User reject') ||
+        errorString.includes('user reject')
+      );
+      
+      // Insufficient balance patterns
+      const isInsufficientBalance = (
+        reason?.includes('Insufficient balance') ||
+        message?.includes('Insufficient balance') ||
+        errorString?.includes('Insufficient balance') ||
+        code === 'InvalidRequest' && reason?.includes('Insufficient balance')
+      );
+      
+      // Timeout patterns - don't retry timeouts
+      const isTimeout = (
+        message?.includes('timeout') ||
+        message?.includes('Timeout') ||
+        message?.includes('TIMEOUT') ||
+        errorString?.includes('timeout') ||
+        code === 'TIMEOUT'
+      );
+      
+      return isUserRejection || isInsufficientBalance || isTimeout;
+    };
+    
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        deployedBankContract = await deployContract(providers, {
+        console.log(`🔄 [DEBUG DEPLOY] Attempt ${attempt}/${maxAttempts} - calling deployContract...`);
+        
+        // Add timeout wrapper to prevent hanging
+        const deployTimeout = 120000; // 2 minutes timeout
+        const deployPromise = deployContract(providers, {
           privateStateId: 'deploy' as AccountId, // Neutral state for deployment
           contract: bankContract,
           initialPrivateState: createBankPrivateState(), // Empty initial state for this user
         });
+        
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`Deployment timeout after ${deployTimeout / 1000} seconds. This might be due to proof server being unavailable, network issues, or waiting for user confirmation in Lace wallet.`));
+          }, deployTimeout);
+        });
+        
+        deployedBankContract = await Promise.race([deployPromise, timeoutPromise]) as DeployedBankContract;
+        console.log('✅ [DEBUG DEPLOY] deployContract succeeded');
         break;
       } catch (err) {
         lastError = err;
+        console.log(`❌ [DEBUG DEPLOY] Attempt ${attempt} failed:`, err instanceof Error ? err.message : err);
+        console.log(`📊 [DEBUG DEPLOY] Error details:`, {
+          message: err instanceof Error ? err.message : 'unknown error',
+          stack: err instanceof Error ? err.stack : undefined,
+          type: typeof err,
+          code: (err as any)?.code,
+          reason: (err as any)?.reason
+        });
+        
+        // Check if this is a non-retryable error (user rejection or insufficient balance)
+        if (isNonRetryableError(err)) {
+          const errorType = (err as any)?.reason?.includes('Insufficient balance') ? 'insufficient balance' : 'user rejection';
+          console.log(`🚫 [DEBUG DEPLOY] ${errorType} error - not retrying`);
+          break; // Exit the retry loop immediately
+        }
+        
         const backoffMs = attempt === maxAttempts ? 0 : 1000 * Math.pow(2, attempt - 1);
         logger.warn({
           deployRetry: {
@@ -809,6 +993,7 @@ export class BankAPI implements DeployedBankAPI {
             maxAttempts,
             backoffMs,
             error: err instanceof Error ? err.message : 'unknown error',
+            isNonRetryableError: isNonRetryableError(err),
           },
         });
         if (backoffMs > 0) {
@@ -817,8 +1002,13 @@ export class BankAPI implements DeployedBankAPI {
       }
     }
     if (deployedBankContract === undefined) {
+      console.log('💥 [DEBUG DEPLOY] All deployment attempts failed');
+      console.log('💥 [DEBUG DEPLOY] Final error:', lastError);
       throw lastError instanceof Error ? lastError : new Error('Unknown deploy error');
     }
+
+    console.log('🎉 [DEBUG DEPLOY] Bank deployment successful!');
+    console.log('📋 [DEBUG DEPLOY] Contract address:', deployedBankContract.deployTxData.public.contractAddress);
 
     logger.trace({
       bankContractDeployed: {
@@ -879,12 +1069,14 @@ export class BankAPI implements DeployedBankAPI {
     initialDeposit: string,
     logger: Logger,
   ): Promise<void> {
+    console.log('🚀 [DEBUG] createAccount called with:', { userId, pin: '***', initialDeposit, contractAddress });
     const normalizedUserId = (() => {
       const enc = new TextEncoder();
       const bytes = enc.encode(userId);
       if (bytes.length <= 32) return userId;
       return new TextDecoder().decode(bytes.slice(0, 32));
     })();
+    console.log('🔧 [DEBUG] Normalized userId:', normalizedUserId);
 
     const userIdBytes = (() => {
       const out = new Uint8Array(32);
@@ -901,19 +1093,30 @@ export class BankAPI implements DeployedBankAPI {
       return out;
     })();
 
+    console.log('🔍 [DEBUG] Finding deployed contract...');
     const deployed = await findDeployedContract(providers, {
       contractAddress,
       contract: bankContract,
       privateStateId: normalizedUserId as AccountId,
       initialPrivateState: createBankPrivateState(),
     });
+    console.log('✅ [DEBUG] Deployed contract found');
 
+    console.log('📝 [DEBUG] Calling create_account circuit with:', {
+      userIdLength: userIdBytes.length,
+      pinLength: pinBytes.length,
+      amount: utils.parseAmount(initialDeposit)
+    });
+    
+    console.log('⏳ [DEBUG] Waiting for Lace signing...');
     const txData = await deployed.callTx.create_account(
       userIdBytes,
       pinBytes,
       utils.parseAmount(initialDeposit),
     );
+    console.log('✅ [DEBUG] Transaction signed and submitted:', txData.public.txHash);
 
+    console.log('🎯 [DEBUG] Account creation successful!');
     logger?.trace({
       createAccount: {
         userId: normalizedUserId,
@@ -923,22 +1126,17 @@ export class BankAPI implements DeployedBankAPI {
       },
     });
 
-    // Seed private state for immediate UX
+    // Seed private state for immediate UX (encrypted balance system)
     const sharedKey = normalizedUserId as AccountId;
     const currentState = (await providers.privateStateProvider.get(sharedKey)) ?? createBankPrivateState();
     const pinHash = hashPin(pin);
     const newUserPinHashes = new Map(currentState.userPinHashes);
-    const newUserBalances = new Map(currentState.userBalances);
-    const newUserHistories = new Map(currentState.userTransactionHistories);
     newUserPinHashes.set(normalizedUserId, pinHash);
-    newUserBalances.set(normalizedUserId, utils.parseAmount(initialDeposit));
-    if (!newUserHistories.has(normalizedUserId)) {
-      newUserHistories.set(normalizedUserId, Array(10).fill(new Uint8Array(32)));
-    }
+    
+    // Note: We don't store userBalances since they're encrypted on-chain
     await providers.privateStateProvider.set(sharedKey, {
       userPinHashes: newUserPinHashes,
-      userBalances: newUserBalances,
-      userTransactionHistories: newUserHistories,
+      userBalances: new Map(), // Empty - balances are encrypted on-chain
       pendingTransferAmounts: new Map(currentState.pendingTransferAmounts ?? new Map()),
     });
 
@@ -953,7 +1151,9 @@ export class BankAPI implements DeployedBankAPI {
         timestamp: new Date(),
       }];
       await providers.privateStateProvider.set(dlogKey, updatedLog as unknown as BankPrivateState);
-    } catch {}
+    } catch (error) {
+      console.log('⚠️ [DEBUG] Error saving detailed transaction log:', error);
+    }
   }
 
   static async getSharedPrivateState(

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -16,29 +16,38 @@ import {
   List,
   ListItem,
   ListItemText,
-  IconButton
+  IconButton,
+  Tab,
+  Tabs
 } from '@mui/material';
 import {
   PersonAdd,
   Send,
   CheckCircle,
-  Cancel,
-  Info
+  Info,
+  CallMade,
+  CallReceived,
+  ContactsOutlined,
+  HelpOutline,
+  ContentCopy
 } from '@mui/icons-material';
-import type { BankAPI } from '@midnight-bank/bank-api';
+import { utils, type BankAPI } from '@midnight-bank/bank-api';
+import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
+import { ThemedButton } from './ThemedButton';
 
 interface AuthorizationPanelProps {
   bankAPI: BankAPI;
   isConnected: boolean;
+  userId: string;
   onError: (error: string) => void;
   onSuccess: (message: string) => void;
 }
 
-type AuthorizedContact = { userId: string; maxAmount: string; status: 'can_send' };
 
 export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   bankAPI,
   isConnected,
+  userId,
   onError,
   onSuccess
 }) => {
@@ -51,24 +60,9 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [tabValue, setTabValue] = useState(0);
 
-  // In a real app, this would come from the backend/contract state
-  // For now, we'll simulate it with localStorage
-  const [authorizedContacts, setAuthorizedContacts] = useState<AuthorizedContact[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const contacts = await bankAPI.getAuthorizedContacts();
-        if (!active) return;
-        setAuthorizedContacts(
-          contacts.map((c) => ({ userId: c.userId, maxAmount: (Number(c.maxAmount) / 100).toFixed(2), status: 'can_send' }))
-        );
-      } catch {}
-    })();
-    return () => { active = false; };
-  }, [bankAPI]);
+  const { authorizedContacts, incomingAuthorizations } = useAuthorizationUpdates(bankAPI);
 
   const handleRequestAuthorization = async () => {
     if (!bankAPI || !isConnected || !recipientUserId.trim()) return;
@@ -147,96 +141,238 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   return (
     <Card>
       <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-          <Typography variant="h6">
-            Zelle-like Authorization System
+        {/* Header with Help */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+          <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 'bold' }}>
+            💸 Transfer Money
           </Typography>
           <IconButton 
             size="small" 
             onClick={() => setShowInfoDialog(true)}
-            sx={{ color: 'info.main' }}
+            sx={{ color: 'text.secondary' }}
           >
-            <Info />
+            <HelpOutline />
           </IconButton>
         </Box>
         
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Set up one-time authorizations to send money seamlessly like Zelle
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
+          Send and receive money instantly with trusted contacts
         </Typography>
 
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 3 }}>
-          <Button
-            startIcon={<PersonAdd />}
-            variant="outlined"
-            onClick={() => setShowRequestDialog(true)}
-            disabled={loading || !isConnected}
-          >
-            Request Authorization
-          </Button>
-          
-          <Button
-            startIcon={<CheckCircle />}
-            variant="outlined"
-            onClick={() => setShowApproveDialog(true)}
-            disabled={loading || !isConnected}
-          >
-            Approve Request
-          </Button>
-          
-          <Button
-            startIcon={<Send />}
-            variant="contained"
-            onClick={() => setShowTransferDialog(true)}
-            disabled={loading || !isConnected}
-          >
-            Send to Authorized
-          </Button>
-        </Box>
+        {/* Tabs for Send/Receive */}
+        <Tabs 
+          value={tabValue} 
+          onChange={(_, newValue) => setTabValue(newValue)} 
+          sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
+          variant="fullWidth"
+        >
+          <Tab 
+            icon={<CallMade />} 
+            label="Send Money" 
+            iconPosition="start"
+          />
+          <Tab 
+            icon={<CallReceived />} 
+            label="Receive Money" 
+            iconPosition="start"
+          />
+        </Tabs>
 
-        <Divider sx={{ my: 2 }} />
-        
-        <Typography variant="subtitle1" gutterBottom>
-          Authorized Contacts
-        </Typography>
-        
-        {authorizedContacts.length === 0 ? (
-          <Alert severity="info">
-            No authorized contacts yet. Request authorization from someone to start sending money!
-          </Alert>
-        ) : (
-          <List>
-            {authorizedContacts.map((contact, index) => (
-              <ListItem key={index} divider>
-                <ListItemText
-                  primary={contact.userId}
-                  secondary={`Max: $${contact.maxAmount}`}
-                />
-                <Chip
-                  label={contact.status === 'can_send' ? 'Can Send' : contact.status}
-                  size="small"
-                  color={contact.status === 'can_send' ? 'success' : 'default'}
-                />
-              </ListItem>
-            ))}
-          </List>
+        {/* Send Money Tab */}
+        {tabValue === 0 && (
+          <Box>
+            {authorizedContacts.length === 0 ? (
+              <Alert severity="info" sx={{ mb: 3 }}>
+                <Typography variant="body2" sx={{ mb: 2 }}>
+                  <strong>No contacts set up yet!</strong>
+                </Typography>
+                <Typography variant="body2">
+                  To send money, you first need to ask someone to add you as a trusted contact.
+                </Typography>
+              </Alert>
+            ) : (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, color: 'text.secondary' }}>
+                  YOUR TRUSTED CONTACTS
+                </Typography>
+                <List sx={{ bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                  {authorizedContacts.map((contact, index) => (
+                    <ListItem key={index} divider={index < authorizedContacts.length - 1}>
+                      <ListItemText
+                        primary={
+                          <Typography sx={{ fontWeight: 'medium' }}>
+                            {contact.userId}
+                          </Typography>
+                        }
+                        secondary={`You can send up to $${utils.formatBalance(contact.maxAmount)}`}
+                      />
+                      <ThemedButton
+                        size="small"
+                        variant="primary"
+                        startIcon={<Send />}
+                        onClick={() => {
+                          setRecipientUserId(contact.userId);
+                          setShowTransferDialog(true);
+                        }}
+                        disabled={loading || !isConnected}
+                      >
+                        Send
+                      </ThemedButton>
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
+            
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <Button
+                startIcon={<PersonAdd />}
+                variant="outlined"
+                onClick={() => setShowRequestDialog(true)}
+                disabled={loading || !isConnected}
+                sx={{ flex: 1, minWidth: 200 }}
+              >
+                Ask to Send Money To Someone
+              </Button>
+              
+              {authorizedContacts.length > 0 && (
+                <Button
+                  startIcon={<Send />}
+                  variant="contained"
+                  onClick={() => setShowTransferDialog(true)}
+                  disabled={loading || !isConnected}
+                  sx={{ flex: 1, minWidth: 200 }}
+                >
+                  Send Money Now
+                </Button>
+              )}
+            </Box>
+          </Box>
+        )}
+
+        {/* Receive Money Tab */}
+        {tabValue === 1 && (
+          <Box>
+            <Alert severity="success" sx={{ mb: 3 }}>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                <strong>Easy to receive money!</strong>
+              </Typography>
+              <Typography variant="body2">
+                When someone wants to send you money, they'll ask for permission first. 
+                You can then approve them and set a spending limit.
+              </Typography>
+            </Alert>
+
+            {/* Show who can send money to you */}
+            {incomingAuthorizations.length > 0 && (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, color: 'text.secondary' }}>
+                  WHO CAN SEND YOU MONEY
+                </Typography>
+                <List sx={{ bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                  {incomingAuthorizations.map((contact, index) => (
+                    <ListItem key={index} divider={index < incomingAuthorizations.length - 1}>
+                      <ListItemText
+                        primary={
+                          <Typography sx={{ fontWeight: 'medium' }}>
+                            {contact.userId}
+                          </Typography>
+                        }
+                        secondary={`Can send you up to $${utils.formatBalance(contact.maxAmount)}`}
+                      />
+                      <Chip
+                        label="Authorized"
+                        size="small"
+                        sx={{ 
+                          ml: 1,
+                          backgroundColor: '#4caf50',
+                          color: 'white',
+                          fontSize: '0.75rem',
+                          height: '24px',
+                          '& .MuiChip-label': {
+                            padding: '0 8px',
+                            fontSize: '0.75rem',
+                          }
+                        }}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
+            
+            <Box sx={{ textAlign: 'center', py: 3 }}>
+              <ContactsOutlined sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" sx={{ mb: 1 }}>
+                Share Your User ID
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Give this to people who want to send you money
+              </Typography>
+              <Box 
+                sx={{ 
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  p: 2, 
+                  bgcolor: 'background.default', 
+                  borderRadius: 1, 
+                  border: '1px solid', 
+                  borderColor: 'divider',
+                  cursor: 'pointer',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  }
+                }}
+                onClick={() => {
+                  navigator.clipboard?.writeText(userId);
+                  onSuccess('User ID copied to clipboard!');
+                }}
+                title="Click to copy your user ID"
+              >
+                <Typography 
+                  sx={{
+                    fontFamily: 'monospace',
+                    fontSize: '0.9rem',
+                    wordBreak: 'break-all',
+                    flex: 1,
+                  }}
+                >
+                  {userId}
+                </Typography>
+                <ContentCopy sx={{ fontSize: '1rem', color: 'text.secondary' }} />
+              </Box>
+            </Box>
+            
+            <Button
+              startIcon={<CheckCircle />}
+              variant="outlined"
+              onClick={() => setShowApproveDialog(true)}
+              disabled={loading || !isConnected}
+              fullWidth
+              sx={{ mt: 2 }}
+            >
+              Approve Someone to Send Me Money
+            </Button>
+          </Box>
         )}
 
         {/* Request Authorization Dialog */}
         <Dialog open={showRequestDialog} onClose={() => setShowRequestDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Request Transfer Authorization</DialogTitle>
+          <DialogTitle>💬 Ask to Send Money</DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Ask someone to authorize you to send them money. They will set a maximum amount limit.
+              Request permission to send money to someone. They'll approve you and set how much you can send.
             </Typography>
             <TextField
               autoFocus
-              label="Recipient User ID"
-              placeholder="e.g., alice-bank-account"
+              label="Who do you want to send money to?"
+              placeholder="Enter their user ID"
               fullWidth
               value={recipientUserId}
               onChange={(e) => setRecipientUserId(e.target.value)}
               sx={{ mt: 2 }}
-              helperText="This is their unique user identifier in the bank system"
+              helperText="Ask them for their user ID if you don't know it"
             />
           </DialogContent>
           <DialogActions>
@@ -246,7 +382,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
               variant="contained"
               disabled={loading || !recipientUserId.trim()}
             >
-              {loading ? 'Requesting...' : 'Send Request'}
+              {loading ? 'Sending Request...' : 'Ask Permission'}
             </Button>
           </DialogActions>
         </Dialog>

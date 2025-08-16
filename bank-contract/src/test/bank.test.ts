@@ -129,16 +129,16 @@ describe('Midnight Shared Bank Contract Tests', () => {
     test('should authenticate balance access per user', () => {
       // Each user can authenticate their own balance
       expect(() => {
-        bank.authenticateBalanceAccess('alice', '1111');
+        bank.getTokenBalance('alice', '1111');
       }).not.toThrow();
 
       expect(() => {
-        bank.authenticateBalanceAccess('bob', '2222');
+        bank.getTokenBalance('bob', '2222');
       }).not.toThrow();
 
       // Users cannot authenticate with wrong PIN
       expect(() => {
-        bank.authenticateBalanceAccess('alice', '2222'); // Wrong PIN
+        bank.getTokenBalance('alice', '2222'); // Wrong PIN
       }).toThrow();
     });
   });
@@ -228,7 +228,7 @@ describe('Midnight Shared Bank Contract Tests', () => {
       // All operations should fail on non-existent users
       expect(() => bank.deposit('charlie', '3333', 50n)).toThrow();
       expect(() => bank.withdraw('charlie', '3333', 50n)).toThrow();
-      expect(() => bank.authenticateBalanceAccess('charlie', '3333')).toThrow();
+      expect(() => bank.getTokenBalance('charlie', '3333')).toThrow();
       expect(() => bank.verifyAccountStatus('charlie', '3333')).toThrow();
       expect(() => bank.requestTransferAuthorization('charlie', 'alice', '3333')).toThrow();
       expect(() => bank.sendToAuthorizedUser('alice', 'charlie', 50n, '1111')).toThrow();

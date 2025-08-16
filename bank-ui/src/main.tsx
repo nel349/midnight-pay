@@ -2,12 +2,14 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import pino from 'pino';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { RuntimeConfigurationProvider, useRuntimeConfiguration } from './config/RuntimeConfiguration';
 import { BankWalletProvider } from './components/BankWallet';
 import { DeployedAccountProvider } from './contexts/DeployedAccountProviderContext';
 import { App as RootApp } from './App';
+import { ThemeProvider, ThemeStyleInjector, DynamicMuiThemeProvider } from './theme';
+import { TopBar } from './components';
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -21,20 +23,22 @@ const queryClient = new QueryClient({
   },
 });
 
-const theme = createTheme();
-
 const App: React.FC = () => {
   const cfg = useRuntimeConfiguration();
   const logger = pino({ level: cfg.LOGGING_LEVEL ?? 'info' });
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <BankWalletProvider logger={logger}>
-          <DeployedAccountProvider logger={logger}>
-            <RootApp />
-          </DeployedAccountProvider>
-        </BankWalletProvider>
+      <ThemeProvider> {/* Midnight theme provider with automatic switching */}
+        <ThemeStyleInjector />
+        <DynamicMuiThemeProvider> {/* Dynamic Material-UI theme provider */}
+          <CssBaseline />
+          <TopBar />
+          <BankWalletProvider logger={logger}>
+            <DeployedAccountProvider logger={logger}>
+              <RootApp />
+            </DeployedAccountProvider>
+          </BankWalletProvider>
+        </DynamicMuiThemeProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
