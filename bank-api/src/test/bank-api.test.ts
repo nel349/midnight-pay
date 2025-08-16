@@ -91,28 +91,6 @@ describe('BankAPI', () => {
       await testEnvironment.shutdown();
     });
 
-    test('should create account successfully (full integration test)', async () => {
-      const userId = 'test-user-1';
-
-      logger.info('Deploying Bank contract…');
-      const contractAddress = await BankAPI.deploy(providers, logger);
-
-      logger.info('Bank contract deployed');
-
-      logger.info('Creating account…', { userId });
-      await BankAPI.createAccount(providers, contractAddress, userId, '1234', '100.00', logger);
-      logger.info('Account created');
-
-      const bankAPI = await BankAPI.subscribe(userId, providers, contractAddress, logger);
-
-      const ready = await firstValueFrom(
-        bankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 10000n)),
-      );
-
-      expect(ready.accountExists).toBe(true);
-      expect(ready.balance).toBe(10000n);
-      expect(ready.accountStatus === ACCOUNT_STATE.active || ready.accountStatus === ACCOUNT_STATE.verified).toBe(true);
-    }, 10 * 60_000);
 
     test('should run full lifecycle: create, auth balance, deposit, withdraw, verify', async () => {
       const userId = `lifecycle-user-${Date.now()}`;
@@ -179,56 +157,47 @@ describe('BankAPI', () => {
     }, 10 * 60_000);
 
 
-    test('should fail transfer with insufficient funds', async () => {
-      const aliceUserId = `alice-insufficient-${Date.now()}`;
-      const bobUserId = `bob-insufficient-${Date.now()}`;
+    test('should handle transfer errors: insufficient funds, wrong PIN, and account creation validation', async () => {
+      const aliceUserId = `alice-errors-${Date.now()}`;
+      const bobUserId = `bob-errors-${Date.now()}`;
+      const charlieUserId = `charlie-errors-${Date.now()}`;
 
-      logger.info('Testing insufficient funds transfer…');
+      logger.info('Testing transfer errors and account creation validation…');
       const contractAddress = await BankAPI.deploy(providers, logger);
 
-      // Alice creates account with only $20.00
+      // Test account creation validation - Alice with $20, Bob with $50
       await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '20.00', logger);
-      const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
-      await firstValueFrom(
-        aliceBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 2000n)),
-      );
-
-      // Bob creates account
-      await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '10.00', logger);
-      const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
-      await firstValueFrom(
-        bobBankAPI.state$.pipe(filter((s) => s.accountExists === true)),
-      );
-
-      // Alice tries to transfer $50.00 (more than her $20.00 balance)
-      await expect(async () => {
-        await aliceBankAPI.transferToUser('1111', bobUserId, '50.00');
-      }).rejects.toThrow(); // Should fail with "Insufficient funds for transfer"
-      
-      logger.info('Insufficient funds test completed');
-    }, 10 * 60_000);
-
-    test('should fail transfer with wrong PIN', async () => {
-      const aliceUserId = `alice-wrongpin-${Date.now()}`;
-      const bobUserId = `bob-wrongpin-${Date.now()}`;
-
-      const contractAddress = await BankAPI.deploy(providers, logger);
-
-      // Setup accounts
-      await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '100.00', logger);
       await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '50.00', logger);
       const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
       const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
       
-      await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.accountExists === true)));
-      await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.accountExists === true)));
-
-      // Alice tries to transfer with wrong PIN
+      // Verify accounts were created with correct balances
+      await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 2000n)));
+      await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 5000n)));
+      
+      // Test 1: Insufficient funds - Alice tries to transfer $50 (more than her $20 balance)
       await expect(async () => {
-        await aliceBankAPI.transferToUser('9999', bobUserId, '30.00'); // Wrong PIN
+        await aliceBankAPI.transferToUser('1111', bobUserId, '50.00');
+      }).rejects.toThrow(); // Should fail with "Insufficient funds for transfer"
+      
+      // Test 2: Wrong PIN - Alice tries transfer with wrong PIN
+      await expect(async () => {
+        await aliceBankAPI.transferToUser('9999', bobUserId, '10.00'); // Wrong PIN
       }).rejects.toThrow(); // Should fail authentication
       
-      logger.info('Wrong PIN test completed');
+      // Test 3: Account creation validation - create Charlie with proper amount
+      await BankAPI.createAccount(providers, contractAddress, charlieUserId, '3333', '100.00', logger);
+      const charlieBankAPI = await BankAPI.subscribe(charlieUserId, providers, contractAddress, logger);
+      const charlieReady = await firstValueFrom(
+        charlieBankAPI.state$.pipe(filter((s) => s.accountExists === true && s.balance === 10000n)),
+      );
+      
+      // Verify Charlie's account was created successfully with correct properties
+      expect(charlieReady.accountExists).toBe(true);
+      expect(charlieReady.balance).toBe(10000n);
+      expect(charlieReady.accountStatus === ACCOUNT_STATE.active || charlieReady.accountStatus === ACCOUNT_STATE.verified).toBe(true);
+      
+      logger.info('Transfer errors and account creation tests completed');
     }, 10 * 60_000);
 
 
@@ -362,82 +331,58 @@ describe('BankAPI', () => {
         logger.info('Multiple encrypted transfers and claim test completed');
       }, 15 * 60_000);
 
-      test('should fail transfer exceeding authorization limit', async () => {
-        const aliceUserId = `alice-exceed-${Date.now()}`;
-        const bobUserId = `bob-exceed-${Date.now()}`;
+      test('should handle authorization errors: exceed limit, no auth, no pending request, and legacy transfer', async () => {
+        const aliceUserId = `alice-auth-errors-${Date.now()}`;
+        const bobUserId = `bob-auth-errors-${Date.now()}`;
+        const charlieUserId = `charlie-auth-errors-${Date.now()}`;
+        const davidUserId = `david-auth-errors-${Date.now()}`;
 
         const contractAddress = await BankAPI.deploy(providers, logger);
 
-        // Setup accounts
+        // Setup accounts for all error scenarios
         await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '200.00', logger);
         await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '100.00', logger);
+        await BankAPI.createAccount(providers, contractAddress, charlieUserId, '3333', '100.00', logger);
+        await BankAPI.createAccount(providers, contractAddress, davidUserId, '4444', '50.00', logger);
+        
         const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
         const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
+        const charlieBankAPI = await BankAPI.subscribe(charlieUserId, providers, contractAddress, logger);
+        const davidBankAPI = await BankAPI.subscribe(davidUserId, providers, contractAddress, logger);
         
         await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 20000n)));
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+        await firstValueFrom(charlieBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+        await firstValueFrom(davidBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
 
-        // Setup authorization: Bob allows Alice to send up to $30
+        // Test 1: Authorization limit exceeded
         await aliceBankAPI.requestTransferAuthorization('1111', bobUserId);
-        await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '30.00');
-
-        // Alice tries to send more than authorized limit
+        await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '30.00'); // $30 limit
         await expect(async () => {
           await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '50.00'); // Exceeds $30 limit
         }).rejects.toThrow(); // Should fail "Amount exceeds authorized limit"
         
-        logger.info('Authorization limit exceeded test completed');
-      }, 10 * 60_000);
-
-      test('should fail transfer without authorization', async () => {
-        const aliceUserId = `alice-no-auth-${Date.now()}`;
-        const bobUserId = `bob-no-auth-${Date.now()}`;
-
-        const contractAddress = await BankAPI.deploy(providers, logger);
-
-        // Setup accounts
-        await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '100.00', logger);
-        await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '50.00', logger);
-        const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
-        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
-        
-        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
-        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
-
-        // Alice tries to send to Bob without authorization
+        // Test 2: Transfer without authorization
         await expect(async () => {
-          await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '25.00');
+          await charlieBankAPI.sendToAuthorizedUser('3333', davidUserId, '25.00'); // No auth exists
         }).rejects.toThrow(); // Should fail "No authorization - recipient must approve first"
         
-        logger.info('No authorization test completed');
-      }, 10 * 60_000);
-
-      test('should fail authorization approval without pending request', async () => {
-        const aliceUserId = `alice-no-request-${Date.now()}`;
-        const bobUserId = `bob-no-request-${Date.now()}`;
-
-        const contractAddress = await BankAPI.deploy(providers, logger);
-
-        // Setup accounts
-        await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '100.00', logger);
-        await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '50.00', logger);
-        const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
-        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
-        
-        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
-        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
-
-        // Bob tries to approve Alice without a pending request
+        // Test 3: Approval without pending request
         await expect(async () => {
-          await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '50.00');
+          await davidBankAPI.approveTransferAuthorization('4444', charlieUserId, '50.00'); // No request
         }).rejects.toThrow(); // Should fail "No pending authorization request"
         
-        logger.info('No pending request test completed');
+        // Test 4: Legacy transferToUser without authorization (helpful error message)
+        await expect(async () => {
+          await charlieBankAPI.transferToUser('3333', davidUserId, '25.00'); // Legacy method
+        }).rejects.toThrow(/Transfer failed: No authorization exists.*authorization system/);
+        
+        logger.info('Authorization error scenarios test completed');
       }, 10 * 60_000);
 
-      test('should handle bidirectional authorization with encrypted claims', async () => {
-        const aliceUserId = `alice-bidirectional-${Date.now()}`;
-        const bobUserId = `bob-bidirectional-${Date.now()}`;
+      test('should handle bidirectional authorization, double-claim prevention, and encrypted claims', async () => {
+        const aliceUserId = `alice-advanced-${Date.now()}`;
+        const bobUserId = `bob-advanced-${Date.now()}`;
 
         const contractAddress = await BankAPI.deploy(providers, logger);
 
@@ -449,32 +394,41 @@ describe('BankAPI', () => {
 
         // Setup bidirectional authorizations
         await aliceBankAPI.requestTransferAuthorization('1111', bobUserId);
-        await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '40.00');
+        await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '100.00'); // Higher limit for double-claim test
         
         await bobBankAPI.requestTransferAuthorization('2222', aliceUserId);
         await aliceBankAPI.approveTransferAuthorization('1111', bobUserId, '60.00');
 
         // Both users send encrypted transfers
-        await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '30.00');   // Alice -> Bob
-        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 12000n))); // 150-30=120
+        await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '50.00');   // Alice -> Bob (for double-claim test)
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n))); // 150-50=100
 
         await bobBankAPI.sendToAuthorizedUser('2222', aliceUserId, '25.00');   // Bob -> Alice  
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 7500n))); // 100-25=75
 
         // Balances haven't changed yet for recipients (pending claims)
-        const aliceBeforeClaim = await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 12000n)));
+        const aliceBeforeClaim = await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
         const bobBeforeClaim = await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 7500n)));
-        expect(aliceBeforeClaim.balance).toBe(12000n); // Still just sent amount deducted
+        expect(aliceBeforeClaim.balance).toBe(10000n); // Still just sent amount deducted
         expect(bobBeforeClaim.balance).toBe(7500n);    // Still just sent amount deducted
 
-        // Both claim their transfers
+        // Bob claims Alice's transfer
         await new Promise(resolve => setTimeout(resolve, 2000));
+        await bobBankAPI.claimAuthorizedTransfer('2222', aliceUserId);    // Bob claims Alice's $50
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 12500n))); // 75+50=125
         
-        await bobBankAPI.claimAuthorizedTransfer('2222', aliceUserId);    // Bob claims Alice's $30
-        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 10500n))); // 75+30=105
+        // Test double-claim prevention - Bob tries to claim the same transfer again
+        await expect(async () => {
+          await bobBankAPI.claimAuthorizedTransfer('2222', aliceUserId);
+        }).rejects.toThrow(); // Should fail "No pending amount to claim"
         
+        // Bob's balance should remain unchanged after failed double-claim
+        const bobAfterDoubleClaim = await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 12500n)));
+        expect(bobAfterDoubleClaim.balance).toBe(12500n);
+        
+        // Alice claims Bob's transfer
         await aliceBankAPI.claimAuthorizedTransfer('1111', bobUserId);    // Alice claims Bob's $25
-        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 14500n))); // 120+25=145
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 12500n))); // 100+25=125
 
         // Verify transaction histories include both sends and claims
         const aliceHistory = await aliceBankAPI.getDetailedTransactionHistory();
@@ -485,79 +439,16 @@ describe('BankAPI', () => {
         const bobAuthTransfers = bobHistory.filter(tx => tx.type === 'auth_transfer');
         const bobClaims = bobHistory.filter(tx => tx.type === 'claim_transfer');
         
-        expect(aliceAuthTransfers).toHaveLength(1); // Alice sent $30
+        expect(aliceAuthTransfers).toHaveLength(1); // Alice sent $50
         expect(aliceClaims).toHaveLength(1);        // Alice claimed $25
         expect(bobAuthTransfers).toHaveLength(1);   // Bob sent $25
-        expect(bobClaims).toHaveLength(1);          // Bob claimed $30
+        expect(bobClaims).toHaveLength(1);          // Bob claimed $50
 
         expect(aliceClaims[0].amount).toBe(2500n);  // $25 claimed
-        expect(bobClaims[0].amount).toBe(3000n);    // $30 claimed
+        expect(bobClaims[0].amount).toBe(5000n);    // $50 claimed
 
-        logger.info('Bidirectional encrypted authorization test completed');
-      }, 15 * 60_000);
-
-      test('should provide helpful error message for legacy transferToUser without authorization', async () => {
-        const aliceUserId = `alice-legacy-${Date.now()}`;
-        const bobUserId = `bob-legacy-${Date.now()}`;
-
-        const contractAddress = await BankAPI.deploy(providers, logger);
-
-        // Setup accounts
-        await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '100.00', logger);
-        await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '50.00', logger);
-        const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
-        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
-        
-        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
-        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
-
-        // Alice tries to use legacy transferToUser without authorization
-        await expect(async () => {
-          await aliceBankAPI.transferToUser('1111', bobUserId, '25.00');
-        }).rejects.toThrow(/Transfer failed: No authorization exists.*authorization system/);
-        
-        logger.info('Legacy transfer helpful error test completed');
-      }, 10 * 60_000);
-    });
-
-      test('should prevent double-claiming the same transfer', async () => {
-        const aliceUserId = `alice-double-${Date.now()}`;
-        const bobUserId = `bob-double-${Date.now()}`;
-
-        const contractAddress = await BankAPI.deploy(providers, logger);
-
-        // Setup accounts
-        await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '150.00', logger);
-        await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '75.00', logger);
-        const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
-        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
-        
-        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 15000n)));
-        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 7500n)));
-
-        // Setup authorization and send
-        await aliceBankAPI.requestTransferAuthorization('1111', bobUserId);
-        await bobBankAPI.approveTransferAuthorization('2222', aliceUserId, '100.00');
-        await aliceBankAPI.sendToAuthorizedUser('1111', bobUserId, '50.00');
-        
-        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n))); // 150-50=100
-
-        // Bob claims successfully first time
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await bobBankAPI.claimAuthorizedTransfer('2222', aliceUserId);
-        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 12500n))); // 75+50=125
-
-        // Bob tries to claim the same transfer again (should fail)
-        await expect(async () => {
-          await bobBankAPI.claimAuthorizedTransfer('2222', aliceUserId);
-        }).rejects.toThrow(); // Should fail "No pending amount to claim"
-
-        // Bob's balance should remain unchanged
-        const bobFinalBalance = await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 12500n)));
-        expect(bobFinalBalance.balance).toBe(12500n);
-
-        logger.info('Double-claim prevention test completed');
+        logger.info('Bidirectional authorization and double-claim prevention test completed');
       }, 15 * 60_000);
     });
-  
+  });
 });
