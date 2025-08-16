@@ -33,6 +33,7 @@ import {
 } from '@mui/icons-material';
 import { utils, type BankAPI } from '@midnight-bank/bank-api';
 import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
+import { ThemedButton } from './ThemedButton';
 
 interface AuthorizationPanelProps {
   bankAPI: BankAPI;
@@ -61,7 +62,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [tabValue, setTabValue] = useState(0);
 
-  const { authorizedContacts } = useAuthorizationUpdates(bankAPI);
+  const { authorizedContacts, incomingAuthorizations } = useAuthorizationUpdates(bankAPI);
 
   const handleRequestAuthorization = async () => {
     if (!bankAPI || !isConnected || !recipientUserId.trim()) return;
@@ -205,9 +206,9 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
                         }
                         secondary={`You can send up to $${utils.formatBalance(contact.maxAmount)}`}
                       />
-                      <Button
+                      <ThemedButton
                         size="small"
-                        variant="contained"
+                        variant="primary"
                         startIcon={<Send />}
                         onClick={() => {
                           setRecipientUserId(contact.userId);
@@ -216,7 +217,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
                         disabled={loading || !isConnected}
                       >
                         Send
-                      </Button>
+                      </ThemedButton>
                     </ListItem>
                   ))}
                 </List>
@@ -261,6 +262,44 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
                 You can then approve them and set a spending limit.
               </Typography>
             </Alert>
+
+            {/* Show who can send money to you */}
+            {incomingAuthorizations.length > 0 && (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, color: 'text.secondary' }}>
+                  WHO CAN SEND YOU MONEY
+                </Typography>
+                <List sx={{ bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                  {incomingAuthorizations.map((contact, index) => (
+                    <ListItem key={index} divider={index < incomingAuthorizations.length - 1}>
+                      <ListItemText
+                        primary={
+                          <Typography sx={{ fontWeight: 'medium' }}>
+                            {contact.userId}
+                          </Typography>
+                        }
+                        secondary={`Can send you up to $${utils.formatBalance(contact.maxAmount)}`}
+                      />
+                      <Chip
+                        label="Authorized"
+                        size="small"
+                        sx={{ 
+                          ml: 1,
+                          backgroundColor: '#4caf50',
+                          color: 'white',
+                          fontSize: '0.75rem',
+                          height: '24px',
+                          '& .MuiChip-label': {
+                            padding: '0 8px',
+                            fontSize: '0.75rem',
+                          }
+                        }}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
             
             <Box sx={{ textAlign: 'center', py: 3 }}>
               <ContactsOutlined sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />

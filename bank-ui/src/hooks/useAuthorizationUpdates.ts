@@ -86,15 +86,28 @@ export function useAuthorizationUpdates(bankAPI: BankAPI | null) {
     refetchInterval: 3000,
   });
 
+  const { data: incomingAuthorizations, refetch: refetchIncoming } = useQuery({
+    queryKey: ['incomingAuthorizations', bankAPI?.userId, lastUpdate],
+    queryFn: async () => {
+      if (!bankAPI) return [];
+      return bankAPI.getIncomingAuthorizations();
+    },
+    enabled: !!bankAPI,
+    staleTime: 1000,
+    refetchInterval: 3000,
+  });
+
   const refresh = () => {
     refetchRequests();
     refetchOutgoing();
     refetchClaims();
     refetchContacts();
+    refetchIncoming();
   };
 
   return {
     authorizedContacts: (authorizedContacts || []) as AuthorizedContact[],
+    incomingAuthorizations: (incomingAuthorizations || []) as AuthorizedContact[],
     // Incoming requests (for recipients)
     pendingRequests: (pendingRequests || []) as PendingRequest[],
     

@@ -287,12 +287,40 @@ export const createMuiThemeFromMidnight = (theme: MidnightCompleteTheme = midnig
       MuiChip: {
         styleOverrides: {
           root: {
-            backgroundColor: theme.colors.background.surface,
-            color: theme.colors.text.primary,
             borderColor: theme.colors.border.default,
+            // Don't override backgroundColor and color here - let MUI handle color variants
           },
           filled: {
-            backgroundColor: theme.colors.background.elevated,
+            // Only override for default/primary chips, not colored ones
+            '&:not(.MuiChip-colorSuccess):not(.MuiChip-colorError):not(.MuiChip-colorWarning):not(.MuiChip-colorInfo)': {
+              backgroundColor: theme.colors.background.elevated,
+              color: theme.colors.text.primary,
+            },
+          },
+        },
+      },
+      MuiTabs: {
+        styleOverrides: {
+          root: {
+            borderBottom: `1px solid ${theme.colors.border.default}`,
+          },
+          indicator: {
+            backgroundColor: theme.colors.primary[500],
+          },
+        },
+      },
+      MuiTab: {
+        styleOverrides: {
+          root: {
+            color: theme.colors.text.secondary,
+            fontWeight: 500,
+            '&.Mui-selected': {
+              color: theme.colors.text.primary,
+              fontWeight: 700,
+            },
+            '&:hover': {
+              color: theme.colors.text.primary,
+            },
           },
         },
       },

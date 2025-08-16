@@ -40,6 +40,7 @@ export interface DeployedBankAPI {
   getTokenBalance(pin: string): Promise<void>;
   verifyAccountStatus(pin: string): Promise<void>;
   getAuthorizedContacts(): Promise<Array<{ userId: string; maxAmount: bigint }>>;
+  getIncomingAuthorizations(): Promise<Array<{ userId: string; maxAmount: bigint }>>;
   
   // Zelle-like Authorization System
   requestTransferAuthorization(pin: string, recipientUserId: string): Promise<void>;
@@ -574,6 +575,35 @@ export class BankAPI implements DeployedBankAPI {
     }
 
     return Array.from(recipientToMax.entries()).map(([userId, maxAmount]) => ({ userId, maxAmount }));
+  }
+
+  async getIncomingAuthorizations(): Promise<Array<{ userId: string; maxAmount: bigint }>> {
+    // Return the list of SENDERS that are authorized to send to the current user (recipient)
+    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (!state) return [];
+    const l = ledger(state.data);
+    const normalizedUserId = this.normalizeUserId(this.userId);
+    const decoder = new TextDecoder();
+    const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+
+    const senderToMax = new Map<string, bigint>();
+
+    // Look at current user's recipient auth list
+    const userIdBytes = new TextEncoder().encode(normalizedUserId.padEnd(32, '\0'));
+    if (!l.user_as_recipient_auths.member(userIdBytes)) return [];
+
+    const authVector = l.user_as_recipient_auths.lookup(userIdBytes) as Uint8Array[];
+    for (const authId of authVector) {
+      if (!authId || isZeroBytes(authId)) continue;
+      if (!l.active_authorizations.member(authId)) continue;
+      const auth = l.active_authorizations.lookup(authId);
+      const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+      const max = BigInt(auth.max_amount);
+      const current = senderToMax.get(senderId) ?? 0n;
+      if (max > current) senderToMax.set(senderId, max);
+    }
+
+    return Array.from(senderToMax.entries()).map(([userId, maxAmount]) => ({ userId, maxAmount }));
   }
 
   async requestTransferAuthorization(pin: string, recipientUserId: string): Promise<void> {
