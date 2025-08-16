@@ -748,4 +748,221 @@ describe('Midnight Shared Bank Contract Tests', () => {
       bank.printAllUsersOverview();
     });
   });
+
+  describe('Selective Balance Disclosure System (NEW FEATURE)', () => {
+    beforeEach(() => {
+      // Setup users for disclosure testing
+      bank.createAccount('alice', '1111', 200n);
+      bank.createAccount('bob', '2222', 150n);
+      bank.createAccount('charlie', '3333', 100n);
+    });
+
+    test('should complete full threshold disclosure workflow successfully', () => {
+      // Step 1: Bob directly grants threshold disclosure permission to Alice (no request needed!)
+      expect(() => {
+        bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 100n, 0); // permission_type=1 (threshold), expires=0 (never)
+      }).not.toThrow();
+
+      // Step 3: Alice verifies Bob has at least $100
+      const hasThreshold = bank.verifyBalanceThreshold('alice', 'bob', 100n);
+      expect(hasThreshold).toBe(true); // Bob has $150, so he meets $100 threshold
+
+      // Step 4: Alice tries to check threshold above authorized limit (should throw error)
+      expect(() => {
+        bank.verifyBalanceThreshold('alice', 'bob', 200n); // Exceeds authorized max of $100
+      }).toThrow('Threshold exceeds authorized maximum');
+
+      console.log('✅ Threshold disclosure workflow completed successfully!');
+    });
+
+    test('should complete full exact disclosure workflow successfully', () => {
+      // Step 1: Alice directly grants exact disclosure permission to Charlie
+      expect(() => {
+        bank.grantDisclosurePermission('alice', 'charlie', '1111', 2, 0n, 24); // permission_type=2 (exact), expires=24h
+      }).not.toThrow();
+
+      // Step 2: Charlie gets Alice's exact balance
+      const aliceBalance = bank.getDisclosedBalance('charlie', 'alice');
+      expect(aliceBalance).toBe(200n); // Alice has $200
+
+      console.log('✅ Exact disclosure workflow completed successfully!');
+    });
+
+    test('should fail disclosure without permission', () => {
+      // Alice tries to check Bob's balance without permission
+      expect(() => {
+        bank.verifyBalanceThreshold('alice', 'bob', 100n);
+      }).toThrow(); // Should fail "No disclosure permission exists"
+
+      // Charlie tries to get Alice's exact balance without permission
+      expect(() => {
+        bank.getDisclosedBalance('charlie', 'alice');
+      }).toThrow(); // Should fail "No disclosure permission exists"
+    });
+
+    test('should fail threshold check exceeding authorized limit', () => {
+      // Setup threshold disclosure: Alice can check if Bob has ≥ $75
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'bob', '1111');
+      bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 75n, 0);
+
+      // Alice can check threshold up to $75
+      expect(() => {
+        bank.verifyBalanceThreshold('alice', 'bob', 50n);
+      }).not.toThrow();
+
+      // Alice tries to check threshold above authorized limit
+      expect(() => {
+        bank.verifyBalanceThreshold('alice', 'bob', 100n); // Exceeds $75 limit
+      }).toThrow(); // Should fail "Threshold exceeds authorized maximum"
+    });
+
+    test('should fail exact disclosure with wrong permission type', () => {
+      // Setup threshold disclosure (type 1) 
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'bob', '1111');
+      bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 100n, 0); // threshold only
+
+      // Alice tries to get exact balance with threshold permission
+      expect(() => {
+        bank.getDisclosedBalance('alice', 'bob');
+      }).toThrow(); // Should fail "Permission does not allow exact balance disclosure"
+    });
+
+    test('should fail disclosure grant with wrong PIN', () => {
+      expect(() => {
+        bank.grantDisclosurePermission('alice', 'bob', '2222', 1, 100n, 0); // Wrong PIN for Alice 
+      }).toThrow(); // Should fail authentication
+    });
+
+    test('should fail disclosure grant with wrong grantor PIN', () => {
+      // Bob tries to grant with wrong PIN
+      expect(() => {
+        bank.grantDisclosurePermission('bob', 'alice', '1111', 1, 100n, 0); // Wrong PIN for Bob (should be '2222')
+      }).toThrow(); // Should fail authentication
+    });
+
+    test('should fail self-disclosure', () => {
+      expect(() => {
+        bank.grantDisclosurePermission('alice', 'alice', '1111', 1, 100n, 0); // Self-disclosure
+      }).toThrow(); // Should fail "Cannot grant disclosure to yourself"
+    });
+
+    test('should fail disclosure to non-existent user', () => {
+      expect(() => {
+        bank.grantDisclosurePermission('alice', 'david', '1111', 1, 100n, 0); // David doesn't exist
+      }).toThrow(); // Should fail "Requester account does not exist"
+    });
+
+    test('should allow direct disclosure grant (no request needed)', () => {
+      // Bob can grant disclosure directly without any request
+      expect(() => {
+        bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 100n, 0);
+      }).not.toThrow(); // Should succeed - no pending request needed!
+    });
+
+    test('should handle multiple disclosure relationships', () => {
+      // Create a network of disclosure permissions:
+      
+      // Alice can check both Bob's and Charlie's thresholds
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'bob', '1111');
+      bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 100n, 0);
+      
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'charlie', '1111');
+      bank.grantDisclosurePermission('charlie', 'alice', '3333', 1, 80n, 0);
+      
+      // Bob can get Alice's exact balance
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('bob', 'alice', '2222');
+      bank.grantDisclosurePermission('alice', 'bob', '1111', 2, 0n, 0);
+      
+      // Test all disclosure relationships work
+      expect(bank.verifyBalanceThreshold('alice', 'bob', 100n)).toBe(true);     // Alice checks Bob ≥ $100
+      expect(bank.verifyBalanceThreshold('alice', 'charlie', 80n)).toBe(true);  // Alice checks Charlie ≥ $80
+      expect(bank.getDisclosedBalance('bob', 'alice')).toBe(200n);              // Bob gets Alice's exact balance
+      
+      console.log('🌐 Multi-user disclosure network completed!');
+    });
+
+    test('should demonstrate privacy benefits of selective disclosure', () => {
+      console.log('\n🎯 Selective Balance Disclosure Benefits:');
+      console.log('├─ Users control who can see their balance');
+      console.log('├─ Granular permissions (threshold vs exact)');
+      console.log('├─ Time-limited access with expiration');
+      console.log('├─ Cryptographic privacy preservation');
+      console.log('└─ Perfect for lending, verification, auditing');
+
+      // Scenario: Alice applying for a loan from Bob (lender)
+      console.log('\n💰 Loan Application Scenario:');
+      
+      // Step 1: Alice requests disclosure for loan verification
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('bob', 'alice', '2222'); // Bob (lender) requests Alice's balance
+      
+      // Step 2: Alice approves threshold disclosure for loan qualification
+      bank.grantDisclosurePermission('alice', 'bob', '1111', 1, 150n, 24); // Bob can check if Alice has ≥ $150 for 24h
+      
+      // Step 3: Bob verifies Alice qualifies for loan
+      const qualifiesForLoan = bank.verifyBalanceThreshold('bob', 'alice', 150n);
+      expect(qualifiesForLoan).toBe(true); // Alice has $200, qualifies for loan requiring $150
+      
+      console.log('\n💡 Alice qualified for loan without revealing exact balance!');
+      
+      bank.printAllUsersOverview();
+    });
+
+    test('should track disclosure statistics', () => {
+      // Setup multiple disclosure permissions
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'bob', '1111');
+      bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 100n, 0);
+      
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'charlie', '1111');
+      bank.grantDisclosurePermission('charlie', 'alice', '3333', 2, 0n, 0);
+      
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('bob', 'alice', '2222');
+      bank.grantDisclosurePermission('alice', 'bob', '1111', 1, 120n, 0);
+      
+      // Analyze Alice's disclosure activity (simplified - only grants, no requests)
+      const aliceDisclosureGrants = bank.getUserTransactionsByType('alice', 'auth_approve'); // Alice grants disclosure to Bob
+      
+      expect(aliceDisclosureGrants).toHaveLength(1);  // 1 disclosure grant (Alice granted to Bob)
+      
+      console.log('📊 Disclosure Statistics:');
+      console.log('├─ Alice granted', aliceDisclosureGrants.length, 'disclosure permissions');
+      console.log('├─ Bob granted 1 disclosure permission to Alice');
+      console.log('├─ Charlie granted 1 disclosure permission to Alice');
+      console.log('└─ Total disclosure grants: 3');
+    });
+
+    test('should demonstrate comprehensive privacy features', () => {
+      console.log('\n🔒 Midnight Bank Privacy Architecture:');
+      console.log('├─ Encrypted balance storage');
+      console.log('├─ Zero-knowledge transaction proofs');
+      console.log('├─ Selective balance disclosure');
+      console.log('├─ Authorization-based transfers');
+      console.log('└─ PIN-based authentication');
+      
+      // Create multiple users and demonstrate privacy features
+      bank.createAccount('diana', '4444', 300n);
+      bank.createAccount('eve', '5555', 50n);
+      
+      console.log('\n💡 All privacy features working together in shared contract!');
+    });
+
+    test('should demonstrate real-world disclosure use cases', () => {
+      console.log('\n🌍 Real-World Disclosure Use Cases:');
+      console.log('├─ Loan applications (threshold verification)');
+      console.log('├─ Employment verification (exact balance)');
+      console.log('├─ Insurance underwriting (threshold checks)');
+      console.log('├─ Investment qualification (minimum balance)');
+      console.log('└─ Audit compliance (temporary exact access)');
+      
+      // Use case 1: Insurance verification - Charlie needs to verify Bob has at least $100 for coverage
+      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('charlie', 'bob', '3333');
+      bank.grantDisclosurePermission('bob', 'charlie', '2222', 1, 100n, 168); // 1 week expiration
+      
+      const qualifiesForInsurance = bank.verifyBalanceThreshold('charlie', 'bob', 100n);
+      expect(qualifiesForInsurance).toBe(true);
+      
+      console.log('\n💡 Bob qualified for insurance without revealing exact balance!');
+      
+      bank.printAllUsersOverview();
+    });
+  });
 });

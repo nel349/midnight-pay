@@ -269,6 +269,82 @@ export class BankTestSetup {
     return ledger;
   }
 
+  // Test method: Grant Disclosure Permission (NEW! - Direct, no request needed)
+  grantDisclosurePermission(userId: string, requesterId: string, pin: string, permissionType: number, thresholdAmount: bigint, expiresInHours: number): Ledger {
+    const permissionTypeName = permissionType === 1 ? 'threshold' : 'exact';
+    console.log(`✅ User ${userId} granting ${permissionTypeName} disclosure to ${requesterId} (threshold: $${thresholdAmount}, expires: ${expiresInHours}h)`);
+    
+    const userIdBytes = this.stringToBytes32(userId);
+    const requesterIdBytes = this.stringToBytes32(requesterId);
+    const pinBytes = this.stringToBytes32(pin);
+    
+    // Convert JavaScript number to BigInt for Compact Uint<8> type
+    const permissionTypeBigInt = BigInt(permissionType);
+    const expiresInHoursBigInt = BigInt(expiresInHours);
+    
+    const results = this.contract.impureCircuits.grant_disclosure_permission(this.turnContext, userIdBytes, requesterIdBytes, pinBytes, permissionTypeBigInt, thresholdAmount, expiresInHoursBigInt);
+    const ledger = this.updateStateAndGetLedger(results);
+    
+    // Record transaction locally
+    this.recordTransaction(userId, {
+      type: 'auth_approve', // Reuse auth_approve type for disclosure grants
+      maxAmount: thresholdAmount,
+      timestamp: new Date(),
+      balanceAfter: this.getUserBalance(userId),
+      pin: pin,
+      counterparty: requesterId
+    });
+    
+    return ledger;
+  }
+
+
+  // Test method: Verify Balance Threshold (NEW!)
+  verifyBalanceThreshold(requesterId: string, userId: string, thresholdAmount: bigint): boolean {
+    console.log(`🔍 User ${requesterId} checking if ${userId} has balance ≥ $${thresholdAmount}`);
+    
+    const requesterIdBytes = this.stringToBytes32(requesterId);
+    const userIdBytes = this.stringToBytes32(userId);
+    
+    try {
+      const results = this.contract.impureCircuits.verify_balance_threshold(this.turnContext, requesterIdBytes, userIdBytes, thresholdAmount);
+      this.updateStateAndGetLedger(results);
+      
+      // If circuit succeeds, permission exists and is valid
+      // Now check actual balance comparison
+      const actualBalance = this.getUserBalance(userId);
+      const hasThreshold = actualBalance >= thresholdAmount;
+      
+      console.log(`✅ Threshold check: ${userId} has $${actualBalance}, threshold $${thresholdAmount} → ${hasThreshold ? 'MEETS' : 'BELOW'}`);
+      return hasThreshold;
+    } catch (error) {
+      console.log(`❌ Threshold check failed: ${error}`);
+      throw error;
+    }
+  }
+
+  // Test method: Get Exact Disclosed Balance (NEW!)
+  getDisclosedBalance(requesterId: string, userId: string): bigint {
+    console.log(`🔍 User ${requesterId} requesting exact balance of ${userId}`);
+    
+    const requesterIdBytes = this.stringToBytes32(requesterId);
+    const userIdBytes = this.stringToBytes32(userId);
+    
+    try {
+      const results = this.contract.impureCircuits.get_disclosed_balance(this.turnContext, requesterIdBytes, userIdBytes);
+      this.updateStateAndGetLedger(results);
+      
+      // If circuit succeeds, permission exists and allows exact disclosure
+      const balance = this.getUserBalance(userId);
+      
+      console.log(`✅ Exact balance disclosed: ${userId} has $${balance}`);
+      return balance;
+    } catch (error) {
+      console.log(`❌ Balance disclosure failed: ${error}`);
+      throw error;
+    }
+  }
+
   // Getter methods for state inspection
   getLedgerState(): Ledger {
     return ledger(this.turnContext.transactionContext.state);

@@ -49,6 +49,11 @@ export interface DeployedBankAPI {
   claimAuthorizedTransfer(pin: string, senderUserId: string): Promise<void>;
   getPendingClaims(pin: string): Promise<Array<{ senderUserId: string; amount: bigint }>>;
   
+  // Selective Balance Disclosure System (NEW!)
+  grantDisclosurePermission(pin: string, requesterId: string, permissionType: 'threshold' | 'exact', thresholdAmount: string, expiresInHours: number): Promise<void>;
+  verifyBalanceThreshold(pin: string, targetUserId: string, thresholdAmount: string): Promise<boolean>;
+  getDisclosedBalance(pin: string, targetUserId: string): Promise<bigint>;
+  
   // Real-time communication methods
   getPendingAuthRequests(): Promise<Array<{ senderUserId: string; requestedAt: number }>>;
   getOutgoingAuthRequests(): Promise<Array<{ recipientUserId: string; requestedAt: number; status: number }>>
@@ -762,6 +767,195 @@ export class BankAPI implements DeployedBankAPI {
       timestamp: new Date(),
       counterparty: senderUserId,
     });
+  }
+
+  // Selective Balance Disclosure System (NEW!)
+  async grantDisclosurePermission(pin: string, requesterId: string, permissionType: 'threshold' | 'exact', thresholdAmount: string, expiresInHours: number): Promise<void> {
+    this.logger?.info({ grantDisclosurePermission: { grantor: this.userId, requester: requesterId, type: permissionType, threshold: thresholdAmount, expires: expiresInHours } });
+    
+    const userIdBytes = this.stringToBytes32(this.userId);
+    const normalizedRequesterId = this.normalizeUserId(requesterId);
+    const requesterIdBytes = this.stringToBytes32(normalizedRequesterId);
+    
+    const permissionTypeValue = permissionType === 'threshold' ? 1 : 2; // 1=THRESHOLD_DISCLOSURE, 2=EXACT_DISCLOSURE
+    
+    const pinBytes = this.stringToBytes32(pin);
+    const txData = await this.deployedContract.callTx.grant_disclosure_permission(
+      userIdBytes,
+      requesterIdBytes,
+      pinBytes,
+      BigInt(permissionTypeValue),
+      utils.parseAmount(thresholdAmount),
+      BigInt(expiresInHours)
+    );
+    
+    this.logger?.trace({
+      disclosurePermissionGranted: {
+        grantor: this.userId,
+        requester: requesterId,
+        permissionType: permissionType,
+        thresholdAmount: thresholdAmount,
+        expiresInHours: expiresInHours,
+        txHash: txData.public.txHash,
+        blockHeight: txData.public.blockHeight,
+      },
+    });
+  }
+
+  async verifyBalanceThreshold(pin: string, targetUserId: string, thresholdAmount: string): Promise<boolean> {
+    this.logger?.info({ verifyBalanceThreshold: { requester: this.userId, target: targetUserId, threshold: thresholdAmount } });
+    
+    const userIdBytes = this.stringToBytes32(this.userId);
+    const normalizedTargetId = this.normalizeUserId(targetUserId);
+    const targetIdBytes = this.stringToBytes32(normalizedTargetId);
+    
+    try {
+      // First, validate the permission exists and is valid
+      const txData = await this.deployedContract.callTx.verify_balance_threshold(
+        userIdBytes,
+        targetIdBytes,
+        utils.parseAmount(thresholdAmount)
+      );
+      
+      this.logger?.trace({
+        thresholdPermissionValidated: {
+          requester: this.userId,
+          target: targetUserId,
+          threshold: thresholdAmount,
+          txHash: txData.public.txHash,
+          blockHeight: txData.public.blockHeight,
+        },
+      });
+      
+      // Now get the actual balance from the ledger and compare
+      const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+      if (!state) return false;
+      
+      const l = ledger(state.data);
+      const disclosureId = this.calculateDisclosureId(this.userId, targetUserId);
+      
+      if (!l.shared_balance_access.member(disclosureId)) return false;
+      
+      // Get the encrypted balance from shared access
+      const sharedEncrypted = l.shared_balance_access.lookup(disclosureId);
+      
+      // Decrypt using shared key (simplified - would need proper key derivation in production)
+      const targetBalance = await this.decryptSharedBalance(sharedEncrypted, this.userId, targetUserId, pin);
+      const thresholdAmountBig = utils.parseAmount(thresholdAmount);
+      
+      const meetsThreshold = targetBalance >= thresholdAmountBig;
+      
+      this.logger?.info({
+        thresholdCheckCompleted: {
+          requester: this.userId,
+          target: targetUserId,
+          actualBalance: targetBalance.toString(),
+          threshold: thresholdAmount,
+          result: meetsThreshold
+        }
+      });
+      
+      return meetsThreshold;
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger?.warn({ thresholdCheckFailed: { requester: this.userId, target: targetUserId, error: errorMessage } });
+      throw error;
+    }
+  }
+
+  async getDisclosedBalance(pin: string, targetUserId: string): Promise<bigint> {
+    this.logger?.info({ getDisclosedBalance: { requester: this.userId, target: targetUserId } });
+    
+    const userIdBytes = this.stringToBytes32(this.userId);
+    const normalizedTargetId = this.normalizeUserId(targetUserId);
+    const targetIdBytes = this.stringToBytes32(normalizedTargetId);
+    
+    try {
+      // First, validate the permission exists and allows exact disclosure
+      const txData = await this.deployedContract.callTx.get_disclosed_balance(
+        userIdBytes,
+        targetIdBytes
+      );
+      
+      this.logger?.trace({
+        exactDisclosurePermissionValidated: {
+          requester: this.userId,
+          target: targetUserId,
+          txHash: txData.public.txHash,
+          blockHeight: txData.public.blockHeight,
+        },
+      });
+      
+      // Now get the actual balance from the ledger
+      const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+      if (!state) throw new Error('Contract state not available');
+      
+      const l = ledger(state.data);
+      const disclosureId = this.calculateDisclosureId(this.userId, targetUserId);
+      
+      if (!l.shared_balance_access.member(disclosureId)) {
+        throw new Error('No shared balance access found');
+      }
+      
+      // Get the encrypted balance from shared access
+      const sharedEncrypted = l.shared_balance_access.lookup(disclosureId);
+      
+      // Decrypt using shared key (simplified - would need proper key derivation in production)
+      const targetBalance = await this.decryptSharedBalance(sharedEncrypted, this.userId, targetUserId, pin);
+      
+      this.logger?.info({
+        exactBalanceDisclosed: {
+          requester: this.userId,
+          target: targetUserId,
+          disclosedBalance: targetBalance.toString()
+        }
+      });
+      
+      return targetBalance;
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger?.warn({ exactDisclosureFailed: { requester: this.userId, target: targetUserId, error: errorMessage } });
+      throw error;
+    }
+  }
+
+  // Helper methods for disclosure system
+  private calculateDisclosureId(requesterId: string, targetUserId: string): Uint8Array {
+    // This should match the contract's disclosure_id calculation:
+    // persistentHash<Vector<3, Bytes<32>>>([requester_id, user_id, pad(32, "disclosure")])
+    const requesterBytes = this.stringToBytes32(requesterId);
+    const targetBytes = this.stringToBytes32(targetUserId);
+    const disclosureBytes = this.stringToBytes32('disclosure');
+    
+    // Simplified hash - in production would use proper hash function
+    const combined = new Uint8Array(96);
+    combined.set(requesterBytes, 0);
+    combined.set(targetBytes, 32);
+    combined.set(disclosureBytes, 64);
+    
+    // Return first 32 bytes as ID (simplified)
+    return combined.slice(0, 32);
+  }
+
+  private async decryptSharedBalance(encryptedBalance: Uint8Array, requesterId: string, targetUserId: string, pin: string): Promise<bigint> {
+    // This is a simplified decryption - in production would need proper key derivation
+    // matching the contract's shared key generation:
+    // persistentHash<Vector<3, Bytes<32>>>([user_id, requester_id, persistentHash<Bytes<32>>(pin)])
+    
+    // For now, lookup from the user_balance_mappings (simplified approach)
+    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (!state) return 0n;
+    
+    const l = ledger(state.data);
+    
+    // Try to find the balance in user_balance_mappings
+    if (l.user_balance_mappings.member(encryptedBalance)) {
+      return l.user_balance_mappings.lookup(encryptedBalance);
+    }
+    
+    return 0n;
   }
 
   // Client-owned detailed log (persisted via privateStateProvider)

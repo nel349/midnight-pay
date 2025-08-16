@@ -82,7 +82,7 @@
 - **Time-limited access**: Disclosure permissions with expiration
 - **Revocable permissions**: Account holder can revoke access anytime
 
-### 3.3 Native Token (DUST) Support 🆕
+### 3.3 Native Token (DUST) Support 🆕 (out of scope for now)
 - **Contract Changes**:
   - Add `accepted_token` (Bytes<32>) in constructor or hardcode native token type.
   - Add `vault`: Map<Bytes<32>, CoinInfo> (or QualifiedCoinInfo) keyed by user_id.

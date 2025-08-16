@@ -19,14 +19,16 @@ struct BankAccount {
   created_at: Uint<32>
 }
 
-// Authorization structures for Zelle-like transfers
+// Authorization structures for transfers and balance disclosure
 struct TransferAuthorization {
   sender_id: Bytes<32>,
   recipient_id: Bytes<32>,
   shared_encryption_key: Bytes<32>,
-  max_amount: Uint<64>,
+  max_amount: Uint<64>,        // For transfers: max transfer amount, For disclosure: threshold amount
   created_at: Uint<32>,
-  last_updated: Uint<32>
+  last_updated: Uint<32>,
+  permission_type: Uint<8>,    // 0=TRANSFER, 1=THRESHOLD_DISCLOSURE, 2=EXACT_DISCLOSURE
+  expires_at: Uint<32>         // 0=never expires, >0=expiration timestamp
 }
 
 struct AuthRequest {
@@ -40,6 +42,12 @@ enum AUTH_STATUS {
   pending,
   approved,
   rejected
+}
+
+enum PERMISSION_TYPE {
+  transfer,
+  threshold_disclosure,
+  exact_disclosure
 }
 
 // Public ledger state - ALL ACCOUNTS IN ONE CONTRACT
@@ -208,7 +216,77 @@ export circuit request_transfer_authorization(user_id: Bytes<32>, recipient_id: 
   all_accounts.insert(disclose(user_id), updated_sender);
 }
 
-// Circuit 5: Approve Transfer Authorization (One-Time Setup)
+// Circuit 5: Grant Balance Disclosure Permission (Direct - No Request Needed)
+export circuit grant_disclosure_permission(user_id: Bytes<32>, requester_id: Bytes<32>, pin: Bytes<32>, permission_type: Uint<8>, threshold_amount: Uint<64>, expires_in_hours: Uint<32>): [] {
+  assert (user_id != requester_id, "Cannot grant disclosure to yourself");
+  assert (all_accounts.member(disclose(requester_id)), "Requester account does not exist");
+  
+  // Authenticate user granting permission
+  assert (all_accounts.member(disclose(user_id)), "Account does not exist");
+  const account = all_accounts.lookup(disclose(user_id));
+  assert (account.owner_hash == public_key(pin), "Authentication failed");
+  
+  // Validate permission type
+  assert (permission_type == 1 || permission_type == 2, "Invalid permission type (1=threshold, 2=exact)");
+  
+  // Generate shared encryption key and disclosure_id
+  const shared_key = persistentHash<Vector<3, Bytes<32>>>([user_id, requester_id, persistentHash<Bytes<32>>(pin)]);
+  const disclosure_id = persistentHash<Vector<3, Bytes<32>>>([requester_id, user_id, pad(32, "disclosure")]);
+  
+  // Calculate expiration (0 = never expires)
+  const expires_at = expires_in_hours == 0 ? 0 as Uint<32> : (1 + expires_in_hours) as Uint<32>; // Would use block timestamp in real implementation
+  
+  // Create disclosure permission
+  const disclosure_permission = TransferAuthorization {
+    sender_id: disclose(requester_id),      // Who can query the balance
+    recipient_id: disclose(user_id),        // Whose balance is being disclosed
+    shared_encryption_key: disclose(shared_key),
+    max_amount: disclose(threshold_amount), // For threshold checks
+    created_at: 1,
+    last_updated: 1,
+    permission_type: disclose(permission_type),
+    expires_at: disclose(expires_at)
+  };
+  
+  // Store disclosure permission and create shared balance access
+  active_authorizations.insert(disclose(disclosure_id), disclosure_permission);
+  
+  // Create shared balance access for disclosure queries
+  const user_key = persistentHash<Vector<2, Bytes<32>>>([pad(32, "user:balance:"), disclose(pin)]);
+  const user_encrypted = encrypted_user_balances.member(disclose(user_id)) ? 
+    encrypted_user_balances.lookup(disclose(user_id)) : encrypt_balance(0 as Uint<64>, user_key);
+  const user_balance = user_balance_mappings.member(user_encrypted) ? 
+    user_balance_mappings.lookup(user_encrypted) : 0 as Uint<64>;
+  const shared_balance_encrypted = encrypt_balance(user_balance, disclose(shared_key));
+  shared_balance_access.insert(disclose(disclosure_id), shared_balance_encrypted);
+  
+  // Update lookup tables for disclosure permissions
+  const empty_vector: Vector<20, Bytes<32>> = [pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""),
+                                               pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""),
+                                               pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""),
+                                               pad(32, ""), pad(32, ""), pad(32, ""), pad(32, ""), pad(32, "")];
+  const recipient_auths = user_as_recipient_auths.member(disclose(user_id)) ? 
+    user_as_recipient_auths.lookup(disclose(user_id)) : empty_vector;
+  const updated_recipient_auths = [disclose(disclosure_id), recipient_auths[0], recipient_auths[1], recipient_auths[2], recipient_auths[3],
+                                  recipient_auths[4], recipient_auths[5], recipient_auths[6], recipient_auths[7], recipient_auths[8],
+                                  recipient_auths[9], recipient_auths[10], recipient_auths[11], recipient_auths[12], recipient_auths[13],
+                                  recipient_auths[14], recipient_auths[15], recipient_auths[16], recipient_auths[17], recipient_auths[18]];
+  user_as_recipient_auths.insert(disclose(user_id), updated_recipient_auths);
+  
+  // Update account
+  const updated_account = BankAccount {
+    exists: account.exists,
+    owner_hash: account.owner_hash,
+    public_key: account.public_key,
+    transaction_count: (account.transaction_count + 1) as Uint<32>,
+    last_transaction: persistentHash<Bytes<32>>(pad(32, "disclosure_granted")),
+    status: account.status,
+    created_at: account.created_at
+  };
+  all_accounts.insert(disclose(user_id), updated_account);
+}
+
+// Circuit 6: Approve Transfer Authorization (One-Time Setup)
 export circuit approve_transfer_authorization(user_id: Bytes<32>, sender_id: Bytes<32>, pin: Bytes<32>, max_amount: Uint<64>): [] {
   // 1. Verify request exists
   const request_id = persistentHash<Vector<2, Bytes<32>>>([sender_id, user_id]);
@@ -223,14 +301,16 @@ export circuit approve_transfer_authorization(user_id: Bytes<32>, sender_id: Byt
   const shared_key = persistentHash<Vector<3, Bytes<32>>>([user_id, sender_id, persistentHash<Bytes<32>>(pin)]);
   const auth_id = persistentHash<Vector<2, Bytes<32>>>([sender_id, user_id]);
   
-  // 4. Create authorization
+  // 4. Create authorization (default to transfer type, never expires)
   const authorization = TransferAuthorization {
     sender_id: disclose(sender_id),
     recipient_id: disclose(user_id),
     shared_encryption_key: disclose(shared_key),
     max_amount: disclose(max_amount),
     created_at: 1,
-    last_updated: 1
+    last_updated: 1,
+    permission_type: 0, // PERMISSION_TYPE.transfer
+    expires_at: 0      // Never expires
   };
   
   // 5. Store authorization and initialize encrypted transfer amounts to zero
@@ -278,7 +358,58 @@ export circuit approve_transfer_authorization(user_id: Bytes<32>, sender_id: Byt
   all_accounts.insert(disclose(user_id), updated_account);
 }
 
-// Circuit 6: Send Tokens to Authorized User
+
+// Circuit 7: Verify Balance Threshold (for disclosure queries)
+export circuit verify_balance_threshold(requester_id: Bytes<32>, user_id: Bytes<32>, threshold_amount: Uint<64>): [] {
+  // 1. Check if disclosure permission exists
+  const disclosure_id = persistentHash<Vector<3, Bytes<32>>>([requester_id, user_id, pad(32, "disclosure")]);
+  assert (active_authorizations.member(disclose(disclosure_id)), "No disclosure permission exists");
+  
+  // 2. Get disclosure permission
+  const permission = active_authorizations.lookup(disclose(disclosure_id));
+  
+  // 3. Verify permission type allows threshold checks
+  assert (permission.permission_type == 1 || permission.permission_type == 2, "Permission does not allow balance disclosure");
+  
+  // 4. Check if permission has expired (simplified - would use block timestamp in real implementation)
+  assert (permission.expires_at == 0 || 1 < permission.expires_at, "Disclosure permission has expired");
+  
+  // 5. For threshold disclosure, verify threshold is within allowed range
+  if (permission.permission_type == 1) {
+    assert (threshold_amount <= permission.max_amount, "Threshold exceeds authorized maximum");
+  }
+  
+  // 6. Get current balance from shared access
+  assert (shared_balance_access.member(disclose(disclosure_id)), "No shared balance access");
+  const shared_encrypted = shared_balance_access.lookup(disclose(disclosure_id));
+  
+  // Note: The actual balance comparison happens in the API layer after decryption
+  // This circuit just validates the permission exists and is valid
+}
+
+// Circuit 8: Get Exact Disclosed Balance (for disclosure queries)
+export circuit get_disclosed_balance(requester_id: Bytes<32>, user_id: Bytes<32>): [] {
+  // 1. Check if disclosure permission exists
+  const disclosure_id = persistentHash<Vector<3, Bytes<32>>>([requester_id, user_id, pad(32, "disclosure")]);
+  assert (active_authorizations.member(disclose(disclosure_id)), "No disclosure permission exists");
+  
+  // 2. Get disclosure permission
+  const permission = active_authorizations.lookup(disclose(disclosure_id));
+  
+  // 3. Verify permission type allows exact balance disclosure
+  assert (permission.permission_type == 2, "Permission does not allow exact balance disclosure");
+  
+  // 4. Check if permission has expired
+  assert (permission.expires_at == 0 || 1 < permission.expires_at, "Disclosure permission has expired");
+  
+  // 5. Verify shared balance access exists
+  assert (shared_balance_access.member(disclose(disclosure_id)), "No shared balance access");
+  
+  // Note: The actual balance retrieval happens in the API layer after decryption
+  // This circuit just validates the permission exists and allows exact disclosure
+}
+
+// Circuit 9: Send Tokens to Authorized User
 export circuit send_to_authorized_user(user_id: Bytes<32>, recipient_id: Bytes<32>, amount: Uint<64>, pin: Bytes<32>): [] {
   assert (amount > 0 as Uint<64>, "Transfer amount must be positive");
   assert (user_id != recipient_id, "Cannot transfer to yourself");
@@ -352,7 +483,7 @@ export circuit send_to_authorized_user(user_id: Bytes<32>, recipient_id: Bytes<3
   last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "token_transfer"), user_id, recipient_id]));
 }
 
-// Circuit 7: Claim Authorized Token Transfer
+// Circuit 10: Claim Authorized Token Transfer
 export circuit claim_authorized_transfer(user_id: Bytes<32>, sender_id: Bytes<32>, pin: Bytes<32>): [] {
   // 1. Verify authorization exists
   const auth_id = persistentHash<Vector<2, Bytes<32>>>([sender_id, user_id]);
@@ -418,7 +549,7 @@ export circuit claim_authorized_transfer(user_id: Bytes<32>, sender_id: Bytes<32
   last_global_transaction = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "token_transfer_claimed"), sender_id, user_id]));
 }
 
-// Circuit 8: Get Token Balance
+// Circuit 11: Get Token Balance
 export circuit get_token_balance(user_id: Bytes<32>, pin: Bytes<32>): [] {
   assert (all_accounts.member(disclose(user_id)), "Account does not exist");
   const account = all_accounts.lookup(disclose(user_id));
@@ -447,7 +578,7 @@ export circuit get_token_balance(user_id: Bytes<32>, pin: Bytes<32>): [] {
   all_accounts.insert(disclose(user_id), updated_account);
 }
 
-// Circuit 9: Verify Account Status (Token-Based)
+// Circuit 12: Verify Account Status (Token-Based)
 export circuit verify_account_status(user_id: Bytes<32>, pin: Bytes<32>): [] {
   assert (all_accounts.member(disclose(user_id)), "Account does not exist");
   const account = all_accounts.lookup(disclose(user_id));
