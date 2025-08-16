@@ -33,15 +33,16 @@ export const GradientBackground: React.FC<GradientBackgroundProps> = ({
           return `linear-gradient(135deg, ${bg.default} 0%, ${bg.surface} 25%, ${primary[500]} 50%, ${primary[700]} 75%, ${primary[900]} 100%)`;
       }
     } else {
+      // Light mode: DRAMATIC monochromatic whites, grays, and blacks
       switch (variant) {
         case 'primary':
-          return `linear-gradient(135deg, ${bg.default} 0%, ${bg.paper} 25%, ${bg.surface} 50%, ${bg.elevated} 75%, ${theme.colors.border.strong} 100%)`;
+          return `linear-gradient(135deg,rgb(40, 29, 29) 0%, #e2e8f0 25%, #cbd5e1 50%, #94a3b8 75%,rgb(54, 54, 54) 100%)`;
         case 'secondary':
-          return `linear-gradient(135deg, ${bg.paper} 0%, ${bg.surface} 25%, ${bg.elevated} 50%, ${theme.colors.border.strong} 75%, ${bg.paper} 100%)`;
+          return `linear-gradient(135deg, #f8fafc 0%, #cbd5e1 25%, #94a3b8 50%, #64748b 75%, #e2e8f0 100%)`;
         case 'subtle':
-          return `linear-gradient(135deg, ${bg.default} 0%, ${bg.paper} 20%, ${bg.default} 100%)`;
+          return `linear-gradient(135deg, #ffffff 0%, #e2e8f0 20%, #cbd5e1 40%, #94a3b8 100%)`;
         default:
-          return `linear-gradient(135deg, ${bg.default} 0%, ${bg.paper} 25%, ${bg.surface} 50%, ${bg.elevated} 75%, ${theme.colors.border.strong} 100%)`;
+          return `linear-gradient(135deg, #ffffff 0%, #e2e8f0 25%, #cbd5e1 50%, #94a3b8 75%, #64748b 100%)`;
       }
     }
   };
@@ -51,15 +52,15 @@ export const GradientBackground: React.FC<GradientBackgroundProps> = ({
   // Create accent gradients using theme colors
   const getAccentGradients = () => {
     const secondary = theme.colors.secondary;
+    const primary = theme.colors.primary; // Add missing primary declaration
     
     if (mode === 'dark') {
       const purple1 = secondary[600]; // #7c3aed
       const purple2 = secondary[500]; // #8b5cf6
       return `radial-gradient(circle at 20% 80%, ${purple1}1A 0%, transparent 50%), radial-gradient(circle at 80% 20%, ${purple2}1A 0%, transparent 50%)`;
     } else {
-      const purple1 = secondary[500]; // #8b5cf6
-      const purple2 = secondary[600]; // #7c3aed
-      return `radial-gradient(circle at 20% 80%, ${purple1}0D 0%, transparent 50%), radial-gradient(circle at 80% 20%, ${purple2}0D 0%, transparent 50%)`;
+      // Light mode: Subtle accents WITHOUT glare effect
+      return `radial-gradient(circle at 20% 80%, rgba(0, 0, 0, 0.08) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(0, 0, 0, 0.05) 0%, transparent 50%), radial-gradient(circle at 70% 70%, rgba(0, 0, 0, 0.04) 0%, transparent 40%)`;
     }
   };
 

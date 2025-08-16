@@ -70,28 +70,28 @@ export const midnightDarkTheme: MidnightCompleteTheme = {
       elevated: '#2a2a2a',   // Elevated components (modals, etc.)
     },
     
-    // Text colors - High contrast for readability
+    // Text colors - ENHANCED CONTRAST for accessibility
     text: {
       primary: '#ffffff',     // Pure white for primary text
-      secondary: '#a1a1aa',   // Medium gray for secondary text  
-      disabled: '#52525b',    // Darker gray for disabled text
-      inverse: '#0a0a0a',     // Black text (for use on light backgrounds)
+      secondary: '#d1d5db',   // Much lighter gray for secondary text  
+      disabled: '#9ca3af',    // Lighter gray for disabled text (still accessible)
+      inverse: '#000000',     // Pure black text (for use on light backgrounds)
     },
     
-    // Border and divider colors
+    // Border and divider colors - ENHANCED CONTRAST
     border: {
-      default: '#27272a',     // Default border - dark gray
-      light: '#18181b',       // Lighter border - very dark gray
-      strong: '#3f3f46',      // Strong border - medium gray
+      default: '#6b7280',     // Much lighter border - clearly visible
+      light: '#4b5563',       // Medium border - still visible
+      strong: '#9ca3af',      // Very strong border - high contrast
     },
     
-    // Action colors (hover, focus, etc.)
+    // Action colors (hover, focus, etc.) - ENHANCED CONTRAST
     action: {
-      hover: 'rgba(255, 255, 255, 0.04)',           // Subtle white hover
-      selected: 'rgba(139, 92, 246, 0.12)',         // Purple selected state
-      disabled: 'rgba(255, 255, 255, 0.26)',        // Disabled state
-      disabledBackground: 'rgba(255, 255, 255, 0.12)', // Disabled background
-      focus: 'rgba(139, 92, 246, 0.12)',            // Purple focus ring
+      hover: 'rgba(255, 255, 255, 0.08)',           // More visible white hover
+      selected: 'rgba(255, 255, 255, 0.15)',        // Lighter selected state
+      disabled: 'rgba(255, 255, 255, 0.38)',        // Stronger disabled state
+      disabledBackground: 'rgba(255, 255, 255, 0.12)', // More visible disabled background
+      focus: 'rgba(255, 255, 255, 0.2)',            // Strong focus ring
     },
   },
   

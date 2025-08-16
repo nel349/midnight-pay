@@ -70,28 +70,28 @@ export const midnightLightTheme: MidnightCompleteTheme = {
       elevated: '#e2e8f0',   // Elevated components (modals, etc.)
     },
     
-    // Text colors - Dark for readability on light backgrounds
+    // Text colors - ENHANCED CONTRAST for accessibility
     text: {
-      primary: '#0f172a',     // Very dark for primary text
-      secondary: '#475569',   // Medium gray for secondary text  
-      disabled: '#94a3b8',    // Light gray for disabled text
+      primary: '#000000',     // Pure black for maximum contrast
+      secondary: '#1f2937',   // Much darker gray for secondary text  
+      disabled: '#6b7280',    // Medium gray for disabled text (still accessible)
       inverse: '#ffffff',     // White text (for use on dark elements)
     },
     
-    // Border and divider colors - Light theme borders
+    // Border and divider colors - ENHANCED CONTRAST for visibility
     border: {
-      default: '#e2e8f0',     // Default border - light gray
-      light: '#f1f5f9',       // Lighter border - very light gray
-      strong: '#cbd5e1',      // Strong border - medium gray
+      default: '#9ca3af',     // Much darker border - clearly visible
+      light: '#d1d5db',       // Medium border - still visible
+      strong: '#374151',      // Very strong border - high contrast
     },
     
-    // Action colors (hover, focus, etc.) - Light theme actions
+    // Action colors (hover, focus, etc.) - ENHANCED CONTRAST
     action: {
-      hover: 'rgba(15, 23, 42, 0.04)',          // Subtle dark hover
-      selected: 'rgba(139, 92, 246, 0.12)',     // Purple selected state
-      disabled: 'rgba(15, 23, 42, 0.26)',       // Disabled state
-      disabledBackground: 'rgba(15, 23, 42, 0.12)', // Disabled background
-      focus: 'rgba(139, 92, 246, 0.12)',        // Purple focus ring
+      hover: 'rgba(0, 0, 0, 0.08)',             // More visible dark hover
+      selected: 'rgba(0, 0, 0, 0.15)',          // Darker selected state
+      disabled: 'rgba(0, 0, 0, 0.38)',          // Stronger disabled state
+      disabledBackground: 'rgba(0, 0, 0, 0.12)', // More visible disabled background
+      focus: 'rgba(0, 0, 0, 0.2)',              // Strong focus ring
     },
   },
   
