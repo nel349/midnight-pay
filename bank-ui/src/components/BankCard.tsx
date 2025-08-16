@@ -140,6 +140,13 @@ export const BankCard: React.FC<BankCardProps> = ({
                   : 'rgba(0, 0, 0, 0.05)',
                 color: theme.colors.text.primary,
                 border: `1px solid ${mode === 'dark' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)'}`,
+                fontSize: '0.75rem',
+                height: '24px',
+                '& .MuiChip-label': {
+                  padding: '0 8px',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                }
               }}
             />
           </Box>

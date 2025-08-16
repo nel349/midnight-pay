@@ -9,6 +9,7 @@ import { BankWalletProvider } from './components/BankWallet';
 import { DeployedAccountProvider } from './contexts/DeployedAccountProviderContext';
 import { App as RootApp } from './App';
 import { ThemeProvider, ThemeStyleInjector, DynamicMuiThemeProvider } from './theme';
+import { TopBar } from './components';
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -31,6 +32,7 @@ const App: React.FC = () => {
         <ThemeStyleInjector />
         <DynamicMuiThemeProvider> {/* Dynamic Material-UI theme provider */}
           <CssBaseline />
+          <TopBar />
           <BankWalletProvider logger={logger}>
             <DeployedAccountProvider logger={logger}>
               <RootApp />

@@ -157,15 +157,6 @@ export const BankDetails: React.FC = () => {
 
   return (
     <GradientBackground variant="subtle">
-      {/* Theme Toggle in top-right corner */}
-      <ThemeToggle 
-        sx={{ 
-          position: 'fixed',
-          top: 24,
-          right: 24,
-          zIndex: 1000,
-        }} 
-      />
       
       <Box sx={{ minHeight: '100vh', p: theme.spacing[4] }}>
         {/* Header */}
@@ -406,16 +397,19 @@ export const BankDetails: React.FC = () => {
                             borderRadius: theme.borderRadius.md,
                             mb: theme.spacing[1],
                             border: '1px solid',
-                            borderColor: theme.colors.border.light,
+                            borderColor: theme.colors.border.strong,
                             cursor: 'pointer',
                             '&:hover': {
-                              bgcolor: theme.colors.background.surface,
+                              bgcolor: theme.colors.background.elevated,
                             }
                           }}
                           onClick={() => navigate(`/bank/${bankAddress}/account/${account.userId}`)}
                         >
                           <ListItemIcon>
-                            <Person sx={{ color: theme.colors.primary[500] }} />
+                            <Person sx={{ 
+                              color: theme.colors.text.primary,
+                              fontSize: '1.25rem'
+                            }} />
                           </ListItemIcon>
                           <ListItemText
                             primary={

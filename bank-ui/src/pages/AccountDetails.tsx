@@ -13,8 +13,7 @@ import {
   ThemedCard, 
   ThemedCardContent, 
   GradientBackground, 
-  AppHeader,
-  ThemeToggle 
+  AppHeader
 } from '../components';
 import type { BankAPI, BankDerivedState } from '@midnight-bank/bank-api';
 import { utils } from '@midnight-bank/bank-api';
@@ -188,15 +187,6 @@ export const AccountDetails: React.FC = () => {
 
   return (
     <GradientBackground variant="subtle">
-      {/* Theme Toggle in top-right corner */}
-      <ThemeToggle 
-        sx={{ 
-          position: 'fixed',
-          top: 24,
-          right: 24,
-          zIndex: 1000,
-        }} 
-      />
       
       <Box sx={{ minHeight: '100vh', p: theme.spacing[4] }}>
         {/* Compact Header */}

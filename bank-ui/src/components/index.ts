@@ -7,6 +7,7 @@ export { MidnightLogo } from './MidnightLogo';
 export { GradientBackground } from './GradientBackground';
 export { AppHeader } from './AppHeader';
 export { BankCard } from './BankCard';
+export { TopBar } from './TopBar';
 
 // Existing components
 export { useBankWallet } from './BankWallet';

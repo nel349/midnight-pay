@@ -19,7 +19,25 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
 
   return (
     <Box className={className} sx={sx}>
-      <Tooltip title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}>
+      <Tooltip 
+        title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
+        componentsProps={{
+          tooltip: {
+            sx: {
+              backgroundColor: mode === 'dark' ? 'rgba(0, 0, 0, 0.9)' : 'rgba(97, 97, 97, 0.9)',
+              color: mode === 'dark' ? '#ffffff' : '#ffffff',
+              fontSize: '0.75rem',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              fontWeight: 500,
+              maxWidth: 300,
+              boxShadow: mode === 'dark' 
+                ? '0 4px 12px rgba(0, 0, 0, 0.5)' 
+                : '0 4px 12px rgba(0, 0, 0, 0.3)',
+            }
+          }
+        }}
+      >
         <IconButton
           onClick={toggleTheme}
           size={size}

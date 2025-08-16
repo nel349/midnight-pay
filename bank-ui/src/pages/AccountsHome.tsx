@@ -5,7 +5,6 @@ import { listBanks, listAccountsForBank } from '../utils/AccountsLocalState';
 import { useBankWallet } from '../components/BankWallet';
 import { 
   ThemedButton, 
-  ThemeToggle, 
   GradientBackground, 
   AppHeader, 
   BankCard 
@@ -48,15 +47,6 @@ export const AccountsHome: React.FC<{
   
   return (
     <GradientBackground>
-      {/* Theme Toggle in top-right corner */}
-      <ThemeToggle 
-        sx={{ 
-          position: 'fixed',
-          top: 24,
-          right: 24,
-          zIndex: 1000,
-        }} 
-      />
       
       <Container maxWidth="lg" sx={{ py: { xs: 4, md: 8 }, position: 'relative', zIndex: 1 }}>
         {/* Elegant Header with Logo */}

@@ -12,7 +12,6 @@ import type { Logger } from 'pino';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { useBankWallet } from '../components/BankWallet';
 import { saveBank } from '../utils/AccountsLocalState';
-import { ThemedButton, ThemedCard, ThemedCardContent, ThemeToggle, ErrorAlert } from '../components';
 import { getErrorSummary } from '../utils/errorHandling';
 import { useThemeValues } from '../theme';
 
@@ -73,15 +72,6 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
 
   return (
     <Box sx={{ position: 'relative', minHeight: '100vh' }}>
-      {/* Theme Toggle in top-right corner */}
-      <ThemeToggle 
-        sx={{ 
-          position: 'fixed',
-          top: 16,
-          right: 16,
-          zIndex: 1000,
-        }} 
-      />
       
       <ThemedCard sx={{ maxWidth: 600, margin: 'auto', mt: 4 }}>
         <ThemedCardContent>

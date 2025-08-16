@@ -59,15 +59,6 @@ export const JoinBank: React.FC = () => {
 
   return (
     <GradientBackground variant="subtle">
-      {/* Theme Toggle in top-right corner */}
-      <ThemeToggle 
-        sx={{ 
-          position: 'fixed',
-          top: 24,
-          right: 24,
-          zIndex: 1000,
-        }} 
-      />
       
       <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: theme.spacing[4] }}>
         <ThemedCard sx={{ maxWidth: 600, width: '100%' }}>
