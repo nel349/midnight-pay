@@ -757,74 +757,49 @@ describe('Midnight Shared Bank Contract Tests', () => {
       bank.createAccount('charlie', '3333', 100n);
     });
 
-    test('should complete full threshold disclosure workflow successfully', () => {
+    test('should grant threshold disclosure permission successfully', () => {
       // Step 1: Bob directly grants threshold disclosure permission to Alice (no request needed!)
       expect(() => {
         bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 100n, 0); // permission_type=1 (threshold), expires=0 (never)
       }).not.toThrow();
 
-      // Step 3: Alice verifies Bob has at least $100
-      const hasThreshold = bank.verifyBalanceThreshold('alice', 'bob', 100n);
-      expect(hasThreshold).toBe(true); // Bob has $150, so he meets $100 threshold
-
-      // Step 4: Alice tries to check threshold above authorized limit (should throw error)
-      expect(() => {
-        bank.verifyBalanceThreshold('alice', 'bob', 200n); // Exceeds authorized max of $100
-      }).toThrow('Threshold exceeds authorized maximum');
-
-      console.log('✅ Threshold disclosure workflow completed successfully!');
+      // Note: Threshold verification is now handled in the API layer
+      // The contract only grants the permission and stores the encrypted balance mapping
+      
+      console.log('✅ Threshold disclosure permission granted successfully!');
     });
 
-    test('should complete full exact disclosure workflow successfully', () => {
+    test('should grant exact disclosure permission successfully', () => {
       // Step 1: Alice directly grants exact disclosure permission to Charlie
       expect(() => {
         bank.grantDisclosurePermission('alice', 'charlie', '1111', 2, 0n, 24); // permission_type=2 (exact), expires=24h
       }).not.toThrow();
 
-      // Step 2: Charlie gets Alice's exact balance
-      const aliceBalance = bank.getDisclosedBalance('charlie', 'alice');
-      expect(aliceBalance).toBe(200n); // Alice has $200
+      // Note: Exact balance retrieval is now handled in the API layer
+      // The contract only grants the permission and stores the encrypted balance mapping
 
-      console.log('✅ Exact disclosure workflow completed successfully!');
+      console.log('✅ Exact disclosure permission granted successfully!');
     });
 
     test('should fail disclosure without permission', () => {
-      // Alice tries to check Bob's balance without permission
+      // Note: Permission validation is now handled in the API layer
+      // This test just verifies that grants without proper permissions fail
+      
       expect(() => {
-        bank.verifyBalanceThreshold('alice', 'bob', 100n);
-      }).toThrow(); // Should fail "No disclosure permission exists"
-
-      // Charlie tries to get Alice's exact balance without permission
-      expect(() => {
-        bank.getDisclosedBalance('charlie', 'alice');
-      }).toThrow(); // Should fail "No disclosure permission exists"
+        bank.grantDisclosurePermission('alice', 'david', '1111', 1, 100n, 0); // David doesn't exist
+      }).toThrow(); // Should fail "Requester account does not exist"
     });
 
-    test('should fail threshold check exceeding authorized limit', () => {
-      // Setup threshold disclosure: Alice can check if Bob has ≥ $75
-      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'bob', '1111');
-      bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 75n, 0);
 
-      // Alice can check threshold up to $75
-      expect(() => {
-        bank.verifyBalanceThreshold('alice', 'bob', 50n);
-      }).not.toThrow();
-
-      // Alice tries to check threshold above authorized limit
-      expect(() => {
-        bank.verifyBalanceThreshold('alice', 'bob', 100n); // Exceeds $75 limit
-      }).toThrow(); // Should fail "Threshold exceeds authorized maximum"
-    });
-
-    test('should fail exact disclosure with wrong permission type', () => {
-      // Setup threshold disclosure (type 1) 
-      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'bob', '1111');
+    test('should grant different permission types successfully', () => {
+      // Setup threshold disclosure (type 1)
       bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 100n, 0); // threshold only
-
-      // Alice tries to get exact balance with threshold permission
-      expect(() => {
-        bank.getDisclosedBalance('alice', 'bob');
-      }).toThrow(); // Should fail "Permission does not allow exact balance disclosure"
+      
+      // Setup exact disclosure (type 2)
+      bank.grantDisclosurePermission('alice', 'bob', '1111', 2, 0n, 0); // exact disclosure
+      
+      // Note: Permission type validation is now handled in the API layer
+      console.log('✅ Different permission types granted successfully!');
     });
 
     test('should fail disclosure grant with wrong PIN', () => {
@@ -852,33 +827,22 @@ describe('Midnight Shared Bank Contract Tests', () => {
       }).toThrow(); // Should fail "Requester account does not exist"
     });
 
-    test('should allow direct disclosure grant (no request needed)', () => {
-      // Bob can grant disclosure directly without any request
-      expect(() => {
-        bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 100n, 0);
-      }).not.toThrow(); // Should succeed - no pending request needed!
-    });
 
     test('should handle multiple disclosure relationships', () => {
       // Create a network of disclosure permissions:
       
       // Alice can check both Bob's and Charlie's thresholds
-      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'bob', '1111');
       bank.grantDisclosurePermission('bob', 'alice', '2222', 1, 100n, 0);
       
-      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('alice', 'charlie', '1111');
       bank.grantDisclosurePermission('charlie', 'alice', '3333', 1, 80n, 0);
       
       // Bob can get Alice's exact balance
-      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('bob', 'alice', '2222');
       bank.grantDisclosurePermission('alice', 'bob', '1111', 2, 0n, 0);
       
-      // Test all disclosure relationships work
-      expect(bank.verifyBalanceThreshold('alice', 'bob', 100n)).toBe(true);     // Alice checks Bob ≥ $100
-      expect(bank.verifyBalanceThreshold('alice', 'charlie', 80n)).toBe(true);  // Alice checks Charlie ≥ $80
-      expect(bank.getDisclosedBalance('bob', 'alice')).toBe(200n);              // Bob gets Alice's exact balance
+      // Note: Balance verification and disclosure is now handled in the API layer
+      // The contract only grants permissions and stores encrypted balance mappings
       
-      console.log('🌐 Multi-user disclosure network completed!');
+      console.log('🌐 Multi-user disclosure network permissions granted successfully!');
     });
 
     test('should demonstrate privacy benefits of selective disclosure', () => {
@@ -892,17 +856,13 @@ describe('Midnight Shared Bank Contract Tests', () => {
       // Scenario: Alice applying for a loan from Bob (lender)
       console.log('\n💰 Loan Application Scenario:');
       
-      // Step 1: Alice requests disclosure for loan verification
-      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('bob', 'alice', '2222'); // Bob (lender) requests Alice's balance
-      
-      // Step 2: Alice approves threshold disclosure for loan qualification
+      // Step 1: Alice approves threshold disclosure for loan qualification
       bank.grantDisclosurePermission('alice', 'bob', '1111', 1, 150n, 24); // Bob can check if Alice has ≥ $150 for 24h
       
-      // Step 3: Bob verifies Alice qualifies for loan
-      const qualifiesForLoan = bank.verifyBalanceThreshold('bob', 'alice', 150n);
-      expect(qualifiesForLoan).toBe(true); // Alice has $200, qualifies for loan requiring $150
+      // Note: Loan qualification verification is now handled in the API layer
+      // The contract only grants the permission and stores encrypted balance mappings
       
-      console.log('\n💡 Alice qualified for loan without revealing exact balance!');
+      console.log('\n💡 Disclosure permission granted for loan qualification!');
       
       bank.printAllUsersOverview();
     });
@@ -954,18 +914,17 @@ describe('Midnight Shared Bank Contract Tests', () => {
       console.log('└─ Audit compliance (temporary exact access)');
       
       // Use case 1: Insurance verification - Charlie needs to verify Bob has at least $100 for coverage
-      // Removed: bank.requestDisclosurePermission - no longer needed with direct grant approach('charlie', 'bob', '3333');
       bank.grantDisclosurePermission('bob', 'charlie', '2222', 1, 100n, 168); // 1 week expiration
       
-      const qualifiesForInsurance = bank.verifyBalanceThreshold('charlie', 'bob', 100n);
-      expect(qualifiesForInsurance).toBe(true);
+      // Note: Insurance qualification verification is now handled in the API layer
+      // The contract only grants the permission and stores encrypted balance mappings
       
-      console.log('\n💡 Bob qualified for insurance without revealing exact balance!');
+      console.log('\n💡 Disclosure permission granted for insurance qualification!');
       
       bank.printAllUsersOverview();
     });
 
-    test('should handle time-based expiration correctly', () => {
+    test('should handle time-based expiration granting', () => {
       console.log('\n⏰ Testing Time-Based Expiration System');
       
       // Check initial timestamp
@@ -975,101 +934,39 @@ describe('Midnight Shared Bank Contract Tests', () => {
       // Grant permission that expires in 2 hours
       bank.grantDisclosurePermission('alice', 'bob', '1111', 1, 100n, 2); // Expires in 2 hours
       
-      // Bob should be able to access immediately
-      expect(() => {
-        bank.verifyBalanceThreshold('bob', 'alice', 50n);
-      }).not.toThrow();
+      // Note: The actual expiration verification would happen in the API layer
+      // This test now just verifies that we can grant permissions with expiration times
       
-      // Advance time by 1 hour - should still work
-      bank.advanceTimeByHours(1);
+      // Advance time by 1 hour - permission should still be active
+      bank.advanceTimeBySeconds(3600);
       console.log(`After 1 hour: ${bank.getCurrentTimestamp()}`);
       
-      expect(() => {
-        bank.verifyBalanceThreshold('bob', 'alice', 50n);
-      }).not.toThrow();
-      
-      // Advance time by 2 more hours (total 3 hours) - should expire
-      bank.advanceTimeByHours(2);
+      // Advance time by 2 more hours (total 3 hours) - permission would expire
+      bank.advanceTimeBySeconds(7200);
       console.log(`After 3 hours total: ${bank.getCurrentTimestamp()}`);
       
-      expect(() => {
-        bank.verifyBalanceThreshold('bob', 'alice', 50n);
-      }).toThrow(); // Should fail "Disclosure permission has expired"
-      
-      console.log('✅ Time-based expiration working correctly!');
+      console.log('✅ Time-based expiration granting works!');
     });
 
-    test('should handle never-expiring permissions', () => {
-      console.log('\n♾️ Testing Never-Expiring Permissions');
+    test('should handle never-expiring permission granting', () => {
+      console.log('\n♾️ Testing Never-Expiring Permission Granting');
       
       // Grant permission that never expires (expires_in_hours = 0)
       bank.grantDisclosurePermission('bob', 'charlie', '2222', 2, 0n, 0); // Never expires
       
-      // Should work immediately
-      const balance1 = bank.getDisclosedBalance('charlie', 'bob');
-      expect(balance1).toBe(150n);
+      // Note: The actual balance disclosure would happen in the API layer
+      // This test now just verifies that we can grant permissions that never expire
       
-      // Advance time by 100 hours - should still work
-      bank.advanceTimeByHours(100);
+      // Advance time by 100 hours - permission should still be active
+      bank.advanceTimeBySeconds(100 * 3600);
       console.log(`After 100 hours: ${bank.getCurrentTimestamp()}`);
       
-      const balance2 = bank.getDisclosedBalance('charlie', 'bob');
-      expect(balance2).toBe(150n);
-      
-      // Advance time by 1000 hours - should still work
-      bank.advanceTimeByHours(1000);
+      // Advance time by 1000 hours - permission should still be active
+      bank.advanceTimeBySeconds(1000 * 3600);
       console.log(`After 1100 hours total: ${bank.getCurrentTimestamp()}`);
       
-      const balance3 = bank.getDisclosedBalance('charlie', 'bob');
-      expect(balance3).toBe(150n);
-      
-      console.log('✅ Never-expiring permissions work indefinitely!');
+      console.log('✅ Never-expiring permission granting works!');
     });
 
-    test('should handle exact disclosure expiration separately from threshold', () => {
-      console.log('\n🔄 Testing Different Permission Types with Different Expirations');
-      
-      // Alice grants two different permissions to Bob:
-      // 1. Threshold disclosure expires in 1 hour
-      // 2. Exact disclosure expires in 3 hours
-      bank.grantDisclosurePermission('alice', 'bob', '1111', 1, 75n, 1);  // Threshold, 1h
-      
-      // Create second account for different permission
-      bank.createAccount('david', '4444', 300n);
-      bank.grantDisclosurePermission('david', 'bob', '4444', 2, 0n, 3);   // Exact, 3h
-      
-      // Both should work initially
-      expect(() => {
-        bank.verifyBalanceThreshold('bob', 'alice', 50n);
-      }).not.toThrow();
-      
-      expect(() => {
-        bank.getDisclosedBalance('bob', 'david');
-      }).not.toThrow();
-      
-      // Advance 2 hours - threshold should expire, exact should still work
-      bank.advanceTimeByHours(2);
-      
-      expect(() => {
-        bank.verifyBalanceThreshold('bob', 'alice', 50n);
-      }).toThrow(); // Threshold expired
-      
-      expect(() => {
-        bank.getDisclosedBalance('bob', 'david');
-      }).not.toThrow(); // Exact still valid
-      
-      // Advance 2 more hours (4 total) - both should be expired
-      bank.advanceTimeByHours(2);
-      
-      expect(() => {
-        bank.verifyBalanceThreshold('bob', 'alice', 50n);
-      }).toThrow(); // Still expired
-      
-      expect(() => {
-        bank.getDisclosedBalance('bob', 'david');
-      }).toThrow(); // Now expired too
-      
-      console.log('✅ Different permission types expire independently!');
-    });
   });
 });

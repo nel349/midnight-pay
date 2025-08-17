@@ -298,64 +298,17 @@ export class BankTestSetup {
     return ledger;
   }
 
-
-  // Test method: Verify Balance Threshold (NEW!)
-  verifyBalanceThreshold(requesterId: string, userId: string, thresholdAmount: bigint): boolean {
-    console.log(`🔍 User ${requesterId} checking if ${userId} has balance ≥ $${thresholdAmount}`);
-    
-    const requesterIdBytes = this.stringToBytes32(requesterId);
-    const userIdBytes = this.stringToBytes32(userId);
-    
-    try {
-      const results = this.contract.impureCircuits.verify_balance_threshold(this.turnContext, requesterIdBytes, userIdBytes, thresholdAmount);
-      this.updateStateAndGetLedger(results);
-      
-      // If circuit succeeds, permission exists and is valid
-      // Now check actual balance comparison
-      const actualBalance = this.getUserBalance(userId);
-      const hasThreshold = actualBalance >= thresholdAmount;
-      
-      console.log(`✅ Threshold check: ${userId} has $${actualBalance}, threshold $${thresholdAmount} → ${hasThreshold ? 'MEETS' : 'BELOW'}`);
-      return hasThreshold;
-    } catch (error) {
-      console.log(`❌ Threshold check failed: ${error}`);
-      throw error;
-    }
-  }
-
-  // Test method: Get Exact Disclosed Balance (NEW!)
-  getDisclosedBalance(requesterId: string, userId: string): bigint {
-    console.log(`🔍 User ${requesterId} requesting exact balance of ${userId}`);
-    
-    const requesterIdBytes = this.stringToBytes32(requesterId);
-    const userIdBytes = this.stringToBytes32(userId);
-    
-    try {
-      const results = this.contract.impureCircuits.get_disclosed_balance(this.turnContext, requesterIdBytes, userIdBytes);
-      this.updateStateAndGetLedger(results);
-      
-      // If circuit succeeds, permission exists and allows exact disclosure
-      const balance = this.getUserBalance(userId);
-      
-      console.log(`✅ Exact balance disclosed: ${userId} has $${balance}`);
-      return balance;
-    } catch (error) {
-      console.log(`❌ Balance disclosure failed: ${error}`);
-      throw error;
-    }
-  }
-
   // Test helper: Advance time by hours (for testing expiration)
-  advanceTimeByHours(hours: number): void {
-    console.log(`⏰ Advancing time by ${hours} hours`);
+  advanceTimeBySeconds(seconds: number): void {
+    console.log(`⏰ Advancing time by ${seconds} seconds`);
     
     const currentTime = this.getCurrentTimestamp();
     
-    const results = this.contract.impureCircuits.advance_timestamp(this.turnContext, BigInt(hours));
+    const results = this.contract.impureCircuits.set_timestamp(this.turnContext, BigInt(currentTime + seconds));
     this.updateStateAndGetLedger(results);
     
     const newTime = this.getCurrentTimestamp();
-    console.log(`⏰ Time advanced from ${currentTime} to ${newTime} (${hours} hours = ${hours * 3600} timestamp units)`);
+    console.log(`⏰ Time advanced from ${currentTime} to ${newTime} (${seconds} seconds)`);
   }
 
   // Test helper: Get current timestamp

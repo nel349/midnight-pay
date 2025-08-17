@@ -21,3 +21,8 @@ if [ src/index.ts -nt .compact-cache ]; then # if the index file is newer than t
 fi
 
 echo 'Contract files unchanged, using cache'
+
+
+
+
+

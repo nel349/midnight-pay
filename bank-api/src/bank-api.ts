@@ -51,8 +51,11 @@ export interface DeployedBankAPI {
   
   // Selective Balance Disclosure System (NEW!)
   grantDisclosurePermission(pin: string, requesterId: string, permissionType: 'threshold' | 'exact', thresholdAmount: string, expiresInHours: number): Promise<void>;
+  grantDisclosurePermissionUntil(pin: string, requesterId: string, permissionType: 'threshold' | 'exact', thresholdAmount: string, expiresAt: Date): Promise<void>;
   verifyBalanceThreshold(pin: string, targetUserId: string, thresholdAmount: string): Promise<boolean>;
   getDisclosedBalance(pin: string, targetUserId: string): Promise<bigint>;
+  getDisclosurePermissions(pin: string): Promise<Array<{ requesterId: string; permissionType: 'threshold' | 'exact'; thresholdAmount: bigint; expiresAt: Date | null }>>;
+  revokeDisclosurePermission(pin: string, requesterId: string): Promise<void>;
   
   // Real-time communication methods
   getPendingAuthRequests(): Promise<Array<{ senderUserId: string; requestedAt: number }>>;
@@ -553,6 +556,23 @@ export class BankAPI implements DeployedBankAPI {
     });
   }
 
+  // this should be setting to a particular timestamp.
+  async setContractTime(timestamp: number): Promise<void> {
+    this.logger?.info({ setContractTime: { timestamp } });
+    
+    const txData = await this.deployedContract.callTx.set_timestamp(
+      BigInt(timestamp)
+    );
+    
+    this.logger?.trace({
+      contractTimeSet: {
+        timestamp,
+        txHash: txData.public.txHash,
+        blockHeight: txData.public.blockHeight,
+      },
+    });
+  }
+
   async getAuthorizedContacts(): Promise<Array<{ userId: string; maxAmount: bigint }>> {
     // Return the list of RECIPIENTS that the current user (sender) is authorized to send to
     const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
@@ -770,14 +790,47 @@ export class BankAPI implements DeployedBankAPI {
   }
 
   // Selective Balance Disclosure System (NEW!)
-  async grantDisclosurePermission(pin: string, requesterId: string, permissionType: 'threshold' | 'exact', thresholdAmount: string, expiresInHours: number): Promise<void> {
-    this.logger?.info({ grantDisclosurePermission: { grantor: this.userId, requester: requesterId, type: permissionType, threshold: thresholdAmount, expires: expiresInHours } });
+  async grantDisclosurePermissionUntil(pin: string, requesterId: string, permissionType: 'threshold' | 'exact', thresholdAmount: string, expiresAt: Date): Promise<void> {
+    // Convert absolute date to relative seconds
+    const now = new Date();
+    const millisecondsFromNow = expiresAt.getTime() - now.getTime();
+    
+    if (millisecondsFromNow <= 0) {
+      throw new Error('Expiration date must be in the future');
+    }
+    
+    const secondsFromNow = Math.ceil(millisecondsFromNow / 1000);
+    
+    this.logger?.info({ 
+      grantDisclosurePermissionUntil: { 
+        grantor: this.userId, 
+        requester: requesterId, 
+        type: permissionType, 
+        threshold: thresholdAmount, 
+        expiresAt: expiresAt.toISOString(),
+        calculatedSeconds: secondsFromNow 
+      } 
+    });
+    
+    // Call the existing relative-time method
+    return this.grantDisclosurePermission(pin, requesterId, permissionType, thresholdAmount, secondsFromNow);
+  }
+
+  async grantDisclosurePermission(pin: string, requesterId: string, permissionType: 'threshold' | 'exact', thresholdAmount: string, expiresInSeconds: number): Promise<void> {
+    this.logger?.info({ grantDisclosurePermission: { grantor: this.userId, requester: requesterId, type: permissionType, threshold: thresholdAmount, expires: expiresInSeconds } });
     
     const userIdBytes = this.stringToBytes32(this.userId);
     const normalizedRequesterId = this.normalizeUserId(requesterId);
     const requesterIdBytes = this.stringToBytes32(normalizedRequesterId);
     
     const permissionTypeValue = permissionType === 'threshold' ? 1 : 2; // 1=THRESHOLD_DISCLOSURE, 2=EXACT_DISCLOSURE
+    
+    console.log(`DEBUG: Granting disclosure permission:`);
+    console.log(`  Grantor: ${this.userId} -> bytes: ${Array.from(userIdBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+    console.log(`  Requester: ${normalizedRequesterId} -> bytes: ${Array.from(requesterIdBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+    console.log(`  Permission type: ${permissionType} (${permissionTypeValue})`);
+    console.log(`  Threshold amount: ${thresholdAmount} -> parsed: ${utils.parseAmount(thresholdAmount)}`);
+    console.log(`  Expires in seconds: ${expiresInSeconds}`);
     
     const pinBytes = this.stringToBytes32(pin);
     const txData = await this.deployedContract.callTx.grant_disclosure_permission(
@@ -786,71 +839,215 @@ export class BankAPI implements DeployedBankAPI {
       pinBytes,
       BigInt(permissionTypeValue),
       utils.parseAmount(thresholdAmount),
-      BigInt(expiresInHours)
+      BigInt(expiresInSeconds)
     );
     
-    this.logger?.trace({
+    this.logger?.info({
       disclosurePermissionGranted: {
         grantor: this.userId,
         requester: requesterId,
         permissionType: permissionType,
         thresholdAmount: thresholdAmount,
-        expiresInHours: expiresInHours,
+        expiresInSeconds: expiresInSeconds,
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
+        success: true
       },
     });
+    
+    // Debug: Verify the permission was stored correctly in the ledger
+    await this.verifyDisclosurePermissionStoredCorrectly(normalizedRequesterId);
+  }
+  
+  // Helper method to verify disclosure permission was stored correctly
+  private async verifyDisclosurePermissionStoredCorrectly(requesterId: string): Promise<void> {
+    try {
+      // Wait a moment for the transaction to be included
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+      if (!state) {
+        console.log('DEBUG: Contract state not available for verification');
+        return;
+      }
+      
+      const l = ledger(state.data);
+      const normalizedTargetId = this.normalizeUserId(this.userId); // grantor is the target
+      const targetIdBytes = this.stringToBytes32(normalizedTargetId);
+      const decoder = new TextDecoder();
+      
+      console.log(`DEBUG: Verifying disclosure permission storage:`);
+      console.log(`  Target (grantor): ${normalizedTargetId}`);
+      console.log(`  Requester: ${requesterId}`);
+      
+      // Check if target user has any recipient authorizations
+      if (!l.user_as_recipient_auths.member(targetIdBytes)) {
+        console.log('ERROR: Target user has no recipient authorizations after granting permission!');
+        return;
+      }
+      
+      const authVector = l.user_as_recipient_auths.lookup(targetIdBytes) as Uint8Array[];
+      console.log(`DEBUG: Target has ${authVector.length} recipient authorizations`);
+      
+      // Look for the specific disclosure permission
+      const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+      let found = false;
+      
+      for (const authId of authVector) {
+        if (!authId || isZeroBytes(authId)) continue;
+        
+        const authIdHex = Array.from(authId).map(b => b.toString(16).padStart(2, '0')).join('');
+        console.log(`DEBUG: Checking auth ID: ${authIdHex}`);
+        
+        if (!l.active_authorizations.member(authId)) {
+          console.log(`  - Auth ID not in active_authorizations`);
+          continue;
+        }
+        
+        const auth = l.active_authorizations.lookup(authId);
+        const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+        const permissionType = Number(auth.permission_type);
+        const maxAmount = BigInt(auth.max_amount);
+        const expiresAt = Number(auth.expires_at);
+        
+        console.log(`  - Sender: ${senderId}`);
+        console.log(`  - Permission type: ${permissionType}`);
+        console.log(`  - Max amount: ${maxAmount}`);
+        console.log(`  - Expires at: ${expiresAt}`);
+        
+        if (senderId === requesterId && (permissionType === 1 || permissionType === 2)) {
+          console.log(`  ✅ Found matching disclosure permission!`);
+          
+          // Check expiration
+          const currentTimestamp = Number(l.current_timestamp);
+          const isExpired = expiresAt !== 0 && currentTimestamp >= expiresAt;
+          console.log(`  - Current timestamp: ${currentTimestamp}`);
+          console.log(`  - Permission expires at: ${expiresAt} (0 = never)`);
+          console.log(`  - Is expired: ${isExpired}`);
+          
+          if (isExpired) {
+            console.log(`  ❌ Permission has expired!`);
+            throw new Error('Disclosure permission has expired');
+          }
+          
+          found = true;
+          
+          // Check shared balance access
+          if (l.shared_balance_access.member(authId)) {
+            console.log(`  ✅ Shared balance access exists for this auth ID`);
+            const sharedEncrypted = l.shared_balance_access.lookup(authId);
+            console.log(`  - Encrypted balance: ${Array.from(sharedEncrypted).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+          } else {
+            console.log(`  ❌ No shared balance access for this auth ID`);
+          }
+        }
+      }
+      
+      if (!found) {
+        console.log(`ERROR: Could not find disclosure permission for requester ${requesterId}`);
+      }
+      
+    } catch (error) {
+      console.log('DEBUG: Error verifying disclosure permission storage:', error);
+    }
   }
 
   async verifyBalanceThreshold(pin: string, targetUserId: string, thresholdAmount: string): Promise<boolean> {
     this.logger?.info({ verifyBalanceThreshold: { requester: this.userId, target: targetUserId, threshold: thresholdAmount } });
     
-    const userIdBytes = this.stringToBytes32(this.userId);
-    const normalizedTargetId = this.normalizeUserId(targetUserId);
-    const targetIdBytes = this.stringToBytes32(normalizedTargetId);
-    
     try {
-      // First, validate the permission exists and is valid
-      const txData = await this.deployedContract.callTx.verify_balance_threshold(
-        userIdBytes,
-        targetIdBytes,
-        utils.parseAmount(thresholdAmount)
-      );
-      
-      this.logger?.trace({
-        thresholdPermissionValidated: {
-          requester: this.userId,
-          target: targetUserId,
-          threshold: thresholdAmount,
-          txHash: txData.public.txHash,
-          blockHeight: txData.public.blockHeight,
-        },
-      });
-      
-      // Now get the actual balance from the ledger and compare
       const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
       if (!state) return false;
       
       const l = ledger(state.data);
-      const disclosureId = this.calculateDisclosureId(this.userId, targetUserId);
+      const normalizedTargetId = this.normalizeUserId(targetUserId);
+      const targetIdBytes = this.stringToBytes32(normalizedTargetId);
+      const normalizedRequesterId = this.normalizeUserId(this.userId);
       
-      if (!l.shared_balance_access.member(disclosureId)) return false;
+      // Find the disclosure permission in user_as_recipient_auths for the target user
+      if (!l.user_as_recipient_auths.member(targetIdBytes)) {
+        this.logger?.warn({ disclosureDebug: { message: 'Target user has no recipient authorizations', target: targetUserId } });
+        return false;
+      }
+      
+      const authVector = l.user_as_recipient_auths.lookup(targetIdBytes) as Uint8Array[];
+      const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+      const decoder = new TextDecoder();
+      
+      let foundAuthId: Uint8Array | null = null;
+      
+      // Search through the target's authorizations to find our disclosure permission
+      for (const authId of authVector) {
+        if (!authId || isZeroBytes(authId)) continue;
+        if (!l.active_authorizations.member(authId)) continue;
+        
+        const auth = l.active_authorizations.lookup(authId);
+        const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+        const permissionType = Number(auth.permission_type);
+        
+      // Check if this is our disclosure permission (sender matches requester and it's threshold(1) or exact(2))
+        if (senderId === normalizedRequesterId && (permissionType === 1 || permissionType === 2)) {
+          // Check expiration first
+          const expiresAt = Number(auth.expires_at);
+          const currentTimestamp = Number(l.current_timestamp);
+          const isExpired = expiresAt !== 0 && currentTimestamp >= expiresAt;
+          
+          if (isExpired) {
+            this.logger?.info({ disclosureExpired: { requester: this.userId, target: targetUserId, expiresAt, currentTimestamp } });
+            return false; // Permission expired, return false instead of throwing
+          }
+          
+          // For threshold permissions, validate that the requested threshold doesn't exceed the authorized maximum
+          if (permissionType === 1) { // threshold permission
+            const authorizedMaxAmount = BigInt(auth.max_amount);
+            const requestedThreshold = utils.parseAmount(thresholdAmount);
+            if (requestedThreshold > authorizedMaxAmount) {
+              throw new Error(`Threshold amount ${thresholdAmount} exceeds authorized maximum ${utils.formatBalance(authorizedMaxAmount)}`);
+            }
+          }
+          foundAuthId = authId;
+          break;
+        }
+      }
+      
+      if (!foundAuthId) {
+        this.logger?.warn({ disclosureDebug: { message: 'No disclosure permission found', requester: normalizedRequesterId, target: targetUserId } });
+        console.log(`DEBUG: No disclosure permission found for requester ${normalizedRequesterId} to target ${targetUserId}`);
+        return false;
+      }
+      
+      console.log(`DEBUG: Found disclosure auth ID:`, Array.from(foundAuthId).map(b => b.toString(16).padStart(2, '0')).join(''));
+      
+      // Check if we have shared balance access for this authorization
+      if (!l.shared_balance_access.member(foundAuthId)) {
+        this.logger?.warn({ disclosureDebug: { message: 'No shared balance access found for disclosure permission' } });
+        console.log(`DEBUG: No shared balance access found for auth ID`);
+        console.log(`DEBUG: Available shared_balance_access keys:`, Array.from(l.shared_balance_access).map(([key, _]) => 
+          Array.from(key).map(b => b.toString(16).padStart(2, '0')).join('')
+        ));
+        return false;
+      }
       
       // Get the encrypted balance from shared access
-      const sharedEncrypted = l.shared_balance_access.lookup(disclosureId);
+      const sharedEncrypted = l.shared_balance_access.lookup(foundAuthId);
+      console.log(`DEBUG: Found shared encrypted balance:`, Array.from(sharedEncrypted).map(b => b.toString(16).padStart(2, '0')).join(''));
       
-      // Decrypt using shared key (simplified - would need proper key derivation in production)
-      const targetBalance = await this.decryptSharedBalance(sharedEncrypted, this.userId, targetUserId, pin);
+      // Decrypt the balance
+      const targetBalance = await this.decryptSharedBalance(sharedEncrypted);
+      console.log(`DEBUG: Decrypted target balance:`, targetBalance.toString());
+      
       const thresholdAmountBig = utils.parseAmount(thresholdAmount);
+      console.log(`DEBUG: Threshold amount:`, thresholdAmountBig.toString());
       
       const meetsThreshold = targetBalance >= thresholdAmountBig;
+      console.log(`DEBUG: Meets threshold:`, meetsThreshold);
       
       this.logger?.info({
         thresholdCheckCompleted: {
           requester: this.userId,
           target: targetUserId,
-          actualBalance: targetBalance.toString(),
           threshold: thresholdAmount,
+          targetBalance: targetBalance.toString(),
           result: meetsThreshold
         }
       });
@@ -867,42 +1064,65 @@ export class BankAPI implements DeployedBankAPI {
   async getDisclosedBalance(pin: string, targetUserId: string): Promise<bigint> {
     this.logger?.info({ getDisclosedBalance: { requester: this.userId, target: targetUserId } });
     
-    const userIdBytes = this.stringToBytes32(this.userId);
-    const normalizedTargetId = this.normalizeUserId(targetUserId);
-    const targetIdBytes = this.stringToBytes32(normalizedTargetId);
-    
     try {
-      // First, validate the permission exists and allows exact disclosure
-      const txData = await this.deployedContract.callTx.get_disclosed_balance(
-        userIdBytes,
-        targetIdBytes
-      );
-      
-      this.logger?.trace({
-        exactDisclosurePermissionValidated: {
-          requester: this.userId,
-          target: targetUserId,
-          txHash: txData.public.txHash,
-          blockHeight: txData.public.blockHeight,
-        },
-      });
-      
-      // Now get the actual balance from the ledger
       const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
       if (!state) throw new Error('Contract state not available');
       
       const l = ledger(state.data);
-      const disclosureId = this.calculateDisclosureId(this.userId, targetUserId);
+      const normalizedTargetId = this.normalizeUserId(targetUserId);
+      const targetIdBytes = this.stringToBytes32(normalizedTargetId);
+      const normalizedRequesterId = this.normalizeUserId(this.userId);
       
-      if (!l.shared_balance_access.member(disclosureId)) {
-        throw new Error('No shared balance access found');
+      // Find the disclosure permission in user_as_recipient_auths for the target user
+      if (!l.user_as_recipient_auths.member(targetIdBytes)) {
+        throw new Error('Target user has no recipient authorizations');
+      }
+      
+      const authVector = l.user_as_recipient_auths.lookup(targetIdBytes) as Uint8Array[];
+      const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+      const decoder = new TextDecoder();
+      
+      let foundAuthId: Uint8Array | null = null;
+      
+      // Search through the target's authorizations to find our exact disclosure permission
+      for (const authId of authVector) {
+        if (!authId || isZeroBytes(authId)) continue;
+        if (!l.active_authorizations.member(authId)) continue;
+        
+        const auth = l.active_authorizations.lookup(authId);
+        const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+        const permissionType = Number(auth.permission_type);
+        
+        // Check if this is our exact disclosure permission (sender matches requester and it's exact(2))
+        if (senderId === normalizedRequesterId && permissionType === 2) {
+          // Check expiration
+          const expiresAt = Number(auth.expires_at);
+          const currentTimestamp = Number(l.current_timestamp);
+          const isExpired = expiresAt !== 0 && currentTimestamp >= expiresAt;
+          
+          if (isExpired) {
+            throw new Error('Disclosure permission has expired');
+          }
+          
+          foundAuthId = authId;
+          break;
+        }
+      }
+      
+      if (!foundAuthId) {
+        throw new Error('No exact disclosure permission found');
+      }
+      
+      // Check if we have shared balance access for this authorization
+      if (!l.shared_balance_access.member(foundAuthId)) {
+        throw new Error('No shared balance access found for disclosure permission');
       }
       
       // Get the encrypted balance from shared access
-      const sharedEncrypted = l.shared_balance_access.lookup(disclosureId);
+      const sharedEncrypted = l.shared_balance_access.lookup(foundAuthId);
       
-      // Decrypt using shared key (simplified - would need proper key derivation in production)
-      const targetBalance = await this.decryptSharedBalance(sharedEncrypted, this.userId, targetUserId, pin);
+      // Decrypt the balance
+      const targetBalance = await this.decryptSharedBalance(sharedEncrypted);
       
       this.logger?.info({
         exactBalanceDisclosed: {
@@ -939,23 +1159,120 @@ export class BankAPI implements DeployedBankAPI {
     return combined.slice(0, 32);
   }
 
-  private async decryptSharedBalance(encryptedBalance: Uint8Array, requesterId: string, targetUserId: string, pin: string): Promise<bigint> {
-    // This is a simplified decryption - in production would need proper key derivation
-    // matching the contract's shared key generation:
-    // persistentHash<Vector<3, Bytes<32>>>([user_id, requester_id, persistentHash<Bytes<32>>(pin)])
+  private async decryptSharedBalance(encryptedBalance: Uint8Array): Promise<bigint> {
+    // Simplified decryption helper - tries to resolve the encrypted balance to a bigint
+    // In the new approach, we skip complex key derivation and use ledger mappings directly
     
-    // For now, lookup from the user_balance_mappings (simplified approach)
     const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
     if (!state) return 0n;
     
     const l = ledger(state.data);
     
-    // Try to find the balance in user_balance_mappings
+    // Debug: Log all available mappings
+    console.log(`DEBUG: Checking balance mappings for encrypted balance:`, Array.from(encryptedBalance).map(b => b.toString(16).padStart(2, '0')).join(''));
+    console.log(`DEBUG: Available user_balance_mappings keys (${Array.from(l.user_balance_mappings).length}):`);
+    Array.from(l.user_balance_mappings).slice(0, 5).forEach(([key, value], i) => {
+      console.log(`  ${i}: ${Array.from(key).map(b => b.toString(16).padStart(2, '0')).join('')} -> ${value}`);
+    });
+    console.log(`DEBUG: Available encrypted_amount_mappings keys (${Array.from(l.encrypted_amount_mappings).length}):`);
+    Array.from(l.encrypted_amount_mappings).slice(0, 5).forEach(([key, value], i) => {
+      console.log(`  ${i}: ${Array.from(key).map(b => b.toString(16).padStart(2, '0')).join('')} -> ${value}`);
+    });
+    
+    // Try to find the balance in user_balance_mappings first
     if (l.user_balance_mappings.member(encryptedBalance)) {
-      return l.user_balance_mappings.lookup(encryptedBalance);
+      const balance = l.user_balance_mappings.lookup(encryptedBalance);
+      this.logger?.info({ decryptSharedBalance: { method: 'user_balance_mappings', balance: balance.toString() } });
+      return balance;
     }
     
+    // Try encrypted_amount_mappings as fallback
+    if (l.encrypted_amount_mappings.member(encryptedBalance)) {
+      const balance = BigInt(l.encrypted_amount_mappings.lookup(encryptedBalance));
+      this.logger?.info({ decryptSharedBalance: { method: 'encrypted_amount_mappings', balance: balance.toString() } });
+      return balance;
+    }
+    
+    // If no mapping found, return 0
+    console.log(`DEBUG: No mapping found - the encrypted balance may not have been properly stored during permission granting`);
+    this.logger?.warn({ decryptSharedBalance: { method: 'failed', message: 'No mapping found for encrypted balance' } });
     return 0n;
+  }
+  
+  async getDisclosurePermissions(pin: string): Promise<Array<{ requesterId: string; permissionType: 'threshold' | 'exact'; thresholdAmount: bigint; expiresAt: Date | null }>> {
+    this.logger?.info({ getDisclosurePermissions: { grantor: this.userId } });
+    
+    const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (!state) return [];
+    
+    const l = ledger(state.data);
+    const normalizedUserId = this.normalizeUserId(this.userId);
+    const userIdBytes = this.stringToBytes32(normalizedUserId);
+    const decoder = new TextDecoder();
+    const permissions: Array<{ requesterId: string; permissionType: 'threshold' | 'exact'; thresholdAmount: bigint; expiresAt: Date | null }> = [];
+    
+    // Look at current user's granted permissions (as recipient)
+    if (!l.user_as_recipient_auths.member(userIdBytes)) return [];
+    
+    const authVector = l.user_as_recipient_auths.lookup(userIdBytes) as Uint8Array[];
+    const isZeroBytes = (b: Uint8Array): boolean => b.every((x) => x === 0);
+    
+    for (const authId of authVector) {
+      if (!authId || isZeroBytes(authId)) continue;
+      if (!l.active_authorizations.member(authId)) continue;
+      
+      const auth = l.active_authorizations.lookup(authId);
+      const permissionType = Number(auth.permission_type);
+      
+      // Only include disclosure permissions (not transfer permissions)
+      if (permissionType === 1 || permissionType === 2) {
+        const requesterId = decoder.decode(auth.sender_id).replace(/\0/g, '');
+        const thresholdAmount = BigInt(auth.max_amount);
+        const expiresAtTimestamp = Number(auth.expires_at);
+        
+        // Convert timestamp to Date (0 = never expires)
+        // Contract stores expires_at as seconds, convert to milliseconds for JavaScript Date
+        const expiresAt = expiresAtTimestamp === 0 ? null : new Date(expiresAtTimestamp * 1000);
+        
+        permissions.push({
+          requesterId,
+          permissionType: permissionType === 1 ? 'threshold' : 'exact',
+          thresholdAmount,
+          expiresAt
+        });
+      }
+    }
+    
+    return permissions;
+  }
+
+  async revokeDisclosurePermission(pin: string, requesterId: string): Promise<void> {
+    this.logger?.info({ revokeDisclosurePermission: { grantor: this.userId, requester: requesterId } });
+    
+    // Note: In current contract implementation, there's no specific revoke circuit
+    // To revoke, we would grant a new permission with expires_at = current_timestamp (immediate expiry)
+    // or implement a dedicated revoke_disclosure_permission circuit
+    
+    // For now, we'll grant a permission that expires immediately (1 second)
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 1000); // 1 second from now
+    
+    try {
+      // Grant a "dummy" permission that expires immediately to effectively revoke
+      await this.grantDisclosurePermissionUntil(pin, requesterId, 'threshold', '0', expiresAt);
+      
+      this.logger?.trace({
+        disclosurePermissionRevoked: {
+          grantor: this.userId,
+          requester: requesterId,
+          method: 'immediate_expiry'
+        }
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger?.warn({ revokeDisclosureFailed: { grantor: this.userId, requester: requesterId, error: errorMessage } });
+      throw new Error(`Failed to revoke disclosure permission: ${errorMessage}`);
+    }
   }
 
   // Client-owned detailed log (persisted via privateStateProvider)

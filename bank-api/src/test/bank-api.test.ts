@@ -450,5 +450,188 @@ describe('BankAPI', () => {
         logger.info('Bidirectional authorization and double-claim prevention test completed');
       }, 15 * 60_000);
     });
+
+    describe('Selective Balance Disclosure API', () => {
+      test('should complete full disclosure workflow: grant, verify, list, revoke', async () => {
+        const aliceUserId = 'alice-disclosure';
+        const bobUserId = 'bob-disclosure';
+        const charlieUserId = 'charlie-disclosure';
+
+        logger.info('Testing selective balance disclosure API…');
+        const contractAddress = await BankAPI.deploy(providers, logger);
+
+        // Create accounts: Alice ($200), Bob ($150), Charlie ($100)
+        await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '200.00', logger);
+        await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '150.00', logger);
+        await BankAPI.createAccount(providers, contractAddress, charlieUserId, '3333', '100.00', logger);
+        
+        const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
+        const charlieBankAPI = await BankAPI.subscribe(charlieUserId, providers, contractAddress, logger);
+
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 20000n)));
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 15000n)));
+        await firstValueFrom(charlieBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+
+        // Test 1: Alice grants threshold permission to Bob (never expires)
+        await aliceBankAPI.grantDisclosurePermission('1111', bobUserId, 'threshold', '100.00', 0);
+        
+        // Test 2: Bob verifies Alice has >= $100 (should be true, Alice has $200)
+        const hasThreshold = await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '100.00');
+        expect(hasThreshold).toBe(true);
+
+        // Test 3: Bob tries to verify higher threshold than authorized (should fail)
+        await expect(async () => {
+          await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '150.00');
+        }).rejects.toThrow(/Threshold amount.*exceeds authorized maximum/); // Should fail threshold validation
+
+        // Test 4: Alice grants exact disclosure to Charlie with expiration
+        const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours from now
+        await aliceBankAPI.grantDisclosurePermissionUntil('1111', charlieUserId, 'exact', '0.00', expiresAt);
+
+        // Test 5: Charlie gets Alice's exact balance
+        const aliceBalance = await charlieBankAPI.getDisclosedBalance('3333', aliceUserId);
+        expect(aliceBalance).toBe(20000n); // Alice has $200
+
+        // Test 6: Alice lists her granted permissions
+        const permissions = await aliceBankAPI.getDisclosurePermissions('1111');
+        expect(permissions).toHaveLength(2);
+        
+        const bobPermission = permissions.find(p => p.requesterId === bobUserId);
+        const charliePermission = permissions.find(p => p.requesterId === charlieUserId);
+        
+        expect(bobPermission).toBeDefined();
+        expect(bobPermission?.permissionType).toBe('threshold');
+        expect(bobPermission?.thresholdAmount).toBe(10000n);
+        expect(bobPermission?.expiresAt).toBe(null); // Never expires
+        
+        expect(charliePermission).toBeDefined();
+        expect(charliePermission?.permissionType).toBe('exact');
+        expect(charliePermission?.expiresAt).toBeInstanceOf(Date);
+
+        // Test 7: Alice revokes Bob's permission
+        await aliceBankAPI.revokeDisclosurePermission('1111', bobUserId);
+
+        // Test 8: Bob should no longer be able to verify threshold (after a short wait for revocation to take effect)
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds for revocation
+        await expect(async () => {
+          await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '100.00');
+        }).rejects.toThrow(); // Should fail "Disclosure permission has expired"
+
+        // Test 9: Charlie should still have access (not revoked)
+        const aliceBalanceAgain = await charlieBankAPI.getDisclosedBalance('3333', aliceUserId);
+        expect(aliceBalanceAgain).toBe(20000n);
+
+        logger.info('Selective balance disclosure API test completed successfully');
+      }, 15 * 60_000);
+
+      test('should handle disclosure errors: no permission, wrong PIN, self-disclosure', async () => {
+        const aliceUserId = 'alice-errors';
+        const bobUserId = 'bob-errors';
+
+        logger.info('Testing disclosure error scenarios…');
+        const contractAddress = await BankAPI.deploy(providers, logger);
+
+        await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '100.00', logger);
+        await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '50.00', logger);
+        
+        const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
+
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+        await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
+
+        // Test 1: Bob tries to verify Alice's balance without permission
+        const hasThresholdWithoutPermission = await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '50.00');
+        expect(hasThresholdWithoutPermission).toBe(false); // Should return false when no permission exists
+
+        // Test 2: Bob tries to get Alice's exact balance without permission
+        await expect(async () => {
+          await bobBankAPI.getDisclosedBalance('2222', aliceUserId);
+        }).rejects.toThrow(/Target user has no recipient authorizations|No exact disclosure permission found/); // Should fail with ledger lookup error
+
+        // Test 3: Alice tries to grant permission with wrong PIN
+        await expect(async () => {
+          await aliceBankAPI.grantDisclosurePermission('9999', bobUserId, 'threshold', '50.00', 24);
+        }).rejects.toThrow(); // Should fail authentication
+
+        // Test 4: Alice tries to grant self-disclosure
+        await expect(async () => {
+          await aliceBankAPI.grantDisclosurePermission('1111', aliceUserId, 'exact', '0.00', 24);
+        }).rejects.toThrow(); // Should fail "Cannot grant disclosure to yourself"
+
+        // Test 5: Invalid expiration date (past date)
+        const pastDate = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
+        await expect(async () => {
+          await aliceBankAPI.grantDisclosurePermissionUntil('1111', bobUserId, 'threshold', '50.00', pastDate);
+        }).rejects.toThrow('Expiration date must be in the future');
+
+        logger.info('Disclosure error scenarios test completed');
+      }, 10 * 60_000);
+
+      test('should handle absolute date conversion correctly', async () => {
+        const aliceUserId = 'alice-dates';
+        const bobUserId = 'bob-dates';
+
+        logger.info('Testing absolute date conversion…');
+        const contractAddress = await BankAPI.deploy(providers, logger);
+
+        await BankAPI.createAccount(providers, contractAddress, aliceUserId, '1111', '100.00', logger);
+        await BankAPI.createAccount(providers, contractAddress, bobUserId, '2222', '50.00', logger);
+        
+        const aliceBankAPI = await BankAPI.subscribe(aliceUserId, providers, contractAddress, logger);
+        const bobBankAPI = await BankAPI.subscribe(bobUserId, providers, contractAddress, logger);
+
+        await firstValueFrom(aliceBankAPI.state$.pipe(filter((s) => s.balance === 10000n)));
+
+        // STEP 1: Sync contract time with real time so grant_disclosure_permission uses correct current_timestamp
+        // Contract starts at epoch 1,000,000 seconds. Advance it to align with current real time.
+        const currentRealTimeSeconds = Math.floor(Date.now() / 1000);
+        logger.info(`Syncing contract time: advancing by ${currentRealTimeSeconds} seconds to match real time`);
+        await aliceBankAPI.setContractTime(currentRealTimeSeconds);
+
+        // STEP 2: Now grant permission - the contract will use its current_timestamp (now synced) as reference
+        const exactlyOneDayFromNow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        
+        logger.info(`Granting permission that expires at: ${exactlyOneDayFromNow.toISOString()}`);
+        
+        // Grant permission using absolute date - contract calculates hours from its current_timestamp to this target
+        await aliceBankAPI.grantDisclosurePermissionUntil('1111', bobUserId, 'threshold', '50.00', exactlyOneDayFromNow);
+
+        // Bob should be able to verify immediately (permission is active)
+        const hasThreshold = await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '50.00');
+        expect(hasThreshold).toBe(true);
+
+        // STEP 3: Check that the permission was stored with exact expiration
+        const permissions = await aliceBankAPI.getDisclosurePermissions('1111');
+        expect(permissions).toHaveLength(1);
+        
+        const permission = permissions[0];
+        expect(permission.requesterId).toBe(bobUserId);
+        expect(permission.expiresAt).toBeInstanceOf(Date);
+        
+        // Since we synced contract time perfectly, the timestamps should match exactly
+        logger.info(`Stored expiration: ${permission.expiresAt?.toISOString()}, Expected: ${exactlyOneDayFromNow.toISOString()}`);
+        
+        expect(permission.expiresAt).not.toBe(null);
+        // Contract stores timestamps in seconds, compare in seconds not milliseconds
+        const expectedSeconds = Math.floor(exactlyOneDayFromNow.getTime() / 1000);
+        const actualSeconds = Math.floor(permission.expiresAt!.getTime() / 1000);
+        
+        // Allow small tolerance for blockchain execution time (within 60 seconds)
+        const timeDifferenceSeconds = Math.abs(actualSeconds - expectedSeconds);
+        expect(timeDifferenceSeconds).toBeLessThan(60);
+
+        // STEP 4: Test expiration by advancing contract time past the expiration
+        logger.info('Testing expiration: advancing contract time by 25 hours (past 24-hour expiration)');
+        await aliceBankAPI.setContractTime(currentRealTimeSeconds + 25 * 3600); // 25 hours forward (1 hour past expiration)
+
+        // Bob should no longer be able to verify (permission expired)
+        const hasThresholdAfterExpiry = await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '50.00');
+        expect(hasThresholdAfterExpiry).toBe(false); // Should return false because permission expired
+
+        logger.info('Contract time sync and expiration test completed successfully');
+      }, 10 * 60_000);
+    });
   });
 });

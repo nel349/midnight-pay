@@ -223,7 +223,7 @@ export circuit request_transfer_authorization(user_id: Bytes<32>, recipient_id: 
 }
 
 // Circuit 5: Grant Balance Disclosure Permission (Direct - No Request Needed)
-export circuit grant_disclosure_permission(user_id: Bytes<32>, requester_id: Bytes<32>, pin: Bytes<32>, permission_type: Uint<8>, threshold_amount: Uint<64>, expires_in_hours: Uint<32>): [] {
+export circuit grant_disclosure_permission(user_id: Bytes<32>, requester_id: Bytes<32>, pin: Bytes<32>, permission_type: Uint<8>, threshold_amount: Uint<64>, expires_in_seconds: Uint<32>): [] {
   assert (user_id != requester_id, "Cannot grant disclosure to yourself");
   assert (all_accounts.member(disclose(requester_id)), "Requester account does not exist");
   
@@ -241,8 +241,8 @@ export circuit grant_disclosure_permission(user_id: Bytes<32>, requester_id: Byt
   
   // Calculate expiration timestamp (0 = never expires)
   // Using manual time management: 1 hour = 3600 timestamp units
-  const expires_hours = disclose(expires_in_hours);
-  const expires_at = expires_hours == 0 ? 0 as Uint<32> : (current_timestamp + (expires_hours * 3600)) as Uint<32>;
+  const expires_seconds = disclose(expires_in_seconds);
+  const expires_at = expires_seconds == 0 ? 0 as Uint<32> : (current_timestamp + (expires_seconds)) as Uint<32>;
   
   // Create disclosure permission
   const disclosure_permission = TransferAuthorization {
@@ -266,6 +266,10 @@ export circuit grant_disclosure_permission(user_id: Bytes<32>, requester_id: Byt
   const user_balance = user_balance_mappings.member(user_encrypted) ? 
     user_balance_mappings.lookup(user_encrypted) : 0 as Uint<64>;
   const shared_balance_encrypted = encrypt_balance(user_balance, disclose(shared_key));
+  
+  // Create the mapping from the shared encrypted balance to the actual amount
+  user_balance_mappings.insert(shared_balance_encrypted, user_balance);
+  
   shared_balance_access.insert(disclose(disclosure_id), shared_balance_encrypted);
   
   // Update lookup tables for disclosure permissions
@@ -364,57 +368,6 @@ export circuit approve_transfer_authorization(user_id: Bytes<32>, sender_id: Byt
     created_at: account.created_at
   };
   all_accounts.insert(disclose(user_id), updated_account);
-}
-
-
-// Circuit 7: Verify Balance Threshold (for disclosure queries)
-export circuit verify_balance_threshold(requester_id: Bytes<32>, user_id: Bytes<32>, threshold_amount: Uint<64>): [] {
-  // 1. Check if disclosure permission exists
-  const disclosure_id = persistentHash<Vector<3, Bytes<32>>>([requester_id, user_id, pad(32, "disclosure")]);
-  assert (active_authorizations.member(disclose(disclosure_id)), "No disclosure permission exists");
-  
-  // 2. Get disclosure permission
-  const permission = active_authorizations.lookup(disclose(disclosure_id));
-  
-  // 3. Verify permission type allows threshold checks
-  assert (permission.permission_type == 1 || permission.permission_type == 2, "Permission does not allow balance disclosure");
-  
-  // 4. Check if permission has expired using manual timestamp
-  assert (permission.expires_at == 0 || current_timestamp < permission.expires_at, "Disclosure permission has expired");
-  
-  // 5. For threshold disclosure, verify threshold is within allowed range
-  if (permission.permission_type == 1) {
-    assert (threshold_amount <= permission.max_amount, "Threshold exceeds authorized maximum");
-  }
-  
-  // 6. Get current balance from shared access
-  assert (shared_balance_access.member(disclose(disclosure_id)), "No shared balance access");
-  const shared_encrypted = shared_balance_access.lookup(disclose(disclosure_id));
-  
-  // Note: The actual balance comparison happens in the API layer after decryption
-  // This circuit just validates the permission exists and is valid
-}
-
-// Circuit 8: Get Exact Disclosed Balance (for disclosure queries)
-export circuit get_disclosed_balance(requester_id: Bytes<32>, user_id: Bytes<32>): [] {
-  // 1. Check if disclosure permission exists
-  const disclosure_id = persistentHash<Vector<3, Bytes<32>>>([requester_id, user_id, pad(32, "disclosure")]);
-  assert (active_authorizations.member(disclose(disclosure_id)), "No disclosure permission exists");
-  
-  // 2. Get disclosure permission
-  const permission = active_authorizations.lookup(disclose(disclosure_id));
-  
-  // 3. Verify permission type allows exact balance disclosure
-  assert (permission.permission_type == 2, "Permission does not allow exact balance disclosure");
-  
-  // 4. Check if permission has expired using manual timestamp
-  assert (permission.expires_at == 0 || current_timestamp < permission.expires_at, "Disclosure permission has expired");
-  
-  // 5. Verify shared balance access exists
-  assert (shared_balance_access.member(disclose(disclosure_id)), "No shared balance access");
-  
-  // Note: The actual balance retrieval happens in the API layer after decryption
-  // This circuit just validates the permission exists and allows exact disclosure
 }
 
 // Circuit 9: Send Tokens to Authorized User
@@ -586,12 +539,11 @@ export circuit get_token_balance(user_id: Bytes<32>, pin: Bytes<32>): [] {
   all_accounts.insert(disclose(user_id), updated_account);
 }
 
-// Circuit 12: Advance Timestamp (For Time Management)
-export circuit advance_timestamp(hours: Uint<32>): [] {
-  // Advance the manual timestamp by specified hours
+// Circuit 12: Set timestamp
+export circuit set_timestamp(timestamp: Uint<32>): [] {
+  // Set the manual timestamp to the specified value
   // In production, this could be called periodically or timestamp could sync with block time
-  const hours_disclosed = disclose(hours);
-  current_timestamp = (current_timestamp + (hours_disclosed * 3600)) as Uint<32>;
+  current_timestamp = disclose(timestamp);
 }
 
 // Circuit 13: Verify Account Status (Token-Based)
