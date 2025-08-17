@@ -32,6 +32,7 @@ import {
 import { utils, type BankAPI } from '@midnight-bank/bank-api';
 import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
 import { ThemedButton } from './ThemedButton';
+import { usePinSession } from '../contexts/PinSessionContext';
 
 interface AuthorizationPanelProps {
   bankAPI: BankAPI;
@@ -49,6 +50,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   onError,
   onSuccess
 }) => {
+  const { getPin } = usePinSession();
   const [loading, setLoading] = useState(false);
   const [recipientUserId, setRecipientUserId] = useState('');
   const [senderUserId, setSenderUserId] = useState('');
@@ -68,11 +70,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = prompt('Enter your PIN to request transfer authorization:') ?? '';
-      if (!pinInput) {
-        setLoading(false);
-        return;
-      }
+      const pinInput = await getPin('Enter your PIN to request transfer authorization');
 
       await bankAPI.requestTransferAuthorization(pinInput, recipientUserId.trim());
       
@@ -92,11 +90,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = prompt('Enter your PIN to approve transfer authorization:') ?? '';
-      if (!pinInput) {
-        setLoading(false);
-        return;
-      }
+      const pinInput = await getPin('Enter your PIN to approve transfer authorization');
 
       await bankAPI.approveTransferAuthorization(pinInput, senderUserId.trim(), maxAmount);
       
@@ -117,11 +111,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = prompt('Enter your PIN to send authorized transfer:') ?? '';
-      if (!pinInput) {
-        setLoading(false);
-        return;
-      }
+      const pinInput = await getPin('Enter your PIN to send authorized transfer');
 
       await bankAPI.sendToAuthorizedUser(pinInput, recipientUserId.trim(), transferAmount);
       

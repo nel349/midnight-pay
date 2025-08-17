@@ -4,6 +4,7 @@ import { Refresh, Notifications } from '@mui/icons-material';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
 import { ThemedButton } from './ThemedButton';
+import { usePinSession } from '../contexts/PinSessionContext';
 
 interface AuthorizationNotificationsProps {
   bankAPI: BankAPI | null;
@@ -16,6 +17,7 @@ export function AuthorizationNotifications({
   onError, 
   onSuccess 
 }: AuthorizationNotificationsProps) {
+  const { getPin } = usePinSession();
   const [processingActions, setProcessingActions] = useState<Set<string>>(new Set());
   
   const {
@@ -48,8 +50,7 @@ export function AuthorizationNotifications({
     const maxAmount = prompt('Enter the maximum amount they can send you (e.g., 500.00):');
     if (!maxAmount || !maxAmount.trim()) return;
     
-    const pin = prompt('Enter your PIN to approve authorization:');
-    if (!pin) return;
+    const pin = await getPin('Enter your PIN to approve authorization');
     
     const actionKey = `approve-${senderUserId}`;
     setProcessing(actionKey, true);
@@ -68,8 +69,7 @@ export function AuthorizationNotifications({
   const handleClaimTransfer = async (senderUserId: string) => {
     if (!bankAPI) return;
     
-    const pin = prompt('Enter your PIN to claim transfer:');
-    if (!pin) return;
+    const pin = await getPin('Enter your PIN to claim transfer');
     
     const actionKey = `claim-${senderUserId}`;
     setProcessing(actionKey, true);

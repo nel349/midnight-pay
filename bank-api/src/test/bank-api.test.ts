@@ -542,8 +542,9 @@ describe('BankAPI', () => {
         await firstValueFrom(bobBankAPI.state$.pipe(filter((s) => s.balance === 5000n)));
 
         // Test 1: Bob tries to verify Alice's balance without permission
-        const hasThresholdWithoutPermission = await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '50.00');
-        expect(hasThresholdWithoutPermission).toBe(false); // Should return false when no permission exists
+        await expect(async () => {
+          await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '50.00');
+        }).rejects.toThrow(/Target user has no recipient authorizations|No disclosure permission found/); // Should throw error when no permission exists
 
         // Test 2: Bob tries to get Alice's exact balance without permission
         await expect(async () => {
@@ -627,8 +628,9 @@ describe('BankAPI', () => {
         await aliceBankAPI.setContractTime(currentRealTimeSeconds + 25 * 3600); // 25 hours forward (1 hour past expiration)
 
         // Bob should no longer be able to verify (permission expired)
-        const hasThresholdAfterExpiry = await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '50.00');
-        expect(hasThresholdAfterExpiry).toBe(false); // Should return false because permission expired
+        await expect(async () => {
+          await bobBankAPI.verifyBalanceThreshold('2222', aliceUserId, '50.00');
+        }).rejects.toThrow(/Disclosure permission has expired/); // Should throw error because permission expired
 
         logger.info('Contract time sync and expiration test completed successfully');
       }, 10 * 60_000);

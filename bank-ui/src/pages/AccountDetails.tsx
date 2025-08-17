@@ -8,6 +8,7 @@ import { touchAccount } from '../utils/AccountsLocalState';
 import { AuthorizationPanel } from '../components/AuthorizationPanel';
 import { DisclosurePanel } from '../components/DisclosurePanel';
 import { AuthorizationNotifications } from '../components/AuthorizationNotifications';
+import { usePinSession } from '../contexts/PinSessionContext';
 import { ErrorAlert } from '../components/ErrorAlert';
 import { 
   ThemedButton, 
@@ -25,6 +26,7 @@ export const AccountDetails: React.FC = () => {
   const navigate = useNavigate();
   const { providers, isConnected } = useBankWallet();
   const { addAccount } = useDeployedAccountContext();
+  const { getPin } = usePinSession();
   
   const [bankAPI, setBankAPI] = useState<BankAPI | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,11 +114,7 @@ export const AccountDetails: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      const pinInput = prompt('Enter your PIN to reveal balance:') ?? '';
-      if (!pinInput) { 
-        setLoading(false); 
-        return; 
-      }
+      const pinInput = await getPin('Enter your PIN to reveal balance');
       
       await bankAPI.getTokenBalance(pinInput);
       
@@ -135,8 +133,7 @@ export const AccountDetails: React.FC = () => {
   const handleDeposit = async () => {
     if (!bankAPI) return;
     try {
-      const pinInput = prompt('Enter your PIN:') ?? '';
-      if (!pinInput) return;
+      const pinInput = await getPin('Enter your PIN to deposit funds');
       const amountInput = prompt('Enter deposit amount:') ?? '';
       if (!amountInput) return;
       
@@ -152,8 +149,7 @@ export const AccountDetails: React.FC = () => {
   const handleWithdraw = async () => {
     if (!bankAPI) return;
     try {
-      const pinInput = prompt('Enter your PIN:') ?? '';
-      if (!pinInput) return;
+      const pinInput = await getPin('Enter your PIN to withdraw funds');
       const amountInput = prompt('Enter withdrawal amount:') ?? '';
       if (!amountInput) return;
       

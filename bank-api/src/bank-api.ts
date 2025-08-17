@@ -1230,6 +1230,9 @@ export class BankAPI implements DeployedBankAPI {
         const thresholdAmount = BigInt(auth.max_amount);
         const expiresAtTimestamp = Number(auth.expires_at);
         
+        // Debug logging to see what permission types we're getting
+        console.log(`DEBUG: Permission for ${requesterId} - raw type: ${permissionType}, interpreted as: ${permissionType === 1 ? 'threshold' : 'exact'}`);
+        
         // Convert timestamp to Date (0 = never expires)
         // Contract stores expires_at as seconds, convert to milliseconds for JavaScript Date
         const expiresAt = expiresAtTimestamp === 0 ? null : new Date(expiresAtTimestamp * 1000);
@@ -1258,14 +1261,16 @@ export class BankAPI implements DeployedBankAPI {
     const expiresAt = new Date(now.getTime() + 1000); // 1 second from now
     
     try {
-      // Grant a "dummy" permission that expires immediately to effectively revoke
+      // Since we now have unique IDs for different permission types, we need to revoke both
+      // Grant "dummy" permissions that expire immediately for both threshold and exact types
       await this.grantDisclosurePermissionUntil(pin, requesterId, 'threshold', '0', expiresAt);
+      await this.grantDisclosurePermissionUntil(pin, requesterId, 'exact', '0', expiresAt);
       
       this.logger?.trace({
         disclosurePermissionRevoked: {
           grantor: this.userId,
           requester: requesterId,
-          method: 'immediate_expiry'
+          method: 'immediate_expiry_both_types'
         }
       });
     } catch (error) {

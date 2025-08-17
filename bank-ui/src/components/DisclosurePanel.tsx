@@ -39,6 +39,7 @@ import {
 } from '@mui/icons-material';
 import { utils, type BankAPI } from '@midnight-bank/bank-api';
 import { ThemedButton } from './ThemedButton';
+import { usePinSession } from '../contexts/PinSessionContext';
 
 interface DisclosurePanelProps {
   bankAPI: BankAPI;
@@ -62,6 +63,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
   onError,
   onSuccess
 }) => {
+  const { getPin } = usePinSession();
   const [loading, setLoading] = useState(false);
   const [permissions, setPermissions] = useState<DisclosurePermission[]>([]);
   const [tabValue, setTabValue] = useState(0);
@@ -99,8 +101,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
 
   const loadPermissions = async () => {
     try {
-      const pinInput = prompt('Enter your PIN to view disclosure permissions:') ?? '';
-      if (!pinInput) return;
+      const pinInput = await getPin('Enter your PIN to view disclosure permissions');
       
       const perms = await bankAPI.getDisclosurePermissions(pinInput);
       setPermissions(perms);
@@ -115,11 +116,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = prompt('Enter your PIN to grant disclosure permission:') ?? '';
-      if (!pinInput) {
-        setLoading(false);
-        return;
-      }
+      const pinInput = await getPin('Enter your PIN to grant disclosure permission');
 
       if (useAbsoluteDate && expirationDate) {
         // Use absolute date API
@@ -170,11 +167,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
       setVerifyError(null);
       setBalanceError(null);
       
-      const pinInput = prompt('Enter your PIN to verify balance:') ?? '';
-      if (!pinInput) {
-        setLoading(false);
-        return;
-      }
+      const pinInput = await getPin('Enter your PIN to verify balance');
 
       const result = await bankAPI.verifyBalanceThreshold(pinInput, verifyUserId.trim(), verifyAmount);
       setVerificationResult(result);
@@ -202,11 +195,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
       setVerifyError(null);
       setBalanceError(null);
       
-      const pinInput = prompt('Enter your PIN to get disclosed balance:') ?? '';
-      if (!pinInput) {
-        setLoading(false);
-        return;
-      }
+      const pinInput = await getPin('Enter your PIN to get disclosed balance');
 
       const balance = await bankAPI.getDisclosedBalance(pinInput, verifyUserId.trim());
       setDisclosedBalance(balance);
@@ -229,11 +218,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = prompt(`Enter your PIN to revoke ${requesterId}'s permission:`) ?? '';
-      if (!pinInput) {
-        setLoading(false);
-        return;
-      }
+      const pinInput = await getPin(`Enter your PIN to revoke ${requesterId}'s permission`);
 
       await bankAPI.revokeDisclosurePermission(pinInput, requesterId);
       onSuccess(`Permission revoked for ${requesterId}`);
@@ -314,7 +299,11 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
                 </Typography>
                 <List sx={{ bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
                   {permissions.map((permission, index) => (
-                    <ListItem key={index} divider={index < permissions.length - 1}>
+                    <ListItem 
+                      key={index} 
+                      divider={index < permissions.length - 1}
+                      sx={{ display: 'flex', alignItems: 'flex-start', pr: 8 }}
+                    >
                       <ListItemText
                         primary={
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -325,6 +314,13 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
                               label={permission.permissionType === 'threshold' ? 'Threshold' : 'Exact Balance'}
                               size="small"
                               color={permission.permissionType === 'threshold' ? 'primary' : 'secondary'}
+                              sx={{
+                                height: '24px',
+                                '& .MuiChip-label': {
+                                  padding: '0 8px',
+                                  fontSize: '0.75rem',
+                                }
+                              }}
                             />
                           </Box>
                         }
@@ -350,7 +346,13 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
                         size="small"
                         onClick={() => handleRevokePermission(permission.requesterId)}
                         disabled={loading}
-                        sx={{ color: 'error.main' }}
+                        sx={{ 
+                          color: 'error.main',
+                          position: 'absolute',
+                          right: 16,
+                          top: '50%',
+                          transform: 'translateY(-50%)'
+                        }}
                       >
                         <Delete />
                       </IconButton>

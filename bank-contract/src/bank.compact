@@ -235,9 +235,10 @@ export circuit grant_disclosure_permission(user_id: Bytes<32>, requester_id: Byt
   // Validate permission type
   assert (permission_type == 1 || permission_type == 2, "Invalid permission type (1=threshold, 2=exact)");
   
-  // Generate shared encryption key and disclosure_id
+  // Generate shared encryption key and disclosure_id (include permission_type for uniqueness)
   const shared_key = persistentHash<Vector<3, Bytes<32>>>([user_id, requester_id, persistentHash<Bytes<32>>(pin)]);
-  const disclosure_id = persistentHash<Vector<3, Bytes<32>>>([requester_id, user_id, pad(32, "disclosure")]);
+  const permission_type_pad = permission_type == 1 ? pad(32, "threshold") : pad(32, "exact");
+  const disclosure_id = persistentHash<Vector<4, Bytes<32>>>([requester_id, user_id, pad(32, "disclosure"), permission_type_pad]);
   
   // Calculate expiration timestamp (0 = never expires)
   // Using manual time management: 1 hour = 3600 timestamp units
