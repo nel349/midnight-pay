@@ -73,6 +73,9 @@ export ledger shared_balance_access: Map<Bytes<32>, Bytes<32>>;             // a
 export ledger total_token_supply: Uint<64>;                                 // Total bank tokens in circulation
 export ledger token_mint_authority: Bytes<32>;                              // Authority that can mint tokens (contract itself)
 
+// Manual time management for expiration (since Midnight doesn't expose block time directly)
+export ledger current_timestamp: Uint<32>;                                  // Manual timestamp counter
+
 // Private data (user-specific, stored per user)
 witness user_pin_hash(user_id: Bytes<32>): Bytes<32>;
 witness user_balance(user_id: Bytes<32>): Uint<64>;
@@ -87,6 +90,9 @@ constructor() {
   bank_token_id = persistentHash<Bytes<32>>(pad(32, "midnight_bank_token_v1"));
   token_mint_authority = persistentHash<Bytes<32>>(pad(32, "bank_contract_authority"));
   total_token_supply = 0 as Uint<64>;
+  
+  // Initialize manual timestamp system
+  current_timestamp = 1000000 as Uint<32>; // Starting timestamp - in production would sync with block time
 }
 
 // Circuit 1: Create Account in Shared Bank with Token Deposit
@@ -233,8 +239,10 @@ export circuit grant_disclosure_permission(user_id: Bytes<32>, requester_id: Byt
   const shared_key = persistentHash<Vector<3, Bytes<32>>>([user_id, requester_id, persistentHash<Bytes<32>>(pin)]);
   const disclosure_id = persistentHash<Vector<3, Bytes<32>>>([requester_id, user_id, pad(32, "disclosure")]);
   
-  // Calculate expiration (0 = never expires)
-  const expires_at = expires_in_hours == 0 ? 0 as Uint<32> : (1 + expires_in_hours) as Uint<32>; // Would use block timestamp in real implementation
+  // Calculate expiration timestamp (0 = never expires)
+  // Using manual time management: 1 hour = 3600 timestamp units
+  const expires_hours = disclose(expires_in_hours);
+  const expires_at = expires_hours == 0 ? 0 as Uint<32> : (current_timestamp + (expires_hours * 3600)) as Uint<32>;
   
   // Create disclosure permission
   const disclosure_permission = TransferAuthorization {
@@ -371,8 +379,8 @@ export circuit verify_balance_threshold(requester_id: Bytes<32>, user_id: Bytes<
   // 3. Verify permission type allows threshold checks
   assert (permission.permission_type == 1 || permission.permission_type == 2, "Permission does not allow balance disclosure");
   
-  // 4. Check if permission has expired (simplified - would use block timestamp in real implementation)
-  assert (permission.expires_at == 0 || 1 < permission.expires_at, "Disclosure permission has expired");
+  // 4. Check if permission has expired using manual timestamp
+  assert (permission.expires_at == 0 || current_timestamp < permission.expires_at, "Disclosure permission has expired");
   
   // 5. For threshold disclosure, verify threshold is within allowed range
   if (permission.permission_type == 1) {
@@ -399,8 +407,8 @@ export circuit get_disclosed_balance(requester_id: Bytes<32>, user_id: Bytes<32>
   // 3. Verify permission type allows exact balance disclosure
   assert (permission.permission_type == 2, "Permission does not allow exact balance disclosure");
   
-  // 4. Check if permission has expired
-  assert (permission.expires_at == 0 || 1 < permission.expires_at, "Disclosure permission has expired");
+  // 4. Check if permission has expired using manual timestamp
+  assert (permission.expires_at == 0 || current_timestamp < permission.expires_at, "Disclosure permission has expired");
   
   // 5. Verify shared balance access exists
   assert (shared_balance_access.member(disclose(disclosure_id)), "No shared balance access");
@@ -578,7 +586,15 @@ export circuit get_token_balance(user_id: Bytes<32>, pin: Bytes<32>): [] {
   all_accounts.insert(disclose(user_id), updated_account);
 }
 
-// Circuit 12: Verify Account Status (Token-Based)
+// Circuit 12: Advance Timestamp (For Time Management)
+export circuit advance_timestamp(hours: Uint<32>): [] {
+  // Advance the manual timestamp by specified hours
+  // In production, this could be called periodically or timestamp could sync with block time
+  const hours_disclosed = disclose(hours);
+  current_timestamp = (current_timestamp + (hours_disclosed * 3600)) as Uint<32>;
+}
+
+// Circuit 13: Verify Account Status (Token-Based)
 export circuit verify_account_status(user_id: Bytes<32>, pin: Bytes<32>): [] {
   assert (all_accounts.member(disclose(user_id)), "Account does not exist");
   const account = all_accounts.lookup(disclose(user_id));

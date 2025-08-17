@@ -345,6 +345,24 @@ export class BankTestSetup {
     }
   }
 
+  // Test helper: Advance time by hours (for testing expiration)
+  advanceTimeByHours(hours: number): void {
+    console.log(`⏰ Advancing time by ${hours} hours`);
+    
+    const currentTime = this.getCurrentTimestamp();
+    
+    const results = this.contract.impureCircuits.advance_timestamp(this.turnContext, BigInt(hours));
+    this.updateStateAndGetLedger(results);
+    
+    const newTime = this.getCurrentTimestamp();
+    console.log(`⏰ Time advanced from ${currentTime} to ${newTime} (${hours} hours = ${hours * 3600} timestamp units)`);
+  }
+
+  // Test helper: Get current timestamp
+  getCurrentTimestamp(): number {
+    return Number(this.getLedgerState().current_timestamp);
+  }
+
   // Getter methods for state inspection
   getLedgerState(): Ledger {
     return ledger(this.turnContext.transactionContext.state);

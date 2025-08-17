@@ -964,5 +964,112 @@ describe('Midnight Shared Bank Contract Tests', () => {
       
       bank.printAllUsersOverview();
     });
+
+    test('should handle time-based expiration correctly', () => {
+      console.log('\n⏰ Testing Time-Based Expiration System');
+      
+      // Check initial timestamp
+      const initialTime = bank.getCurrentTimestamp();
+      console.log(`Starting timestamp: ${initialTime}`);
+      
+      // Grant permission that expires in 2 hours
+      bank.grantDisclosurePermission('alice', 'bob', '1111', 1, 100n, 2); // Expires in 2 hours
+      
+      // Bob should be able to access immediately
+      expect(() => {
+        bank.verifyBalanceThreshold('bob', 'alice', 50n);
+      }).not.toThrow();
+      
+      // Advance time by 1 hour - should still work
+      bank.advanceTimeByHours(1);
+      console.log(`After 1 hour: ${bank.getCurrentTimestamp()}`);
+      
+      expect(() => {
+        bank.verifyBalanceThreshold('bob', 'alice', 50n);
+      }).not.toThrow();
+      
+      // Advance time by 2 more hours (total 3 hours) - should expire
+      bank.advanceTimeByHours(2);
+      console.log(`After 3 hours total: ${bank.getCurrentTimestamp()}`);
+      
+      expect(() => {
+        bank.verifyBalanceThreshold('bob', 'alice', 50n);
+      }).toThrow(); // Should fail "Disclosure permission has expired"
+      
+      console.log('✅ Time-based expiration working correctly!');
+    });
+
+    test('should handle never-expiring permissions', () => {
+      console.log('\n♾️ Testing Never-Expiring Permissions');
+      
+      // Grant permission that never expires (expires_in_hours = 0)
+      bank.grantDisclosurePermission('bob', 'charlie', '2222', 2, 0n, 0); // Never expires
+      
+      // Should work immediately
+      const balance1 = bank.getDisclosedBalance('charlie', 'bob');
+      expect(balance1).toBe(150n);
+      
+      // Advance time by 100 hours - should still work
+      bank.advanceTimeByHours(100);
+      console.log(`After 100 hours: ${bank.getCurrentTimestamp()}`);
+      
+      const balance2 = bank.getDisclosedBalance('charlie', 'bob');
+      expect(balance2).toBe(150n);
+      
+      // Advance time by 1000 hours - should still work
+      bank.advanceTimeByHours(1000);
+      console.log(`After 1100 hours total: ${bank.getCurrentTimestamp()}`);
+      
+      const balance3 = bank.getDisclosedBalance('charlie', 'bob');
+      expect(balance3).toBe(150n);
+      
+      console.log('✅ Never-expiring permissions work indefinitely!');
+    });
+
+    test('should handle exact disclosure expiration separately from threshold', () => {
+      console.log('\n🔄 Testing Different Permission Types with Different Expirations');
+      
+      // Alice grants two different permissions to Bob:
+      // 1. Threshold disclosure expires in 1 hour
+      // 2. Exact disclosure expires in 3 hours
+      bank.grantDisclosurePermission('alice', 'bob', '1111', 1, 75n, 1);  // Threshold, 1h
+      
+      // Create second account for different permission
+      bank.createAccount('david', '4444', 300n);
+      bank.grantDisclosurePermission('david', 'bob', '4444', 2, 0n, 3);   // Exact, 3h
+      
+      // Both should work initially
+      expect(() => {
+        bank.verifyBalanceThreshold('bob', 'alice', 50n);
+      }).not.toThrow();
+      
+      expect(() => {
+        bank.getDisclosedBalance('bob', 'david');
+      }).not.toThrow();
+      
+      // Advance 2 hours - threshold should expire, exact should still work
+      bank.advanceTimeByHours(2);
+      
+      expect(() => {
+        bank.verifyBalanceThreshold('bob', 'alice', 50n);
+      }).toThrow(); // Threshold expired
+      
+      expect(() => {
+        bank.getDisclosedBalance('bob', 'david');
+      }).not.toThrow(); // Exact still valid
+      
+      // Advance 2 more hours (4 total) - both should be expired
+      bank.advanceTimeByHours(2);
+      
+      expect(() => {
+        bank.verifyBalanceThreshold('bob', 'alice', 50n);
+      }).toThrow(); // Still expired
+      
+      expect(() => {
+        bank.getDisclosedBalance('bob', 'david');
+      }).toThrow(); // Now expired too
+      
+      console.log('✅ Different permission types expire independently!');
+    });
   });
 });
