@@ -6,6 +6,7 @@ import { useBankWallet } from '../components/BankWallet';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
 import { touchAccount } from '../utils/AccountsLocalState';
 import { AuthorizationPanel } from '../components/AuthorizationPanel';
+import { DisclosurePanel } from '../components/DisclosurePanel';
 import { AuthorizationNotifications } from '../components/AuthorizationNotifications';
 import { ErrorAlert } from '../components/ErrorAlert';
 import { 
@@ -229,6 +230,14 @@ export const AccountDetails: React.FC = () => {
         </Box>
         
         <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
+
+          {/* Global Error Banner - Always Visible */}
+          <ErrorAlert 
+            error={error}
+            onClose={() => setError(null)}
+            showDetails={true}
+            sx={{ mb: error ? theme.spacing[4] : 0 }}
+          />
 
           {/* Main Content Grid */}
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: theme.spacing[6] }}>
@@ -533,6 +542,17 @@ export const AccountDetails: React.FC = () => {
                   onSuccess={setSuccess}
                 />
               )}
+
+              {/* Balance Disclosure System */}
+              {bankAPI && (
+                <DisclosurePanel 
+                  bankAPI={bankAPI}
+                  isConnected={isConnected}
+                  userId={userId}
+                  onError={setError}
+                  onSuccess={setSuccess}
+                />
+              )}
             </Box>
           </Box>
 
@@ -570,12 +590,6 @@ export const AccountDetails: React.FC = () => {
               </ThemedCard>
             </Box>
           )}
-
-          <ErrorAlert 
-            error={error}
-            onClose={() => setError(null)}
-            showDetails={true}
-          />
         </Box>
       </Box>
     </GradientBackground>

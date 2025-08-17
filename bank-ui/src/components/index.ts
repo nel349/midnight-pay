@@ -11,3 +11,5 @@ export { TopBar } from './TopBar';
 
 // Existing components
 export { useBankWallet } from './BankWallet';
+export { AuthorizationPanel } from './AuthorizationPanel';
+export { DisclosurePanel } from './DisclosurePanel';

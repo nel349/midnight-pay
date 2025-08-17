@@ -967,7 +967,7 @@ export class BankAPI implements DeployedBankAPI {
       // Find the disclosure permission in user_as_recipient_auths for the target user
       if (!l.user_as_recipient_auths.member(targetIdBytes)) {
         this.logger?.warn({ disclosureDebug: { message: 'Target user has no recipient authorizations', target: targetUserId } });
-        return false;
+        throw new Error('Target user has no recipient authorizations');
       }
       
       const authVector = l.user_as_recipient_auths.lookup(targetIdBytes) as Uint8Array[];
@@ -994,7 +994,7 @@ export class BankAPI implements DeployedBankAPI {
           
           if (isExpired) {
             this.logger?.info({ disclosureExpired: { requester: this.userId, target: targetUserId, expiresAt, currentTimestamp } });
-            return false; // Permission expired, return false instead of throwing
+            throw new Error(`Disclosure permission has expired. Please request a new permission from ${targetUserId}.`);
           }
           
           // For threshold permissions, validate that the requested threshold doesn't exceed the authorized maximum
@@ -1013,7 +1013,7 @@ export class BankAPI implements DeployedBankAPI {
       if (!foundAuthId) {
         this.logger?.warn({ disclosureDebug: { message: 'No disclosure permission found', requester: normalizedRequesterId, target: targetUserId } });
         console.log(`DEBUG: No disclosure permission found for requester ${normalizedRequesterId} to target ${targetUserId}`);
-        return false;
+        throw new Error(`No disclosure permission found. ${targetUserId} has not granted you access to verify their balance.`);
       }
       
       console.log(`DEBUG: Found disclosure auth ID:`, Array.from(foundAuthId).map(b => b.toString(16).padStart(2, '0')).join(''));
@@ -1025,7 +1025,7 @@ export class BankAPI implements DeployedBankAPI {
         console.log(`DEBUG: Available shared_balance_access keys:`, Array.from(l.shared_balance_access).map(([key, _]) => 
           Array.from(key).map(b => b.toString(16).padStart(2, '0')).join('')
         ));
-        return false;
+        throw new Error('Disclosure permission exists but balance access is not properly configured.');
       }
       
       // Get the encrypted balance from shared access
