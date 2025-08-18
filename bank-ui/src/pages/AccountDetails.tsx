@@ -114,7 +114,7 @@ export const AccountDetails: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      const pinInput = await getPin('Enter your PIN to reveal balance');
+      const pinInput = await getPin('Enter your PIN to reveal balance', bankAPI);
       
       await bankAPI.getTokenBalance(pinInput);
       
@@ -133,7 +133,7 @@ export const AccountDetails: React.FC = () => {
   const handleDeposit = async () => {
     if (!bankAPI) return;
     try {
-      const pinInput = await getPin('Enter your PIN to deposit funds');
+      const pinInput = await getPin('Enter your PIN to deposit funds', bankAPI);
       const amountInput = prompt('Enter deposit amount:') ?? '';
       if (!amountInput) return;
       
@@ -149,7 +149,7 @@ export const AccountDetails: React.FC = () => {
   const handleWithdraw = async () => {
     if (!bankAPI) return;
     try {
-      const pinInput = await getPin('Enter your PIN to withdraw funds');
+      const pinInput = await getPin('Enter your PIN to withdraw funds', bankAPI);
       const amountInput = prompt('Enter withdrawal amount:') ?? '';
       if (!amountInput) return;
       
@@ -500,16 +500,7 @@ export const AccountDetails: React.FC = () => {
                         sx={{ minWidth: 100 }}
                       >
                         Withdraw
-                      </ThemedButton>
-                      
-                      <ThemedButton
-                        variant="outlined"
-                        onClick={() => alert('Verify functionality not implemented yet')}
-                        disabled={loading}
-                        sx={{ minWidth: 120 }}
-                      >
-                        Verify Account
-                      </ThemedButton>
+                      </ThemedButton>           
                     </Box>
                   </Box>
                 </ThemedCardContent>

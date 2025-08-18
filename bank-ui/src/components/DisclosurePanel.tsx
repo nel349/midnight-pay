@@ -101,7 +101,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
 
   const loadPermissions = async () => {
     try {
-      const pinInput = await getPin('Enter your PIN to view disclosure permissions');
+      const pinInput = await getPin('Enter your PIN to view disclosure permissions', bankAPI);
       
       const perms = await bankAPI.getDisclosurePermissions(pinInput);
       setPermissions(perms);
@@ -116,7 +116,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = await getPin('Enter your PIN to grant disclosure permission');
+      const pinInput = await getPin('Enter your PIN to grant disclosure permission', bankAPI);
 
       if (useAbsoluteDate && expirationDate) {
         // Use absolute date API
@@ -167,7 +167,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
       setVerifyError(null);
       setBalanceError(null);
       
-      const pinInput = await getPin('Enter your PIN to verify balance');
+      const pinInput = await getPin('Enter your PIN to verify balance', bankAPI);
 
       const result = await bankAPI.verifyBalanceThreshold(pinInput, verifyUserId.trim(), verifyAmount);
       setVerificationResult(result);
@@ -195,7 +195,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
       setVerifyError(null);
       setBalanceError(null);
       
-      const pinInput = await getPin('Enter your PIN to get disclosed balance');
+      const pinInput = await getPin('Enter your PIN to get disclosed balance', bankAPI);
 
       const balance = await bankAPI.getDisclosedBalance(pinInput, verifyUserId.trim());
       setDisclosedBalance(balance);
@@ -218,7 +218,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = await getPin(`Enter your PIN to revoke ${requesterId}'s permission`);
+      const pinInput = await getPin(`Enter your PIN to revoke ${requesterId}'s permission`, bankAPI);
 
       await bankAPI.revokeDisclosurePermission(pinInput, requesterId);
       onSuccess(`Permission revoked for ${requesterId}`);

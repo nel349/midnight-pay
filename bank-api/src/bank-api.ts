@@ -593,6 +593,11 @@ export class BankAPI implements DeployedBankAPI {
         const auth = l.active_authorizations.lookup(authId);
         const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
         if (senderId !== normalizedUserId) continue;
+        
+        // Only include transfer permissions (permission_type == 0), not disclosure permissions
+        const permissionType = Number(auth.permission_type);
+        if (permissionType !== 0) continue;
+        
         const max = BigInt(auth.max_amount);
         const current = recipientToMax.get(recipientId) ?? 0n;
         if (max > current) recipientToMax.set(recipientId, max);
@@ -622,6 +627,11 @@ export class BankAPI implements DeployedBankAPI {
       if (!authId || isZeroBytes(authId)) continue;
       if (!l.active_authorizations.member(authId)) continue;
       const auth = l.active_authorizations.lookup(authId);
+      
+      // Only include transfer permissions (permission_type == 0), not disclosure permissions
+      const permissionType = Number(auth.permission_type);
+      if (permissionType !== 0) continue;
+      
       const senderId = decoder.decode(auth.sender_id).replace(/\0/g, '');
       const max = BigInt(auth.max_amount);
       const current = senderToMax.get(senderId) ?? 0n;

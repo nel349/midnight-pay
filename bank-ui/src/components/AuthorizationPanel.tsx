@@ -70,7 +70,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = await getPin('Enter your PIN to request transfer authorization');
+      const pinInput = await getPin('Enter your PIN to request transfer authorization', bankAPI);
 
       await bankAPI.requestTransferAuthorization(pinInput, recipientUserId.trim());
       
@@ -90,7 +90,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = await getPin('Enter your PIN to approve transfer authorization');
+      const pinInput = await getPin('Enter your PIN to approve transfer authorization', bankAPI);
 
       await bankAPI.approveTransferAuthorization(pinInput, senderUserId.trim(), maxAmount);
       
@@ -111,7 +111,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
     try {
       setLoading(true);
       
-      const pinInput = await getPin('Enter your PIN to send authorized transfer');
+      const pinInput = await getPin('Enter your PIN to send authorized transfer', bankAPI);
 
       await bankAPI.sendToAuthorizedUser(pinInput, recipientUserId.trim(), transferAmount);
       

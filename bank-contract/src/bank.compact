@@ -381,6 +381,7 @@ export circuit send_to_authorized_user(user_id: Bytes<32>, recipient_id: Bytes<3
   assert (active_authorizations.member(disclose(auth_id)), "No authorization - recipient must approve first");
   
   const auth = active_authorizations.lookup(disclose(auth_id));
+  assert (auth.permission_type == 0, "Authorization is not for transfers - only for balance disclosure");
   assert (amount <= auth.max_amount, "Amount exceeds authorized limit");
   
   // 2. Authenticate sender
@@ -462,6 +463,7 @@ export circuit claim_authorized_transfer(user_id: Bytes<32>, sender_id: Bytes<32
   
   // 4. Reconstruct shared encryption key and decrypt amount
   const auth = active_authorizations.lookup(disclose(auth_id));
+  assert (auth.permission_type == 0, "Authorization is not for transfers - only for balance disclosure");
   const shared_key = persistentHash<Vector<3, Bytes<32>>>([user_id, sender_id, persistentHash<Bytes<32>>(pin)]);
   assert (auth.shared_encryption_key == disclose(shared_key), "Invalid encryption key");
   

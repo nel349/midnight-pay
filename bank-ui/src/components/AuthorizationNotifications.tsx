@@ -50,7 +50,7 @@ export function AuthorizationNotifications({
     const maxAmount = prompt('Enter the maximum amount they can send you (e.g., 500.00):');
     if (!maxAmount || !maxAmount.trim()) return;
     
-    const pin = await getPin('Enter your PIN to approve authorization');
+    const pin = await getPin('Enter your PIN to approve authorization', bankAPI);
     
     const actionKey = `approve-${senderUserId}`;
     setProcessing(actionKey, true);
@@ -69,7 +69,7 @@ export function AuthorizationNotifications({
   const handleClaimTransfer = async (senderUserId: string) => {
     if (!bankAPI) return;
     
-    const pin = await getPin('Enter your PIN to claim transfer');
+    const pin = await getPin('Enter your PIN to claim transfer', bankAPI);
     
     const actionKey = `claim-${senderUserId}`;
     setProcessing(actionKey, true);
