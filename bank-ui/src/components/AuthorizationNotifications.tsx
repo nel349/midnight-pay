@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { 
   Box, 
-  Card, 
-  CardContent, 
   Typography, 
   Button, 
   Chip, 
@@ -17,10 +15,11 @@ import {
 import { Refresh, Notifications } from '@mui/icons-material';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
-import { ThemedButton } from './ThemedButton';
+import { ThemedButton, ThemedCard, ThemedCardContent } from './index';
 import { usePinSession } from '../contexts/PinSessionContext';
 import { useModalTransactionHandler } from '../utils/errorHandler';
 import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
+import { useTheme } from '../theme/ThemeProvider';
 
 interface AuthorizationNotificationsProps {
   bankAPI: BankAPI | null;
@@ -138,13 +137,15 @@ export function AuthorizationNotifications({
     }
   };
 
+  const { theme, mode } = useTheme();
+  
   if (!bankAPI) {
     return (
-      <Card>
-        <CardContent>
+      <ThemedCard sx={{ height: 'fit-content' }}>
+        <ThemedCardContent>
           <Typography color="text.secondary">Connect to bank to see notifications</Typography>
-        </CardContent>
-      </Card>
+        </ThemedCardContent>
+      </ThemedCard>
     );
   }
 
@@ -152,12 +153,34 @@ export function AuthorizationNotifications({
 
   return (
     <>
-    <Card>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Notifications />
-            <Typography variant="h6">
+    <ThemedCard sx={{ height: 'fit-content', minHeight: '350px' }}>
+      <ThemedCardContent>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: theme.spacing[3] }}>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: theme.borderRadius.md,
+              background: mode === 'dark'
+                ? `linear-gradient(135deg, ${theme.colors.secondary[600]}33 0%, ${theme.colors.secondary[500]}33 100%)`
+                : `linear-gradient(135deg, ${theme.colors.secondary[500]}1A 0%, ${theme.colors.secondary[600]}1A 100%)`,
+              mr: theme.spacing[3],
+            }}
+          >
+            <Notifications 
+              sx={{ 
+                fontSize: '1.5rem',
+                color: theme.colors.text.primary,
+              }} 
+            />
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[1], flex: 1 }}>
+            <Typography 
+              variant="h6" 
+              sx={{ 
+                color: theme.colors.text.primary,
+                fontWeight: theme.typography.fontWeight.bold,
+              }}
+            >
               Real-time Notifications
             </Typography>
             {totalNotifications > 0 && (
@@ -165,7 +188,7 @@ export function AuthorizationNotifications({
                 label={totalNotifications} 
                 size="small"
                 sx={{
-                  backgroundColor: '#f44336',
+                  backgroundColor: theme.colors.error[500],
                   color: 'white',
                   fontSize: '0.75rem',
                   height: '24px',
@@ -178,145 +201,228 @@ export function AuthorizationNotifications({
               />
             )}
           </Box>
-          <IconButton onClick={refresh} size="small">
+          <IconButton 
+            onClick={refresh} 
+            size="small"
+            sx={{ color: theme.colors.text.secondary }}
+          >
             <Refresh />
           </IconButton>
         </Box>
 
-        {/* Incoming Authorization Requests */}
-        {hasIncomingRequests && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" gutterBottom>
-              📤 Authorization Requests
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {pendingRequests.map(request => (
-                <Card 
-                  key={`${request.senderUserId}-${request.requestedAt}`} 
-                  sx={{ bgcolor: 'info.lighter', border: '1px solid', borderColor: 'info.light' }}
-                >
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Box>
-                        <Typography variant="body1">
-                          <strong>{request.senderUserId}</strong> wants to send you money
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Requested: {new Date(request.requestedAt * 1000).toLocaleString()}
-                        </Typography>
+        {/* Content Area with flexible height */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[3] }}>
+          {/* Incoming Authorization Requests */}
+          {hasIncomingRequests && (
+            <Box>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: theme.colors.text.secondary, 
+                  fontWeight: theme.typography.fontWeight.medium,
+                  mb: theme.spacing[2],
+                  textTransform: 'uppercase',
+                  fontSize: '0.75rem',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                📤 Authorization Requests
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[2] }}>
+                {pendingRequests.map(request => (
+                  <ThemedCard 
+                    key={`${request.senderUserId}-${request.requestedAt}`} 
+                    sx={{ 
+                      backgroundColor: mode === 'dark' 
+                        ? theme.colors.info[500] + '20'
+                        : theme.colors.info[50], 
+                      border: '1px solid', 
+                      borderColor: theme.colors.info[500] + '40' 
+                    }}
+                  >
+                    <ThemedCardContent sx={{ py: theme.spacing[2] }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box>
+                          <Typography 
+                            variant="body2" 
+                            sx={{ color: theme.colors.text.primary, fontWeight: theme.typography.fontWeight.medium }}
+                          >
+                            <strong>{request.senderUserId}</strong> wants to send you money
+                          </Typography>
+                          <Typography 
+                            variant="caption" 
+                            sx={{ color: theme.colors.text.secondary }}
+                          >
+                            {new Date(request.requestedAt * 1000).toLocaleString()}
+                          </Typography>
+                        </Box>
+                        <ThemedButton
+                          onClick={() => handleApproveRequest(request.senderUserId)}
+                          disabled={isProcessing(`approve-${request.senderUserId}`)}
+                          variant="outlined"
+                          size="small"
+                        >
+                          {isProcessing(`approve-${request.senderUserId}`) 
+                            ? '⏳ Approving...' 
+                            : '✅ Approve'
+                          }
+                        </ThemedButton>
                       </Box>
-                      <ThemedButton
-                        onClick={() => handleApproveRequest(request.senderUserId)}
-                        disabled={isProcessing(`approve-${request.senderUserId}`)}
-                        variant="outlined"
-                        sx={{
-                          marginLeft: 'auto',
-                        }}
-                      >
-                        {isProcessing(`approve-${request.senderUserId}`) 
-                          ? '⏳ Approving...' 
-                          : '✅ Set Limit & Approve'
-                        }
-                      </ThemedButton>
-                    </Box>
-                  </CardContent>
-                </Card>
-              ))}
+                    </ThemedCardContent>
+                  </ThemedCard>
+                ))}
+              </Box>
             </Box>
-          </Box>
-        )}
+          )}
 
-        {/* Outgoing Requests Status */}
-        {hasOutgoingRequests && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" gutterBottom>
-              📨 Your Requests
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {outgoingRequests.map(request => (
-                <Card 
-                  key={`${request.recipientUserId}-${request.requestedAt}`} 
-                  sx={{ bgcolor: 'warning.lighter', border: '1px solid', borderColor: 'warning.light' }}
-                >
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Box>
-                        <Typography variant="body1">
-                          Request to <strong>{request.recipientUserId}</strong>
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Status: {request.status === 0 ? '⏳ Pending' : request.status === 1 ? '✅ Approved' : '❌ Rejected'}
+          {/* Outgoing Requests Status */}
+          {hasOutgoingRequests && (
+            <Box>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: theme.colors.text.secondary, 
+                  fontWeight: theme.typography.fontWeight.medium,
+                  mb: theme.spacing[2],
+                  textTransform: 'uppercase',
+                  fontSize: '0.75rem',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                📨 Your Requests
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[2] }}>
+                {outgoingRequests.map(request => (
+                  <ThemedCard 
+                    key={`${request.recipientUserId}-${request.requestedAt}`} 
+                    sx={{ 
+                      backgroundColor: mode === 'dark' 
+                        ? theme.colors.warning[500] + '20'
+                        : theme.colors.warning[50], 
+                      border: '1px solid', 
+                      borderColor: theme.colors.warning[500] + '40' 
+                    }}
+                  >
+                    <ThemedCardContent sx={{ py: theme.spacing[2] }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box>
+                          <Typography 
+                            variant="body2" 
+                            sx={{ color: theme.colors.text.primary, fontWeight: theme.typography.fontWeight.medium }}
+                          >
+                            Request to <strong>{request.recipientUserId}</strong>
+                          </Typography>
+                          <Typography 
+                            variant="caption" 
+                            sx={{ color: theme.colors.text.secondary }}
+                          >
+                            Status: {request.status === 0 ? '⏳ Pending' : request.status === 1 ? '✅ Approved' : '❌ Rejected'}
+                          </Typography>
+                        </Box>
+                        <Typography 
+                          variant="caption" 
+                          sx={{ color: theme.colors.text.secondary }}
+                        >
+                          {new Date(request.requestedAt * 1000).toLocaleString()}
                         </Typography>
                       </Box>
-                      <Typography variant="body2" color="text.secondary">
-                        {new Date(request.requestedAt * 1000).toLocaleString()}
-                      </Typography>
-                    </Box>
-                  </CardContent>
-                </Card>
-              ))}
+                    </ThemedCardContent>
+                  </ThemedCard>
+                ))}
+              </Box>
             </Box>
-          </Box>
-        )}
+          )}
 
-        {/* Pending Transfers to Claim */}
-        {hasPendingClaims && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" gutterBottom>
-              💰 Pending Transfers
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {pendingClaims.map((claim, idx) => (
-                <Card 
-                  key={`${claim.senderUserId}-${idx}`} 
-                  sx={{ bgcolor: 'success.lighter', border: '1px solid', borderColor: 'success.light' }}
-                >
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Box>
-                        <Typography variant="body1">
-                          <strong>{claim.senderUserId}</strong> sent you an encrypted transfer
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          💎 Amount hidden until claimed (zero-knowledge privacy)
-                        </Typography>
+          {/* Pending Transfers to Claim */}
+          {hasPendingClaims && (
+            <Box>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: theme.colors.text.secondary, 
+                  fontWeight: theme.typography.fontWeight.medium,
+                  mb: theme.spacing[2],
+                  textTransform: 'uppercase',
+                  fontSize: '0.75rem',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                💰 Pending Transfers
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[2] }}>
+                {pendingClaims.map((claim, idx) => (
+                  <ThemedCard 
+                    key={`${claim.senderUserId}-${idx}`} 
+                    sx={{ 
+                      backgroundColor: mode === 'dark' 
+                        ? theme.colors.success[500] + '20'
+                        : theme.colors.success[50], 
+                      border: '1px solid', 
+                      borderColor: theme.colors.success[500] + '40' 
+                    }}
+                  >
+                    <ThemedCardContent sx={{ py: theme.spacing[2] }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box>
+                          <Typography 
+                            variant="body2" 
+                            sx={{ color: theme.colors.text.primary, fontWeight: theme.typography.fontWeight.medium }}
+                          >
+                            <strong>{claim.senderUserId}</strong> sent you an encrypted transfer
+                          </Typography>
+                          <Typography 
+                            variant="caption" 
+                            sx={{ color: theme.colors.text.secondary }}
+                          >
+                            💎 Amount hidden until claimed
+                          </Typography>
+                        </Box>
+                        <ThemedButton
+                          onClick={() => handleClaimTransfer(claim.senderUserId)}
+                          disabled={isProcessing(`claim-${claim.senderUserId}`)}
+                          variant="primary"
+                          size="small"
+                        >
+                          {isProcessing(`claim-${claim.senderUserId}`) 
+                            ? '⏳ Claiming...' 
+                            : '🔓 Claim'
+                          }
+                        </ThemedButton>
                       </Box>
-                      <Button
-                        onClick={() => handleClaimTransfer(claim.senderUserId)}
-                        disabled={isProcessing(`claim-${claim.senderUserId}`)}
-                        variant="contained"
-                        color="secondary"
-                        size="small"
-                      >
-                        {isProcessing(`claim-${claim.senderUserId}`) 
-                          ? '⏳ Claiming...' 
-                          : '🔓 Claim Transfer'
-                        }
-                      </Button>
-                    </Box>
-                  </CardContent>
-                </Card>
-              ))}
+                    </ThemedCardContent>
+                  </ThemedCard>
+                ))}
+              </Box>
             </Box>
-          </Box>
-        )}
+          )}
+        </Box>
       
         {/* No Notifications */}
         {!hasIncomingRequests && !hasOutgoingRequests && !hasPendingClaims && (
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Typography variant="h2" sx={{ mb: 2 }}>
+          <Box sx={{ 
+            textAlign: 'center', 
+            py: theme.spacing[4],
+            color: theme.colors.text.secondary 
+          }}>
+            <Typography variant="h2" sx={{ mb: theme.spacing[2] }}>
               📭
             </Typography>
-            <Typography color="text.secondary" gutterBottom>
+            <Typography 
+              variant="body1"
+              sx={{ color: theme.colors.text.secondary, mb: theme.spacing[1] }}
+            >
               No pending authorization requests or transfers
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Updates automatically every 3 seconds via public ledger
+            <Typography 
+              variant="body2" 
+              sx={{ color: theme.colors.text.secondary }}
+            >
+              Updates automatically via public ledger
             </Typography>
           </Box>
         )}
-      </CardContent>
-    </Card>
+      </ThemedCardContent>
+    </ThemedCard>
 
     {/* Approval Dialog */}
     <Dialog open={showApprovalDialog} onClose={() => {

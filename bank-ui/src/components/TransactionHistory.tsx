@@ -40,6 +40,7 @@ import {
 import { useTheme } from '../theme/ThemeProvider';
 import { usePinSession } from '../contexts/PinSessionContext';
 import type { BankAPI } from '@midnight-bank/bank-api';
+import { ThemedButton } from './ThemedButton';
 
 // Define the transaction type locally since it's not exported
 type DetailedTransaction = {
@@ -64,6 +65,62 @@ interface TransactionItemProps {
   transaction: DetailedTransaction;
   index: number;
 }
+
+// Helper function to trigger file download
+const downloadFile = (content: string, filename: string, mimeType: string) => {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+const exportToCsv = (data: DetailedTransaction[]): string => {
+  if (data.length === 0) return '';
+
+  const headers = [
+    'Type',
+    'Amount',
+    'Balance After',
+    'Timestamp',
+    'Counterparty',
+    'Max Amount',
+  ];
+
+  const csvRows = [];
+  csvRows.push(headers.join(',')); // Add header row
+
+  for (const item of data) {
+    const values = [
+      item.type,
+      item.amount !== undefined ? (Number(item.amount) / 100).toFixed(2) : '',
+      (Number(item.balanceAfter) / 100).toFixed(2),
+      item.timestamp.toISOString(),
+      item.counterparty || '',
+      item.maxAmount !== undefined ? (Number(item.maxAmount) / 100).toFixed(2) : '',
+    ].map(value => {
+      const stringValue = String(value);
+      return `"${stringValue.replace(/"/g, '')}"`; // Escape double quotes and wrap in quotes
+    });
+    csvRows.push(values.join(','));
+  }
+
+  return csvRows.join('\n');
+};
+
+const exportToJson = (data: DetailedTransaction[]): string => {
+  return JSON.stringify(data.map(tx => ({
+    ...tx,
+    amount: tx.amount !== undefined ? Number(tx.amount) : undefined,
+    balanceAfter: Number(tx.balanceAfter),
+    timestamp: tx.timestamp.toISOString(),
+    maxAmount: tx.maxAmount !== undefined ? Number(tx.maxAmount) : undefined,
+  })), null, 2);
+};
 
 const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, index }) => {
   const { theme } = useTheme();
@@ -393,6 +450,18 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({ bankAPI,
     }
   };
 
+  // Handle export action
+  const handleExport = (format: 'csv' | 'json') => {
+    const filename = `transactions-${new Date().toISOString().split('T')[0]}.${format}`;
+    if (format === 'csv') {
+      const csvContent = exportToCsv(filteredTransactions);
+      downloadFile(csvContent, filename, 'text/csv');
+    } else {
+      const jsonContent = exportToJson(filteredTransactions);
+      downloadFile(jsonContent, filename, 'application/json');
+    }
+  };
+
   useEffect(() => {
     if (bankAPI && isSessionActive()) {
       loadTransactionHistory();
@@ -494,6 +563,24 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({ bankAPI,
               }}
             />
           )}
+        </Box>
+        <Box sx={{ display: 'flex', gap: theme.spacing[2] }}>
+          <ThemedButton
+            onClick={() => handleExport('csv')}
+            variant="primary"
+            size="small"
+            disabled={filteredTransactions.length === 0}
+          >
+            Export CSV
+          </ThemedButton>
+          <ThemedButton
+            onClick={() => handleExport('json')}
+            variant="outlined"
+            size="small"
+            disabled={filteredTransactions.length === 0}
+          >
+            Export JSON
+          </ThemedButton>
         </Box>
       </Box>
 

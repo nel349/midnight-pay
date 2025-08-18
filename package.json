@@ -26,6 +26,7 @@
     "config:testnet": "cp bank-ui/public/config.testnet.json bank-ui/public/config.json",
     "config:local": "cp bank-ui/public/config.local.json bank-ui/public/config.json",
     "build:ui:testnet": "turbo run build --filter=bank-api && cd bank-ui && npm run build:testnet",
+    "recompile": "turbo run build --filter=bank-contract",
     "clean": "turbo run clean"
   },
   "dependencies": {

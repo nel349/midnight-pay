@@ -248,7 +248,7 @@ export const TransactionSummary: React.FC<TransactionSummaryProps> = ({
               size="small"
               startIcon={<ViewList />}
               onClick={onViewAll}
-              sx={{ textTransform: 'none' }}
+              sx={{ textTransform: 'none', fontSize: '0.875rem' }}
             >
               View All
             </Button>
