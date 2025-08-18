@@ -22,6 +22,7 @@ import { saveBank } from '../utils/AccountsLocalState';
 import { getErrorSummary } from '../utils/errorHandling';
 import { useTheme } from '../theme/ThemeProvider';
 import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
+import { useNotification } from '../contexts/NotificationContext';
 
 export interface CreateBankProps { 
   logger: Logger; 
@@ -33,6 +34,7 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
   const { providers, isConnected, connect } = useBankWallet();
   const { theme, mode } = useTheme();
   const { setTransactionLoading } = useTransactionLoading();
+  const { showSuccess, showError } = useNotification();
   
   const [bankLabel, setBankLabel] = useState('');
   const [working, setWorking] = useState(false);
@@ -64,7 +66,13 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
       // Store deployment info for debugging if needed
       sessionStorage.setItem('lastBankDeployment', JSON.stringify({ contractAddress, label: bankLabel, timestamp: new Date().toISOString() }));
       
-      onComplete(contractAddress);
+      // Show success notification
+      showSuccess(`Bank "${bankLabel || 'New Bank'}" deployed successfully!`);
+      
+      // Small delay to allow notification to show before navigation
+      setTimeout(() => {
+        onComplete(contractAddress);
+      }, 500);
     } catch (e) {
       // Log with user-friendly summary for readability
       logger.error({ 
@@ -75,6 +83,7 @@ export const CreateBank: React.FC<CreateBankProps> = ({ logger, onComplete }) =>
       
       // Store the full error object for ErrorAlert to parse
       setError(e);
+      showError(`Failed to deploy bank: ${getErrorSummary(e)}`);
     } finally {
       setWorking(false);
       setTransactionLoading(false);

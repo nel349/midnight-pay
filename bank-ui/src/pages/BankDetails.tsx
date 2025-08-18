@@ -37,6 +37,7 @@ import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderCo
 import { BankAPI } from '@midnight-bank/bank-api';
 import type { Logger } from 'pino';
 import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
+import { useNotification } from '../contexts/NotificationContext';
 
 export const BankDetails: React.FC = () => {
   const { bankAddress } = useParams<{ bankAddress: string }>();
@@ -45,10 +46,10 @@ export const BankDetails: React.FC = () => {
   const { addAccount } = useDeployedAccountContext();
   const { theme, mode } = useTheme();
   const { setTransactionLoading } = useTransactionLoading();
+  const { showSuccess, showError } = useNotification();
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [bankAPI, setBankAPI] = useState<BankAPI | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newUserId, setNewUserId] = useState('');
@@ -77,15 +78,6 @@ export const BankDetails: React.FC = () => {
   }, [bankAddress, providers, addAccount]);
 
 
-  // Clear success messages after 5 seconds
-  React.useEffect(() => {
-    if (success) {
-      const timer = setTimeout(() => {
-        setSuccess(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [success]);
 
   const handleCreateAccountDialog = () => {
     if (!bankAPI || !isConnected || !newUserId.trim() || !newPin.trim() || !initialDeposit.trim()) return;
@@ -113,7 +105,7 @@ export const BankDetails: React.FC = () => {
       // Touch the bank to update last used
       touchBank(bankAddress!);
       
-      setSuccess(`Account "${newUserId}" created successfully!`);
+      showSuccess(`Account "${newUserId}" created successfully with ${initialDeposit} MBT!`);
       setShowCreateDialog(false);
       setNewUserId('');
       setNewPin('');
@@ -127,7 +119,9 @@ export const BankDetails: React.FC = () => {
       }, 1500);
     })
     .catch((err) => {
-      setError(err instanceof Error ? err.message : 'Failed to create account');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create account';
+      showError(errorMessage);
+      setError(errorMessage);
       setLoading(false);
       setTransactionLoading(false);
     });
@@ -135,7 +129,7 @@ export const BankDetails: React.FC = () => {
 
   const copyBankAddress = () => {
     navigator.clipboard?.writeText(bankAddress!);
-    setSuccess('Bank address copied to clipboard!');
+    showSuccess('Bank address copied to clipboard!');
   };
 
   if (!bankAddress) {
@@ -472,22 +466,6 @@ export const BankDetails: React.FC = () => {
             </Box>
           )}
 
-          {success && (
-            <Box sx={{ mt: theme.spacing[4] }}>
-              <ThemedCard>
-                <ThemedCardContent>
-                  <Typography 
-                    sx={{ 
-                      color: theme.colors.success[500],
-                      textAlign: 'center',
-                    }}
-                  >
-                    {success}
-                  </Typography>
-                </ThemedCardContent>
-              </ThemedCard>
-            </Box>
-          )}
 
           {error && (
             <Box sx={{ mt: theme.spacing[4] }}>

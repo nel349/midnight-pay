@@ -3,18 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   Typography, 
   Box, 
-  Chip, 
   Dialog, 
   DialogTitle, 
   DialogContent, 
   DialogActions, 
   TextField, 
   Button, 
-  Alert,
-  Tabs,
-  Tab
-} from '@mui/material';
-import { ArrowBack, Visibility, VisibilityOff, AccountBalance, Notifications } from '@mui/icons-material';
+  Alert} from '@mui/material';
+import { ArrowBack, Visibility, AccountBalance, VisibilityOff, NotificationsActive, AssignmentTurnedIn, History, Security } from '@mui/icons-material';
 import { useBankWallet } from '../components/BankWallet';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
 import { touchAccount } from '../utils/AccountsLocalState';
@@ -23,19 +19,20 @@ import { DisclosurePanel } from '../components/DisclosurePanel';
 import { AuthorizationNotifications } from '../components/AuthorizationNotifications';
 import { usePinSession } from '../contexts/PinSessionContext';
 import { ErrorAlert } from '../components/ErrorAlert';
-import { useTransactionHandler, useModalTransactionHandler } from '../utils/errorHandler';
+import { useModalTransactionHandler } from '../utils/errorHandler';
 import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
+import { useNotification } from '../contexts/NotificationContext';
+import { useBalanceUpdates } from '../hooks/useBalanceUpdates';
 import { 
   ThemedButton, 
   ThemedCard, 
   ThemedCardContent, 
   GradientBackground, 
-  AppHeader,
   TransactionHistory,
-  TransactionSummary
+  TransactionSummary,
+  SmartNavigationPanel
 } from '../components';
 import type { BankAPI, BankDerivedState } from '@midnight-bank/bank-api';
-import { utils } from '@midnight-bank/bank-api';
 import { useTheme } from '../theme/ThemeProvider';
 
 export const AccountDetails: React.FC = () => {
@@ -45,14 +42,24 @@ export const AccountDetails: React.FC = () => {
   const { addAccount } = useDeployedAccountContext();
   const { getPin } = usePinSession();
   const { setTransactionLoading } = useTransactionLoading();
+  const { showSuccess, showError } = useNotification();
   
   const [bankAPI, setBankAPI] = useState<BankAPI | null>(null);
+  
+  // Reactive balance hook - automatically updates when blockchain changes
+  const { 
+    balance, 
+    hasBalance, 
+    isStale, 
+    formatBalance, 
+    isZeroBalance, 
+    canSpend,
+    refresh: refreshBalance 
+  } = useBalanceUpdates(bankAPI);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<any>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [accountState, setAccountState] = useState<BankDerivedState | null>(null);
-  const [showBalance, setShowBalance] = useState(false);
-  const [, setUserPin] = useState<string>('');
+  const [userPin, setUserPin] = useState<string>('');
   const lastAuthRef = useRef<number | null>(null);
   const { theme, mode } = useTheme();
   
@@ -66,20 +73,25 @@ export const AccountDetails: React.FC = () => {
   const [withdrawDialogError, setWithdrawDialogError] = useState<string | null>(null);
   const [withdrawDialogSuccess, setWithdrawDialogSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
+  const [isBalanceVisible, setIsBalanceVisible] = useState(true);
+  
+  // Refs for smart navigation
+  const accountInfoRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const balanceActionsRef = useRef<HTMLDivElement>(null);
+  const authPanelRef = useRef<HTMLDivElement>(null);
+  const transactionHistoryRef = useRef<HTMLDivElement>(null);
   
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
   
-  // Modular transaction handler
-  const transactionHandler = useTransactionHandler(setLoading, setError, setSuccess, setTransactionLoading);
-  
-  // Modal transaction handlers for deposit and withdrawal
+  // Modal transaction handlers for deposit and withdrawal - disable old success messages
   const depositModalHandler = useModalTransactionHandler(
     setLoading,
     setDepositDialogError,
     setDepositDialogSuccess,
     {
       useGlobalError: setError,
-      useGlobalSuccess: setSuccess
+      useGlobalSuccess: () => {} // Disable old success messages
     },
     setTransactionLoading
   );
@@ -90,7 +102,7 @@ export const AccountDetails: React.FC = () => {
     setWithdrawDialogSuccess,
     {
       useGlobalError: setError,
-      useGlobalSuccess: setSuccess
+      useGlobalSuccess: () => {} // Disable old success messages
     },
     setTransactionLoading
   );
@@ -150,53 +162,56 @@ export const AccountDetails: React.FC = () => {
       }
     });
 
-    // Check for session timeout
-    const timeoutCheck = setInterval(() => {
-      if (lastAuthRef.current && Date.now() - lastAuthRef.current > SESSION_TIMEOUT_MS) {
-        setShowBalance(false);
-        setUserPin('');
-        lastAuthRef.current = null;
-      }
-    }, 5000);
+    // Session management is now handled by the reactive balance hook
 
     return () => {
       stateSubscription.unsubscribe();
-      clearInterval(timeoutCheck);
     };
   }, [bankAPI, SESSION_TIMEOUT_MS]);
 
-  // Clear success messages after 5 seconds
-  useEffect(() => {
-    if (success) {
-      const timer = setTimeout(() => {
-        setSuccess(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [success]);
 
-  const handleShowBalance = async () => {
-    if (!bankAPI || !isConnected) return;
-    
-    await transactionHandler.execute(
-      async () => {
-        const pinInput = await getPin('Enter your PIN to reveal balance', bankAPI);
-        await bankAPI.getTokenBalance(pinInput);
+
+  // Helper function to refresh balance after transactions
+  const refreshBalanceIfAuthenticated = () => {
+    // The reactive balance hook automatically refreshes via state$ subscription
+    // We can manually trigger a refresh if needed
+    refreshBalance();
+  };
+
+  // Smart navigation function
+  const scrollToComponent = (ref: React.RefObject<HTMLDivElement | null>, highlight: boolean = true) => {
+    if (ref.current) {
+      ref.current.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'center' 
+      });
+      
+      if (highlight) {
+        // Add a temporary highlight effect
+        ref.current.style.transition = 'box-shadow 0.3s ease';
+        ref.current.style.boxShadow = `0 0 20px ${theme.colors.primary[500]}40`;
         
-        lastAuthRef.current = Date.now();
-        setUserPin(pinInput);
-        return pinInput;
-      },
-      'balance retrieval',
-      {
-        onSuccess: () => {
-          setShowBalance(true);
-        },
-        onError: () => {
-          setShowBalance(false);
-        }
+        setTimeout(() => {
+          if (ref.current) {
+            ref.current.style.boxShadow = '';
+          }
+        }, 2000);
       }
-    );
+    }
+  };
+
+  // Enhanced navigation functions
+  const navigateToTransactionHistory = () => {
+    setActiveTab(1);
+    setTimeout(() => scrollToComponent(transactionHistoryRef), 100);
+  };
+
+  const navigateToNotifications = () => {
+    scrollToComponent(notificationsRef);
+  };
+
+  const navigateToAuthPanel = () => {
+    scrollToComponent(authPanelRef);
   };
 
   const handleDeposit = () => {
@@ -215,13 +230,15 @@ export const AccountDetails: React.FC = () => {
       'deposit',
       {
         onSuccess: (amount) => {
-          setDepositDialogSuccess(`Successfully deposited $${amount}`);
-          setTimeout(() => {
-            setDepositAmount('');
-            setShowDepositDialog(false);
-            setDepositDialogError(null);
-            setDepositDialogSuccess(null);
-          }, 1500);
+          showSuccess(`Deposit successful: +$${amount} MBT`);
+          refreshBalanceIfAuthenticated();
+          setDepositAmount('');
+          setShowDepositDialog(false);
+          setDepositDialogError(null);
+          setDepositDialogSuccess(null);
+        },
+        onError: (error) => {
+          showError(error.userMessage);
         }
       }
     );
@@ -243,13 +260,15 @@ export const AccountDetails: React.FC = () => {
       'withdrawal',
       {
         onSuccess: (amount) => {
-          setWithdrawDialogSuccess(`Successfully withdrew $${amount}`);
-          setTimeout(() => {
-            setWithdrawAmount('');
-            setShowWithdrawDialog(false);
-            setWithdrawDialogError(null);
-            setWithdrawDialogSuccess(null);
-          }, 1500);
+          showSuccess(`Withdrawal successful: -$${amount} MBT`);
+          refreshBalanceIfAuthenticated();
+          setWithdrawAmount('');
+          setShowWithdrawDialog(false);
+          setWithdrawDialogError(null);
+          setWithdrawDialogSuccess(null);
+        },
+        onError: (error) => {
+          showError(error.userMessage);
         }
       }
     );
@@ -275,8 +294,53 @@ export const AccountDetails: React.FC = () => {
     );
   }
 
+  // Navigation items configuration
+  const navigationItems = [
+    { 
+      icon: <AccountBalance />, 
+      label: 'Account Info', 
+      action: () => scrollToComponent(accountInfoRef),
+      color: theme.colors.primary[500]
+    },
+    { 
+      icon: <NotificationsActive />, 
+      label: 'Notifications', 
+      action: navigateToNotifications,
+      color: theme.colors.info[500]
+    },
+    { 
+      icon: <AssignmentTurnedIn />, 
+      label: 'Balance & Actions', 
+      action: () => scrollToComponent(balanceActionsRef),
+      color: theme.colors.success[500]
+    },
+    { 
+      icon: <Security />, 
+      label: 'Authorization', 
+      action: navigateToAuthPanel,
+      color: theme.colors.warning[500]
+    },
+    { 
+      icon: <History />, 
+      label: 'Transaction History', 
+      action: navigateToTransactionHistory,
+      color: theme.colors.secondary[500]
+    }
+  ];
+
   return (
     <GradientBackground variant="subtle">
+      {/* Smart Navigation Panel */}
+      <SmartNavigationPanel
+        visible={true}
+        defaultExpanded={false}
+        navigationItems={navigationItems}
+        position={{
+          right: theme.spacing[3],
+          top: '50%',
+          transform: 'translateY(-50%)'
+        }}
+      />
       
       <Box sx={{ minHeight: '100vh', p: theme.spacing[4] }}>
         {/* Compact Header */}
@@ -328,46 +392,109 @@ export const AccountDetails: React.FC = () => {
             sx={{ mb: error ? theme.spacing[4] : 0 }}
           />
 
-          {/* Main Content Grid */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: theme.spacing[6] }}>
+          {/* Main Content Grid - 2x2 Layout */}
+          <Box sx={{ 
+            display: 'grid', 
+            gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, 
+            gridTemplateRows: 'minmax(300px, auto) auto',
+            gap: theme.spacing[6],
+            alignItems: 'stretch'
+          }}>
             
-            {/* Left Column - Account Info & Balance */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[4] }}>
-              
-              {/* Account Information Card */}
-              <ThemedCard>
-                <ThemedCardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: theme.spacing[3] }}>
-                    <Box
-                      sx={{
-                        p: 2,
-                        borderRadius: theme.borderRadius.md,
-                        background: mode === 'dark'
-                          ? `linear-gradient(135deg, ${theme.colors.secondary[600]}33 0%, ${theme.colors.secondary[500]}33 100%)`
-                          : `linear-gradient(135deg, ${theme.colors.secondary[500]}1A 0%, ${theme.colors.secondary[600]}1A 100%)`,
-                        mr: theme.spacing[3],
+            {/* Top Left - Account Information */}
+            <ThemedCard ref={accountInfoRef} sx={{ display: 'flex', flexDirection: 'column' }}>
+              <ThemedCardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: theme.spacing[3] }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: theme.borderRadius.md,
+                      background: mode === 'dark'
+                        ? `linear-gradient(135deg, ${theme.colors.secondary[600]}33 0%, ${theme.colors.secondary[500]}33 100%)`
+                        : `linear-gradient(135deg, ${theme.colors.secondary[500]}1A 0%, ${theme.colors.secondary[600]}1A 100%)`,
+                      mr: theme.spacing[3],
+                    }}
+                  >
+                    <AccountBalance 
+                      sx={{ 
+                        fontSize: '1.5rem',
+                        color: theme.colors.text.primary,
+                      }} 
+                    />
+                  </Box>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      color: theme.colors.text.primary,
+                      fontWeight: theme.typography.fontWeight.bold,
+                    }}
+                  >
+                    Account Information
+                  </Typography>
+                </Box>
+                
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[3], flex: 1 }}>
+                  {/* User ID Field */}
+                  <Box>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: theme.colors.text.secondary, 
+                        fontWeight: theme.typography.fontWeight.medium,
+                        mb: theme.spacing[1],
+                        textTransform: 'uppercase',
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.5px',
                       }}
                     >
-                      <AccountBalance 
-                        sx={{ 
-                          fontSize: '1.5rem',
-                          color: theme.colors.text.primary,
-                        }} 
-                      />
-                    </Box>
+                      User ID
+                    </Typography>
                     <Typography 
-                      variant="h6" 
+                      variant="body1" 
                       sx={{ 
                         color: theme.colors.text.primary,
-                        fontWeight: theme.typography.fontWeight.bold,
+                        fontFamily: theme.typography.fontFamily.mono,
+                        fontSize: '0.95rem',
+                        fontWeight: theme.typography.fontWeight.medium,
+                        letterSpacing: '0.5px',
                       }}
                     >
-                      Account Information
+                      {userId}
                     </Typography>
                   </Box>
                   
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[3] }}>
-                    {/* User ID Field */}
+                  {/* Bank Contract Field */}
+                  <Box>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: theme.colors.text.secondary, 
+                        fontWeight: theme.typography.fontWeight.medium,
+                        mb: theme.spacing[1],
+                        textTransform: 'uppercase',
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      Bank Contract
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: theme.colors.text.primary,
+                        fontFamily: theme.typography.fontFamily.mono, 
+                        fontSize: '0.8rem',
+                        fontWeight: theme.typography.fontWeight.normal,
+                        wordBreak: 'break-all',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {bankAddress}
+                    </Typography>
+                  </Box>
+                  
+                  {/* Account Status Field */}
+                  {accountState && (
                     <Box>
                       <Typography 
                         variant="body2" 
@@ -380,247 +507,225 @@ export const AccountDetails: React.FC = () => {
                           letterSpacing: '0.5px',
                         }}
                       >
-                        User ID
+                        Account Status
                       </Typography>
                       <Typography 
-                        variant="body1" 
+                        variant="body1"
                         sx={{ 
-                          color: theme.colors.text.primary,
-                          fontFamily: theme.typography.fontFamily.mono,
-                          fontSize: '0.95rem',
+                          color: accountState.accountExists 
+                            ? theme.colors.success[500] 
+                            : theme.colors.warning[500],
                           fontWeight: theme.typography.fontWeight.medium,
-                          letterSpacing: '0.5px',
+                          fontSize: '0.9rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: theme.spacing[1],
                         }}
                       >
-                        {userId}
+                        {accountState.accountExists ? '✅' : '⚠️'}
+                        {accountState.accountExists ? 'Active' : 'Inactive'}
                       </Typography>
-                    </Box>
-                    
-                    {/* Bank Contract Field */}
-                    <Box>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          color: theme.colors.text.secondary, 
-                          fontWeight: theme.typography.fontWeight.medium,
-                          mb: theme.spacing[1],
-                          textTransform: 'uppercase',
-                          fontSize: '0.75rem',
-                          letterSpacing: '0.5px',
-                        }}
-                      >
-                        Bank Contract
-                      </Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          color: theme.colors.text.primary,
-                          fontFamily: theme.typography.fontFamily.mono, 
-                          fontSize: '0.8rem',
-                          fontWeight: theme.typography.fontWeight.normal,
-                          wordBreak: 'break-all',
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {bankAddress}
-                      </Typography>
-                    </Box>
-                    
-                    {/* Account Status Field */}
-                    {accountState && (
-                      <Box>
+                      
+                      {loading && (
                         <Typography 
-                          variant="body2" 
+                          variant="body2"
                           sx={{ 
                             color: theme.colors.text.secondary, 
-                            fontWeight: theme.typography.fontWeight.medium,
-                            mb: theme.spacing[1],
-                            textTransform: 'uppercase',
-                            fontSize: '0.75rem',
-                            letterSpacing: '0.5px',
-                          }}
-                        >
-                          Account Status
-                        </Typography>
-                        <Typography 
-                          variant="body1"
-                          sx={{ 
-                            color: accountState.accountExists 
-                              ? theme.colors.success[500] 
-                              : theme.colors.warning[500],
-                            fontWeight: theme.typography.fontWeight.medium,
-                            fontSize: '0.9rem',
+                            mt: theme.spacing[1],
+                            fontSize: '0.8rem',
+                            fontStyle: 'italic',
                             display: 'flex',
                             alignItems: 'center',
                             gap: theme.spacing[1],
                           }}
                         >
-                          {accountState.accountExists ? '✅' : '⚠️'}
-                          {accountState.accountExists ? 'Active' : 'Inactive'}
+                          🔄 Loading...
                         </Typography>
-                        
-                        {loading && (
-                          <Typography 
-                            variant="body2"
-                            sx={{ 
-                              color: theme.colors.text.secondary, 
-                              mt: theme.spacing[1],
-                              fontSize: '0.8rem',
-                              fontStyle: 'italic',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: theme.spacing[1],
-                            }}
-                          >
-                            🔄 Loading...
-                          </Typography>
-                        )}
-                      </Box>
-                    )}
-                  </Box>
-                </ThemedCardContent>
-              </ThemedCard>
-
-              {/* Balance & Account Actions Card */}
-              <ThemedCard>
-                <ThemedCardContent>
-                  {/* Balance Section */}
-                  <Box sx={{ mb: theme.spacing[4] }}>
-                    <Typography 
-                      variant="h6" 
-                      sx={{ 
-                        color: theme.colors.text.primary,
-                        fontWeight: theme.typography.fontWeight.bold,
-                        mb: theme.spacing[3],
-                      }}
-                    >
-                      Balance
-                    </Typography>
-                    
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[3], mb: theme.spacing[3] }}>
-                      <Typography 
-                        variant="h3" 
-                        sx={{ 
-                          fontFamily: 'monospace',
-                          fontWeight: 'bold',
-                          color: showBalance ? theme.colors.text.primary : theme.colors.text.secondary,
-                        }}
-                      >
-                        {showBalance && accountState?.balance !== undefined && accountState.balance !== null
-                          ? `${utils.formatBalance(accountState.balance)}`
-                          : '***'
-                        }
-                      </Typography>
-                      
-                      <Typography 
-                        variant="h5" 
-                        sx={{ 
-                          color: theme.colors.text.secondary,
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        MBT
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', gap: theme.spacing[2] }}>
-                      {!showBalance && (
-                        <ThemedButton
-                          variant="outlined"
-                          startIcon={<Visibility />}
-                          onClick={handleShowBalance}
-                          disabled={loading || !isConnected}
-                        >
-                          Show Balance
-                        </ThemedButton>
-                      )}
-                      
-                      {showBalance && (
-                        <ThemedButton
-                          variant="outlined"
-                          size="small"
-                          startIcon={<VisibilityOff />}
-                          onClick={() => {
-                            setShowBalance(false);
-                            setUserPin('');
-                            lastAuthRef.current = null;
-                          }}
-                        >
-                          Hide Balance
-                        </ThemedButton>
                       )}
                     </Box>
-                  </Box>
-                  
-                  {/* Divider */}
-                  <Box 
-                    sx={{ 
-                      height: '1px',
-                      backgroundColor: mode === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.1)' 
-                        : 'rgba(0, 0, 0, 0.05)',
-                      mb: theme.spacing[4],
-                    }} 
-                  />
-                  
-                  {/* Account Actions Section */}
-                  <Box>
-                    <Typography 
-                      variant="h6" 
-                      sx={{ 
-                        color: theme.colors.text.primary,
-                        fontWeight: theme.typography.fontWeight.bold,
-                        mb: theme.spacing[3],
-                      }}
-                    >
-                      Account Actions
-                    </Typography>
-                    
-                    <Box sx={{ display: 'flex', gap: theme.spacing[2], flexWrap: 'wrap' }}>
-                      <ThemedButton
-                        variant="primary"
-                        onClick={handleDeposit}
-                        disabled={loading || !isConnected}
-                        sx={{ minWidth: 100 }}
-                      >
-                        Deposit
-                      </ThemedButton>
-                      
-                      <ThemedButton
-                        variant="outlined"
-                        onClick={handleWithdraw}
-                        disabled={loading || !isConnected}
-                        sx={{ minWidth: 100 }}
-                      >
-                        Withdraw
-                      </ThemedButton>           
-                    </Box>
-                  </Box>
-                </ThemedCardContent>
-              </ThemedCard>
-            </Box>
+                  )}
+                </Box>
+              </ThemedCardContent>
+            </ThemedCard>
 
-            {/* Right Column - Notifications & Authorizations */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[4] }}>
-              
-              {/* Real-time Notifications */}
-              {bankAPI && (
+            {/* Top Right - Real-time Notifications */}
+            {bankAPI && (
+              <Box ref={notificationsRef}>
                 <AuthorizationNotifications
                   bankAPI={bankAPI}
-                  onError={setError}
-                  onSuccess={setSuccess}
+                  onError={showError}
+                  onSuccess={showSuccess}
                 />
-              )}
+              </Box>
+            )}
 
+            {/* Bottom Left - Balance, Actions & Recent Activity */}
+            <ThemedCard ref={balanceActionsRef} sx={{ height: 'fit-content', minHeight: '300px' }}>
+              <ThemedCardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                {/* Balance Section */}
+                <Box sx={{ mb: theme.spacing[4] }}>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      color: theme.colors.text.primary,
+                      fontWeight: theme.typography.fontWeight.bold,
+                      mb: theme.spacing[3],
+                    }}
+                  >
+                    Balance
+                  </Typography>
+                  
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[3], mb: theme.spacing[3] }}>
+                    <Typography 
+                      variant="h3" 
+                      sx={{ 
+                        fontFamily: 'monospace',
+                        fontWeight: 'bold',
+                        color: hasBalance ? theme.colors.text.primary : theme.colors.text.secondary,
+                      }}
+                    >
+                     
+                      {hasBalance && isBalanceVisible ? formatBalance() : '***'}
+                    </Typography>
+                    
+                    <Typography 
+                      variant="h5" 
+                      sx={{ 
+                        color: theme.colors.text.secondary,
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      MBT
+                    </Typography>
+                  </Box>
+                  
+                   {/** we should be able to hide the balance if desired */}
+                  <Box sx={{ display: 'flex', gap: theme.spacing[2], alignItems: 'center' }}>
+                    {!isBalanceVisible && (
+                      <ThemedButton
+                        variant="outlined"
+                        startIcon={<Visibility />}
+                        onClick={() => {
+                          setIsBalanceVisible(true);
+                          refreshBalance();
+                        }}
+                        disabled={loading || !isConnected}
+                      >
+                        Show Balance
+                      </ThemedButton>
+                    )}
+                    {isBalanceVisible && (
+                      <ThemedButton
+                        variant="outlined"
+                        startIcon={<VisibilityOff />}
+                        onClick={() => {
+                          setIsBalanceVisible(false);
+                        }}
+                        disabled={loading || !isConnected}
+                      >
+                        Hide Balance
+                      </ThemedButton>
+                    )}
+                  </Box>
+                </Box>
+                
+                {/* Divider */}
+                <Box 
+                  sx={{ 
+                    height: '1px',
+                    backgroundColor: mode === 'dark' 
+                      ? 'rgba(255, 255, 255, 0.1)' 
+                      : 'rgba(0, 0, 0, 0.05)',
+                    mb: theme.spacing[4],
+                  }} 
+                />
+                
+                {/* Account Actions Section */}
+                <Box sx={{ mb: theme.spacing[4] }}>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      color: theme.colors.text.primary,
+                      fontWeight: theme.typography.fontWeight.bold,
+                      mb: theme.spacing[3],
+                    }}
+                  >
+                    Account Actions
+                  </Typography>
+                  
+                  <Box sx={{ display: 'flex', gap: theme.spacing[2], flexWrap: 'wrap' }}>
+                    <ThemedButton
+                      variant="primary"
+                      onClick={handleDeposit}
+                      disabled={loading || !isConnected}
+                      sx={{ minWidth: 100 }}
+                    >
+                      Deposit
+                    </ThemedButton>
+                    
+                    <ThemedButton
+                      variant="outlined"
+                      onClick={handleWithdraw}
+                      disabled={loading || !isConnected}
+                      sx={{ minWidth: 100 }}
+                    >
+                      Withdraw
+                    </ThemedButton>           
+                  </Box>
+                </Box>
+                
+                {/* Divider */}
+                <Box 
+                  sx={{ 
+                    height: '1px',
+                    backgroundColor: mode === 'dark' 
+                      ? 'rgba(255, 255, 255, 0.1)' 
+                      : 'rgba(0, 0, 0, 0.05)',
+                    mb: theme.spacing[4],
+                  }} 
+                />
+                
+                {/* Recent Activity Section */}
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      color: theme.colors.text.primary,
+                      fontWeight: theme.typography.fontWeight.bold,
+                      mb: theme.spacing[3],
+                    }}
+                  >
+                    Recent Activity
+                  </Typography>
+                  <TransactionSummary 
+                    bankAPI={bankAPI}
+                    maxItems={3}
+                    onViewAll={navigateToTransactionHistory}
+                  />
+                </Box>
+              </ThemedCardContent>
+            </ThemedCard>
+
+            {/* Bottom Right - Authorization & Disclosure Systems */}
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: theme.spacing[4],
+            }}>
               {/* Authorization System */}
               {bankAPI && (
-                <AuthorizationPanel 
-                  bankAPI={bankAPI}
-                  isConnected={isConnected}
-                  userId={userId}
-                  onError={setError}
-                  onSuccess={setSuccess}
-                />
+                <Box ref={authPanelRef}>
+                  <AuthorizationPanel 
+                    bankAPI={bankAPI}
+                    isConnected={isConnected}
+                    userId={userId}
+                    onError={showError}
+                    onSuccess={(message) => {
+                      showSuccess(message);
+                      refreshBalanceIfAuthenticated();
+                    }}
+                  />
+                </Box>
               )}
 
               {/* Balance Disclosure System */}
@@ -629,60 +734,60 @@ export const AccountDetails: React.FC = () => {
                   bankAPI={bankAPI}
                   isConnected={isConnected}
                   userId={userId}
-                  onError={setError}
-                  onSuccess={setSuccess}
+                  onError={showError}
+                  onSuccess={showSuccess}
                 />
               )}
             </Box>
           </Box>
 
-          {/* Transaction History Section */}
-          <Box sx={{ mt: theme.spacing[6] }}>
+          {/* Full Transaction History Section */}
+          <Box ref={transactionHistoryRef} sx={{ mt: theme.spacing[6] }}>
             <ThemedCard>
-              <ThemedCardContent sx={{ p: 0 }}>
-                {/* Tabs */}
-                <Box sx={{ borderBottom: `1px solid ${theme.colors.border.light}` }}>
-                  <Tabs 
-                    value={activeTab} 
-                    onChange={(_, newValue) => setActiveTab(newValue)}
-                    sx={{ 
-                      px: theme.spacing[4],
-                      pt: theme.spacing[3],
+              <ThemedCardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: theme.spacing[4] }}>
+                  <Typography 
+                    variant="h6"
+                    sx={{
+                      color: theme.colors.text.primary,
+                      fontWeight: theme.typography.fontWeight.bold,
                     }}
                   >
-                    <Tab 
-                      label="Recent Activity" 
-                      sx={{ 
-                        textTransform: 'none',
-                        fontWeight: theme.typography.fontWeight.medium,
-                      }}
-                    />
-                    <Tab 
-                      label="Full History" 
-                      sx={{ 
-                        textTransform: 'none',
-                        fontWeight: theme.typography.fontWeight.medium,
-                      }}
-                    />
-                  </Tabs>
-                </Box>
-
-                {/* Tab Content */}
-                <Box sx={{ p: theme.spacing[4] }}>
-                  {activeTab === 0 && (
-                    <TransactionSummary 
-                      bankAPI={bankAPI}
-                      maxItems={8}
-                      onViewAll={() => setActiveTab(1)}
-                    />
+                    Full Transaction History
+                  </Typography>
+                  {activeTab !== 1 && (
+                    <ThemedButton
+                      variant="primary"
+                      onClick={navigateToTransactionHistory}
+                    >
+                      Show History
+                    </ThemedButton>
                   )}
-                  
                   {activeTab === 1 && (
-                    <TransactionHistory 
-                      bankAPI={bankAPI}
-                    />
+                    <ThemedButton
+                      variant="outlined"
+                      onClick={() => setActiveTab(0)}
+                    >
+                      Hide History
+                    </ThemedButton>
                   )}
                 </Box>
+                {activeTab === 1 && (
+                  <TransactionHistory 
+                    bankAPI={bankAPI}
+                  />
+                )}
+                {activeTab !== 1 && (
+                  <Box sx={{ 
+                    textAlign: 'center',
+                    py: theme.spacing[4],
+                    color: theme.colors.text.secondary 
+                  }}>
+                    <Typography variant="body2">
+                      Click "Show History" to view your complete transaction history.
+                    </Typography>
+                  </Box>
+                )}
               </ThemedCardContent>
             </ThemedCard>
           </Box>
@@ -705,22 +810,6 @@ export const AccountDetails: React.FC = () => {
             </Box>
           )}
 
-          {success && (
-            <Box sx={{ mt: theme.spacing[4] }}>
-              <ThemedCard>
-                <ThemedCardContent>
-                  <Typography 
-                    sx={{ 
-                      color: theme.colors.success[500],
-                      textAlign: 'center',
-                    }}
-                  >
-                    {success}
-                  </Typography>
-                </ThemedCardContent>
-              </ThemedCard>
-            </Box>
-          )}
 
           {/* Deposit Dialog */}
           <Dialog open={showDepositDialog} onClose={() => {
@@ -764,7 +853,9 @@ export const AccountDetails: React.FC = () => {
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => {
+              <Button 
+              variant="outlined"
+              onClick={() => {
                 setShowDepositDialog(false);
                 setDepositDialogError(null);
                 setDepositDialogSuccess(null);
@@ -822,7 +913,9 @@ export const AccountDetails: React.FC = () => {
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => {
+              <Button 
+                variant="outlined"
+                onClick={() => {
                 setShowWithdrawDialog(false);
                 setWithdrawDialogError(null);
                 setWithdrawDialogSuccess(null);
@@ -830,7 +923,7 @@ export const AccountDetails: React.FC = () => {
               }}>Cancel</Button>
               <Button
                 onClick={executeWithdraw}
-                variant="contained"
+                variant="outlined"
                 disabled={loading || !withdrawAmount.trim()}
               >
                 {loading ? 'Withdrawing...' : 'Withdraw'}

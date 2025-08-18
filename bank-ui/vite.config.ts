@@ -11,9 +11,11 @@ export default defineConfig({
     fs: {
       // Allow serving UI root as well as local workspace lib paths
       allow: [
-        '/Users/norman/Development/midnight/midnight-bank/bank-ui',
-        '/Users/norman/Development/midnight/midnight-bank/bank-api/dist',
-        '/Users/norman/Development/midnight/midnight-bank/bank-api/src',
+        '.',
+        '../bank-api',
+        '../bank-api/dist',
+        '../bank-api/src',
+        '../..',
       ],
     },
   },
@@ -23,9 +25,6 @@ export default defineConfig({
   },
   resolve: {
     preserveSymlinks: true,
-    alias: {
-      '@midnight-bank/bank-api': '/Users/norman/Development/midnight/midnight-bank/bank-api/dist',
-    },
   },
   plugins: [
     react(),
@@ -48,8 +47,6 @@ export default defineConfig({
     exclude: [
       // Avoid pre-bundling the wasm runtime to prevent TLA in esbuild
       '@midnight-ntwrk/onchain-runtime',
-      // Treat local workspace lib as source so dev picks up changes
-      '@midnight-bank/bank-api',
     ],
     esbuildOptions: {
       target: 'esnext',

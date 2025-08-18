@@ -121,6 +121,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
       },
       'authorization request',
       {
+        useGlobalNotifications: true, // Enable global snackbar notifications
         onSuccess: (recipientUserId) => {
           setRequestDialogSuccess(`Authorization request sent to ${recipientUserId}`);
           setTimeout(() => {
@@ -145,6 +146,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
       },
       'authorization approval',
       {
+        useGlobalNotifications: true, // Enable global snackbar notifications
         onSuccess: ({ senderUserId, maxAmount }) => {
           setApproveDialogSuccess(`Authorization approved for ${senderUserId} with limit $${maxAmount}`);
           setTimeout(() => {
@@ -447,14 +449,16 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => {
+            <Button 
+              variant="outlined"
+              onClick={() => {
               setShowRequestDialog(false);
               setRequestDialogError(null);
               setRequestDialogSuccess(null);
             }}>Cancel</Button>
             <Button
               onClick={handleRequestAuthorization}
-              variant="contained"
+              variant="outlined"
               disabled={loading || !recipientUserId.trim()}
             >
               {loading ? 'Sending Request...' : 'Ask Permission'}

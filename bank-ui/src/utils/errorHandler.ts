@@ -93,16 +93,16 @@ export const formatTransactionError = (error: any, operation?: string): string =
 
 export const formatSuccessMessage = (operation: string, details?: string): string => {
   const messages: Record<string, string> = {
-    'deposit': `✅ Deposit successful${details ? `: ${details}` : ''}`,
-    'withdraw': `✅ Withdrawal successful${details ? `: ${details}` : ''}`,
-    'transfer': `✅ Transfer successful${details ? `: ${details}` : ''}`,
-    'authorization': `✅ Authorization ${details || 'successful'}`,
-    'permission': `✅ Permission ${details || 'granted successfully'}`,
-    'verification': `✅ Verification ${details || 'successful'}`,
-    'balance': `✅ Balance ${details || 'retrieved successfully'}`
+    'deposit': `Deposit successful${details ? `: +${details}` : ''}`,
+    'withdraw': `Withdrawal successful${details ? `: -${details}` : ''}`,
+    'transfer': `Transfer successful${details ? `: ${details}` : ''}`,
+    'authorization': `Authorization ${details || 'successful'}`,
+    'permission': `Permission ${details || 'granted successfully'}`,
+    'verification': `Verification ${details || 'successful'}`,
+    'balance': `Balance ${details || 'retrieved successfully'}`
   };
   
-  return messages[operation] || `✅ ${operation} successful${details ? `: ${details}` : ''}`;
+  return messages[operation] || `${operation} successful${details ? `: ${details}` : ''}`;
 };
 
 // Enhanced transaction operation wrapper with loading state management

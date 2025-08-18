@@ -52,12 +52,27 @@ export const BankWalletProvider: React.FC<{ logger: Logger; children: React.Reac
     () => new FetchZkConfigProvider(window.location.origin, fetch.bind(window)),
     [],
   );
-  const proofProvider: ProofProvider<BankCircuitKeys> = useMemo(
-    () => proofClient(config.PROOF_SERVER ?? 'http://127.0.0.1:6300', () => {}),
-    [config.PROOF_SERVER],
-  );
 
   const [isConnected, setIsConnected] = useState(false);
+  const [walletAPI, setWalletAPI] = useState<any>(null);
+  
+  const proofProvider: ProofProvider<BankCircuitKeys> = useMemo(() => {
+    // Priority 1: Use proof server from Lace wallet (best CORS compatibility)
+    if (walletAPI?.uris?.proverServerUri) {
+      logger.info(`🔧 [ProofProvider] Using Lace wallet proof server: ${walletAPI.uris.proverServerUri}`);
+      return proofClient(walletAPI.uris.proverServerUri, () => {});
+    }
+    
+    // Priority 2: Use configured proof server from config
+    if (config.PROOF_SERVER_URL) {
+      logger.info(`🔧 [ProofProvider] Using configured proof server: ${config.PROOF_SERVER_URL}`);
+      return proofClient(config.PROOF_SERVER_URL, () => {});
+    }
+    
+    // Priority 3: Fallback to localhost
+    logger.info(`🔧 [ProofProvider] Using localhost fallback proof server`);
+    return proofClient('http://127.0.0.1:6300', () => {});
+  }, [walletAPI?.uris?.proverServerUri, config.PROOF_SERVER_URL, logger]);
   const [walletProvider, setWalletProvider] = useState<WalletProvider>({
     coinPublicKey: '',
     encryptionPublicKey: '',
@@ -72,6 +87,11 @@ export const BankWalletProvider: React.FC<{ logger: Logger; children: React.Reac
       async () => {
         const { wallet, uris } = await connectToWallet(logger);
         const state = await wallet.state();
+        
+        // Store wallet API with URIs for proof provider
+        setWalletAPI({ wallet, uris });
+        logger.info(`🔧 [WalletAPI] Connected with URIs:`, uris);
+        
         setWalletProvider({
           coinPublicKey: state.coinPublicKey,
           encryptionPublicKey: state.encryptionPublicKey,

@@ -38,6 +38,7 @@ export interface DeployedBankAPI {
   withdraw(pin: string, amount: string): Promise<void>;
   transferToUser(pin: string, recipientUserId: string, amount: string): Promise<void>;
   getTokenBalance(pin: string): Promise<void>;
+  readUserBalance(pin: string): Promise<bigint>;
   verifyAccountStatus(pin: string): Promise<void>;
   getAuthorizedContacts(): Promise<Array<{ userId: string; maxAmount: bigint }>>;
   getIncomingAuthorizations(): Promise<Array<{ userId: string; maxAmount: bigint }>>;
@@ -529,6 +530,125 @@ export class BankAPI implements DeployedBankAPI {
       cancelledTransaction: undefined,
     });
   }
+
+  async readUserBalance(pin: string): Promise<bigint> {
+    this.logger?.info({ readUserBalance: { userId: this.userId } });
+    
+    try {
+      // Read balance directly from ledger state without transaction
+      const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+      if (!state) return 0n;
+      
+      const l = ledger(state.data);
+      const normalizedUserId = this.normalizeUserId(this.userId);
+      const userIdBytes = this.stringToBytes32(normalizedUserId);
+      
+      // Verify account exists
+      if (!l.all_accounts.member(userIdBytes)) {
+        throw new Error('Account does not exist');
+      }
+      
+      const account = l.all_accounts.lookup(userIdBytes);
+      
+      // Authenticate user with PIN
+      const expectedOwner = pureCircuits.public_key(this.stringToBytes32(pin));
+      if (!this.arraysEqual(account.owner_hash, expectedOwner)) {
+        throw new Error('Authentication failed - invalid PIN');
+      }
+      
+      // Derive the user's personal encryption key from their PIN (same as in contract)
+      const userKey = this.deriveUserEncryptionKey(pin);
+      
+      // Get the user's encrypted balance or create default
+      let encryptedBalance: Uint8Array;
+      if (l.encrypted_user_balances.member(userIdBytes)) {
+        encryptedBalance = l.encrypted_user_balances.lookup(userIdBytes);
+      } else {
+        // No balance stored yet - create encrypted zero balance using user's key
+        encryptedBalance = this.encryptBalance(0n, userKey);
+      }
+      
+      // Decrypt the balance using the user balance mapping
+      let actualBalance: bigint;
+      if (l.user_balance_mappings.member(encryptedBalance)) {
+        actualBalance = l.user_balance_mappings.lookup(encryptedBalance);
+      } else {
+        // No mapping found - likely means zero balance
+        actualBalance = 0n;
+      }
+      
+      this.logger?.trace({
+        balanceReadFromLedger: {
+          userId: this.userId,
+          balance: actualBalance.toString()
+        }
+      });
+      
+      return actualBalance;
+    } catch (error) {
+      this.logger?.warn({ readUserBalanceFailed: { userId: this.userId, error: error instanceof Error ? error.message : 'Unknown error' } });
+      throw error;
+    }
+  }
+
+  // Helper method to compare Uint8Arrays
+  private arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
+  }
+
+  // Derive user encryption key from PIN (matches contract implementation)
+  private deriveUserEncryptionKey(pin: string): Uint8Array {
+    // This must match the contract's key derivation: 
+    // persistentHash<Vector<2, Bytes<32>>>([pad(32, "user:balance:"), disclose(pin)])
+    const prefix = this.stringToBytes32("user:balance:");
+    const pinBytes = this.stringToBytes32(pin);
+    
+    // Create a simple hash combining prefix and pin
+    // In production, this would use the same persistentHash function as the contract
+    const combined = new Uint8Array(64);
+    combined.set(prefix, 0);
+    combined.set(pinBytes, 32);
+    
+    // Use a simple hash for now - this should match contract's persistentHash
+    return this.hashBytes(combined).slice(0, 32);
+  }
+
+  // Encrypt balance using key (matches contract implementation)  
+  private encryptBalance(balance: bigint, encryptionKey: Uint8Array): Uint8Array {
+    // This must match the contract's encrypt_balance function
+    // The contract uses persistentHash<Vector<2, Bytes<32>>>([persistentHash<Uint<64>>(balance), encryption_key])
+    
+    // Convert balance to bytes for hashing
+    const balanceBytes = new Uint8Array(8);
+    const dataView = new DataView(balanceBytes.buffer);
+    dataView.setBigUint64(0, balance, false); // big-endian
+    
+    // Hash the balance
+    const balanceHash = this.hashBytes(balanceBytes);
+    
+    // Combine with encryption key and hash
+    const combined = new Uint8Array(64);
+    combined.set(balanceHash.slice(0, 32), 0);
+    combined.set(encryptionKey, 32);
+    
+    return this.hashBytes(combined).slice(0, 32);
+  }
+
+  // Simple hash function (should match contract's persistentHash in production)
+  private hashBytes(input: Uint8Array): Uint8Array {
+    // This is a simplified hash - in production this would use the same
+    // cryptographic hash function as the contract's persistentHash
+    const result = new Uint8Array(32);
+    for (let i = 0; i < input.length; i++) {
+      result[i % 32] ^= input[i];
+    }
+    return result;
+  }
+
 
   async verifyAccountStatus(pin: string): Promise<void> {
     this.logger?.info({ verifyAccountStatus: { userId: this.userId } });

@@ -1,0 +1,35 @@
+# Exclude bank-contract directory since we have managed resources locally
+../bank-contract/
+
+# Exclude other unnecessary directories for deployment
+../midnight-*/
+../MidnightForge/
+../MidnightMobile/
+../rust-scripts/
+
+# Exclude development files
+../.git/
+../node_modules/
+.git/
+node_modules/
+
+# Exclude build artifacts that aren't needed
+dist/
+.vite/
+
+# Exclude development and testing files
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+test/
+tests/
+__tests__/
+
+# Exclude documentation and config files
+README.md
+PLAN.md
+DEV_MODE.md
+FEATURES.md
+*.md
+.DS_Store
