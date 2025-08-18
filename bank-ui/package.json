@@ -6,8 +6,14 @@
   "scripts": {
     "start": "http-server --port 8080 ./dist --proxy 'http://127.0.0.1:8080?' --history-api-fallback",
     "dev": "npm run dev:prepare && vite --host --force",
+    "dev:local": "npm run config:local && npm run dev",
+    "dev:testnet": "npm run config:testnet && npm run dev",
     "dev:prepare": "rimraf public/keys public/zkir || true && mkdir -p public/keys public/zkir && cp -f /Users/norman/Development/midnight/midnight-bank/bank-contract/src/managed/bank/keys/* public/keys/ 2>/dev/null || true && cp -f /Users/norman/Development/midnight/midnight-bank/bank-contract/src/managed/bank/zkir/* public/zkir/ 2>/dev/null || true",
     "build": "vite build && npm run copy-bank-keys",
+    "build:local": "npm run config:local && npm run build",
+    "build:testnet": "npm run config:testnet && npm run build",
+    "config:local": "cp public/config.local.json public/config.json",
+    "config:testnet": "cp public/config.testnet.json public/config.json",
     "copy-bank-keys": "mkdir -p ./dist/keys ./dist/zkir && cp -r ../bank-contract/src/managed/bank/keys/* ./dist/keys || true && cp -r ../bank-contract/src/managed/bank/zkir/* ./dist/zkir || true",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"

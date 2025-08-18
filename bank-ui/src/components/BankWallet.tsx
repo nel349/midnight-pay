@@ -53,8 +53,8 @@ export const BankWalletProvider: React.FC<{ logger: Logger; children: React.Reac
     [],
   );
   const proofProvider: ProofProvider<BankCircuitKeys> = useMemo(
-    () => proofClient(config.PROOF_SERVER ?? 'http://127.0.0.1:6300', () => {}),
-    [config.PROOF_SERVER],
+    () => proofClient(config.PROOF_SERVER_URL ?? 'http://127.0.0.1:6300', () => {}),
+    [config.PROOF_SERVER_URL],
   );
 
   const [isConnected, setIsConnected] = useState(false);

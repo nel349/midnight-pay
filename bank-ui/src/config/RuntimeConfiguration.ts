@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 export interface RuntimeConfig {
   readonly INDEXER_URI: string;
   readonly INDEXER_WS_URI: string;
-  readonly PROOF_SERVER?: string;
+  readonly PROOF_SERVER_URL?: string;
   readonly PUBLIC_URL?: string;
   readonly LOGGING_LEVEL?: string;
   readonly NETWORK_ID?: string;
@@ -12,7 +12,7 @@ export interface RuntimeConfig {
 const defaultConfig: RuntimeConfig = {
   INDEXER_URI: 'http://127.0.0.1:8088/api/v1/graphql',
   INDEXER_WS_URI: 'ws://127.0.0.1:8088/api/v1/graphql/ws',
-  PROOF_SERVER: 'http://127.0.0.1:6300',
+  PROOF_SERVER_URL: 'http://127.0.0.1:6300',
   PUBLIC_URL: '/',
   LOGGING_LEVEL: 'info',
   NETWORK_ID: 'Undeployed',
