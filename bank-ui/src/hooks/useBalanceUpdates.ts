@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { usePinSession } from '../contexts/PinSessionContext';
 import { ledger } from '@midnight-bank/bank-contract';
+import { formatAmount } from '../utils/formatters';
 
 // Reactive balance hook that reads directly from ledger without transactions
 
@@ -69,7 +70,7 @@ export function useBalanceUpdates(bankAPI: BankAPI | null) {
     // Helper functions
     formatBalance: () => {
       if (!hasBalance) return '***';
-      return (Number(balanceAmount) / 100).toFixed(2);
+      return formatAmount(balanceAmount);
     },
     
     // Status checks

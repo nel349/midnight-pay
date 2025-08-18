@@ -26,6 +26,7 @@ import {
 import { useTheme } from '../theme/ThemeProvider';
 import { usePinSession } from '../contexts/PinSessionContext';
 import type { BankAPI } from '@midnight-bank/bank-api';
+import { formatAmount } from '../utils/formatters';
 
 // Define the transaction type locally since it's not exported
 type DetailedTransaction = {
@@ -166,10 +167,7 @@ export const TransactionSummary: React.FC<TransactionSummaryProps> = ({
     }
   };
 
-  const formatAmount = (amount?: bigint) => {
-    if (amount === undefined) return '';
-    return (Number(amount) / 100).toFixed(2);
-  };
+  // formatAmount is now imported from utils
 
   const formatDate = (date: Date) => {
     const now = new Date();

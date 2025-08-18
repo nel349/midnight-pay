@@ -635,14 +635,16 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => {
+            <Button 
+              variant="outlined"
+              onClick={() => {
               setShowGrantDialog(false);
               setGrantDialogError(null);
               setGrantDialogSuccess(null);
             }}>Cancel</Button>
             <Button
               onClick={handleGrantPermission}
-              variant="contained"
+              variant="outlined"
               disabled={loading || !requesterId.trim()}
             >
               {loading ? 'Granting...' : 'Grant Permission'}

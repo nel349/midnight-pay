@@ -10,7 +10,7 @@ import {
   TextField, 
   Button, 
   Alert} from '@mui/material';
-import { ArrowBack, Visibility, AccountBalance } from '@mui/icons-material';
+import { ArrowBack, Visibility, AccountBalance, VisibilityOff } from '@mui/icons-material';
 import { useBankWallet } from '../components/BankWallet';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
 import { touchAccount } from '../utils/AccountsLocalState';
@@ -72,6 +72,7 @@ export const AccountDetails: React.FC = () => {
   const [withdrawDialogError, setWithdrawDialogError] = useState<string | null>(null);
   const [withdrawDialogSuccess, setWithdrawDialogSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
+  const [isBalanceVisible, setIsBalanceVisible] = useState(true);
   
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
   
@@ -492,7 +493,8 @@ export const AccountDetails: React.FC = () => {
                         color: hasBalance ? theme.colors.text.primary : theme.colors.text.secondary,
                       }}
                     >
-                      {hasBalance ? formatBalance() : '***'}
+                     
+                      {hasBalance && isBalanceVisible ? formatBalance() : '***'}
                     </Typography>
                     
                     <Typography 
@@ -506,15 +508,31 @@ export const AccountDetails: React.FC = () => {
                     </Typography>
                   </Box>
                   
+                   {/** we should be able to hide the balance if desired */}
                   <Box sx={{ display: 'flex', gap: theme.spacing[2], alignItems: 'center' }}>
-                    {!hasBalance && (
+                    {!isBalanceVisible && (
                       <ThemedButton
                         variant="outlined"
                         startIcon={<Visibility />}
-                        onClick={() => refreshBalance()}
+                        onClick={() => {
+                          setIsBalanceVisible(true);
+                          refreshBalance();
+                        }}
                         disabled={loading || !isConnected}
                       >
                         Show Balance
+                      </ThemedButton>
+                    )}
+                    {isBalanceVisible && (
+                      <ThemedButton
+                        variant="outlined"
+                        startIcon={<VisibilityOff />}
+                        onClick={() => {
+                          setIsBalanceVisible(false);
+                        }}
+                        disabled={loading || !isConnected}
+                      >
+                        Hide Balance
                       </ThemedButton>
                     )}
                   </Box>
@@ -742,7 +760,9 @@ export const AccountDetails: React.FC = () => {
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => {
+              <Button 
+              variant="outlined"
+              onClick={() => {
                 setShowDepositDialog(false);
                 setDepositDialogError(null);
                 setDepositDialogSuccess(null);
@@ -800,7 +820,9 @@ export const AccountDetails: React.FC = () => {
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => {
+              <Button 
+                variant="outlined"
+                onClick={() => {
                 setShowWithdrawDialog(false);
                 setWithdrawDialogError(null);
                 setWithdrawDialogSuccess(null);
@@ -808,7 +830,7 @@ export const AccountDetails: React.FC = () => {
               }}>Cancel</Button>
               <Button
                 onClick={executeWithdraw}
-                variant="contained"
+                variant="outlined"
                 disabled={loading || !withdrawAmount.trim()}
               >
                 {loading ? 'Withdrawing...' : 'Withdraw'}

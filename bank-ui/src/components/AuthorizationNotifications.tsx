@@ -12,7 +12,19 @@ import {
   TextField,
   Alert
 } from '@mui/material';
-import { Refresh, Notifications } from '@mui/icons-material';
+import { 
+  Refresh, 
+  Notifications,
+  Send,
+  HourglassEmpty,
+  CheckCircle,
+  Outbox,
+  Cancel,
+  AttachMoney,
+  Lock,
+  LockOpen,
+  InboxOutlined
+} from '@mui/icons-material';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
 import { ThemedButton, ThemedCard, ThemedCardContent } from './index';
@@ -128,7 +140,7 @@ export function AuthorizationNotifications({
       }
 
       await bankAPI.claimAuthorizedTransfer(pin, senderUserId);
-      onSuccess?.(`💰 Successfully claimed transfer from ${senderUserId}!`);
+      onSuccess?.(`Successfully claimed transfer from ${senderUserId}!`);
       refresh();
     } catch (error) {
       onError?.(`Failed to claim transfer: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -226,7 +238,10 @@ export function AuthorizationNotifications({
                   letterSpacing: '0.5px',
                 }}
               >
-                📤 Authorization Requests
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[1] }}>
+                  <Send sx={{ fontSize: '0.875rem', color: theme.colors.info[500] }} />
+                  Authorization Requests
+                </Box>
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[2] }}>
                 {pendingRequests.map(request => (
@@ -262,10 +277,19 @@ export function AuthorizationNotifications({
                           variant="outlined"
                           size="small"
                         >
-                          {isProcessing(`approve-${request.senderUserId}`) 
-                            ? '⏳ Approving...' 
-                            : '✅ Approve'
-                          }
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[1] }}>
+                            {isProcessing(`approve-${request.senderUserId}`) ? (
+                              <>
+                                <HourglassEmpty sx={{ fontSize: '1rem' }} />
+                                Approving...
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle sx={{ fontSize: '1rem' }} />
+                                Approve
+                              </>
+                            )}
+                          </Box>
                         </ThemedButton>
                       </Box>
                     </ThemedCardContent>
@@ -289,7 +313,10 @@ export function AuthorizationNotifications({
                   letterSpacing: '0.5px',
                 }}
               >
-                📨 Your Requests
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[1] }}>
+                  <Outbox sx={{ fontSize: '0.875rem', color: theme.colors.warning[500] }} />
+                  Your Requests
+                </Box>
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[2] }}>
                 {outgoingRequests.map(request => (
@@ -316,7 +343,16 @@ export function AuthorizationNotifications({
                             variant="caption" 
                             sx={{ color: theme.colors.text.secondary }}
                           >
-                            Status: {request.status === 0 ? '⏳ Pending' : request.status === 1 ? '✅ Approved' : '❌ Rejected'}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[1] }}>
+                              Status:
+                              {request.status === 0 ? (
+                                <><HourglassEmpty sx={{ fontSize: '0.875rem', color: theme.colors.warning[500] }} /> Pending</>
+                              ) : request.status === 1 ? (
+                                <><CheckCircle sx={{ fontSize: '0.875rem', color: theme.colors.success[500] }} /> Approved</>
+                              ) : (
+                                <><Cancel sx={{ fontSize: '0.875rem', color: theme.colors.error[500] }} /> Rejected</>
+                              )}
+                            </Box>
                           </Typography>
                         </Box>
                         <Typography 
@@ -347,7 +383,10 @@ export function AuthorizationNotifications({
                   letterSpacing: '0.5px',
                 }}
               >
-                💰 Pending Transfers
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[1] }}>
+                  <AttachMoney sx={{ fontSize: '0.875rem', color: theme.colors.success[500] }} />
+                  Pending Transfers
+                </Box>
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: theme.spacing[2] }}>
                 {pendingClaims.map((claim, idx) => (
@@ -374,7 +413,10 @@ export function AuthorizationNotifications({
                             variant="caption" 
                             sx={{ color: theme.colors.text.secondary }}
                           >
-                            💎 Amount hidden until claimed
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[1] }}>
+                              <Lock sx={{ fontSize: '0.875rem', color: theme.colors.text.secondary }} />
+                              Amount hidden until claimed
+                            </Box>
                           </Typography>
                         </Box>
                         <ThemedButton
@@ -383,10 +425,19 @@ export function AuthorizationNotifications({
                           variant="primary"
                           size="small"
                         >
-                          {isProcessing(`claim-${claim.senderUserId}`) 
-                            ? '⏳ Claiming...' 
-                            : '🔓 Claim'
-                          }
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[1] }}>
+                            {isProcessing(`claim-${claim.senderUserId}`) ? (
+                              <>
+                                <HourglassEmpty sx={{ fontSize: '1rem' }} />
+                                Claiming...
+                              </>
+                            ) : (
+                              <>
+                                <LockOpen sx={{ fontSize: '1rem' }} />
+                                Claim
+                              </>
+                            )}
+                          </Box>
                         </ThemedButton>
                       </Box>
                     </ThemedCardContent>
@@ -404,9 +455,13 @@ export function AuthorizationNotifications({
             py: theme.spacing[4],
             color: theme.colors.text.secondary 
           }}>
-            <Typography variant="h2" sx={{ mb: theme.spacing[2] }}>
-              📭
-            </Typography>
+            <InboxOutlined 
+              sx={{ 
+                fontSize: '4rem', 
+                color: theme.colors.text.secondary,
+                mb: theme.spacing[2]
+              }} 
+            />
             <Typography 
               variant="body1"
               sx={{ color: theme.colors.text.secondary, mb: theme.spacing[1] }}
@@ -432,7 +487,12 @@ export function AuthorizationNotifications({
       setApprovalSenderUserId('');
       setApprovalMaxAmount('');
     }} maxWidth="sm" fullWidth>
-      <DialogTitle>✅ Approve Transfer Authorization</DialogTitle>
+      <DialogTitle>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: theme.spacing[1] }}>
+          <CheckCircle sx={{ color: theme.colors.success[500] }} />
+          Approve Transfer Authorization
+        </Box>
+      </DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Approve {approvalSenderUserId} to send you money up to a maximum amount. Set a limit to control how much they can send in a single transaction.

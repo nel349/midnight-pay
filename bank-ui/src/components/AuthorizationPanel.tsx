@@ -447,14 +447,16 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => {
+            <Button 
+              variant="outlined"
+              onClick={() => {
               setShowRequestDialog(false);
               setRequestDialogError(null);
               setRequestDialogSuccess(null);
             }}>Cancel</Button>
             <Button
               onClick={handleRequestAuthorization}
-              variant="contained"
+              variant="outlined"
               disabled={loading || !recipientUserId.trim()}
             >
               {loading ? 'Sending Request...' : 'Ask Permission'}
