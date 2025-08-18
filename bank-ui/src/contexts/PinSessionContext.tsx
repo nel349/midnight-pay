@@ -14,7 +14,8 @@ interface PinSessionProviderProps {
 
 const PinSessionContext = createContext<PinSessionContextType | null>(null);
 
-const PIN_SESSION_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
+const PIN_SESSION_DURATION_MINUTES = 10;
+const PIN_SESSION_DURATION = PIN_SESSION_DURATION_MINUTES * 60 * 1000; // 10 minutes in milliseconds
 const STORAGE_KEY = 'midnight-bank-pin-session';
 
 // Simple XOR encryption for PIN storage (browser-only security)
@@ -269,7 +270,7 @@ export const PinSessionProvider: React.FC<PinSessionProviderProps> = ({ children
             }}
             onKeyDown={handleKeyDown}
             placeholder="Enter your PIN"
-            helperText="Your PIN will be cached securely for 10 minutes"
+            helperText={`Your PIN will be cached securely for ${PIN_SESSION_DURATION_MINUTES} minutes`}
             disabled={loading}
           />
         </DialogContent>

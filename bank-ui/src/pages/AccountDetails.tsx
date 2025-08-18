@@ -1,6 +1,17 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Typography, Box, Chip } from '@mui/material';
+import { 
+  Typography, 
+  Box, 
+  Chip, 
+  Dialog, 
+  DialogTitle, 
+  DialogContent, 
+  DialogActions, 
+  TextField, 
+  Button, 
+  Alert 
+} from '@mui/material';
 import { ArrowBack, Visibility, VisibilityOff, AccountBalance, Notifications } from '@mui/icons-material';
 import { useBankWallet } from '../components/BankWallet';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
@@ -10,7 +21,7 @@ import { DisclosurePanel } from '../components/DisclosurePanel';
 import { AuthorizationNotifications } from '../components/AuthorizationNotifications';
 import { usePinSession } from '../contexts/PinSessionContext';
 import { ErrorAlert } from '../components/ErrorAlert';
-import { useTransactionHandler } from '../utils/errorHandler';
+import { useTransactionHandler, useModalTransactionHandler } from '../utils/errorHandler';
 import { 
   ThemedButton, 
   ThemedCard, 
@@ -39,10 +50,41 @@ export const AccountDetails: React.FC = () => {
   const lastAuthRef = useRef<number | null>(null);
   const { theme, mode } = useTheme();
   
+  // Modal states for deposit and withdrawal
+  const [showDepositDialog, setShowDepositDialog] = useState(false);
+  const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
+  const [depositAmount, setDepositAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [depositDialogError, setDepositDialogError] = useState<string | null>(null);
+  const [depositDialogSuccess, setDepositDialogSuccess] = useState<string | null>(null);
+  const [withdrawDialogError, setWithdrawDialogError] = useState<string | null>(null);
+  const [withdrawDialogSuccess, setWithdrawDialogSuccess] = useState<string | null>(null);
+  
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
   
   // Modular transaction handler
   const transactionHandler = useTransactionHandler(setLoading, setError, setSuccess);
+  
+  // Modal transaction handlers for deposit and withdrawal
+  const depositModalHandler = useModalTransactionHandler(
+    setLoading,
+    setDepositDialogError,
+    setDepositDialogSuccess,
+    {
+      useGlobalError: setError,
+      useGlobalSuccess: setSuccess
+    }
+  );
+  
+  const withdrawModalHandler = useModalTransactionHandler(
+    setLoading,
+    setWithdrawDialogError,
+    setWithdrawDialogSuccess,
+    {
+      useGlobalError: setError,
+      useGlobalSuccess: setSuccess
+    }
+  );
 
   useEffect(() => {
     if (!bankAddress || !userId) return;
@@ -72,9 +114,22 @@ export const AccountDetails: React.FC = () => {
     return () => subscription.unsubscribe();
   }, [bankAddress, userId, providers, addAccount]);
 
-  // Subscribe to account state updates when bankAPI is available
+  // Authenticate user and subscribe to account state updates when bankAPI is available
   useEffect(() => {
     if (!bankAPI) return;
+    
+    // Authenticate user when bankAPI becomes available
+    const authenticateUser = async () => {
+      try {
+        const pinInput = await getPin('Enter your PIN to access your account', bankAPI);
+        lastAuthRef.current = Date.now();
+        setUserPin(pinInput);
+      } catch (err) {
+        setError('Authentication failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      }
+    };
+    
+    authenticateUser();
     
     const stateSubscription = bankAPI.state$.subscribe({
       next: (state) => {
@@ -135,45 +190,57 @@ export const AccountDetails: React.FC = () => {
     );
   };
 
-  const handleDeposit = async () => {
-    if (!bankAPI) return;
+  const handleDeposit = () => {
+    setShowDepositDialog(true);
+  };
+
+  const executeDeposit = async () => {
+    if (!bankAPI || !depositAmount.trim()) return;
     
-    const amountInput = prompt('Enter deposit amount:') ?? '';
-    if (!amountInput) return;
-    
-    await transactionHandler.execute(
+    await depositModalHandler.execute(
       async () => {
         const pinInput = await getPin('Enter your PIN to deposit funds', bankAPI);
-        await bankAPI.deposit(pinInput, amountInput);
-        return amountInput;
+        await bankAPI.deposit(pinInput, depositAmount);
+        return depositAmount;
       },
       'deposit',
       {
         onSuccess: (amount) => {
-          // Custom success message with amount
-          setSuccess(`✅ Successfully deposited $${amount}`);
+          setDepositDialogSuccess(`Successfully deposited $${amount}`);
+          setTimeout(() => {
+            setDepositAmount('');
+            setShowDepositDialog(false);
+            setDepositDialogError(null);
+            setDepositDialogSuccess(null);
+          }, 1500);
         }
       }
     );
   };
 
-  const handleWithdraw = async () => {
-    if (!bankAPI) return;
+  const handleWithdraw = () => {
+    setShowWithdrawDialog(true);
+  };
+
+  const executeWithdraw = async () => {
+    if (!bankAPI || !withdrawAmount.trim()) return;
     
-    const amountInput = prompt('Enter withdrawal amount:') ?? '';
-    if (!amountInput) return;
-    
-    await transactionHandler.execute(
+    await withdrawModalHandler.execute(
       async () => {
         const pinInput = await getPin('Enter your PIN to withdraw funds', bankAPI);
-        await bankAPI.withdraw(pinInput, amountInput);
-        return amountInput;
+        await bankAPI.withdraw(pinInput, withdrawAmount);
+        return withdrawAmount;
       },
       'withdrawal',
       {
         onSuccess: (amount) => {
-          // Custom success message with amount
-          setSuccess(`✅ Successfully withdrew $${amount}`);
+          setWithdrawDialogSuccess(`Successfully withdrew $${amount}`);
+          setTimeout(() => {
+            setWithdrawAmount('');
+            setShowWithdrawDialog(false);
+            setWithdrawDialogError(null);
+            setWithdrawDialogSuccess(null);
+          }, 1500);
         }
       }
     );
@@ -594,6 +661,122 @@ export const AccountDetails: React.FC = () => {
               </ThemedCard>
             </Box>
           )}
+
+          {/* Deposit Dialog */}
+          <Dialog open={showDepositDialog} onClose={() => {
+            setShowDepositDialog(false);
+            setDepositDialogError(null);
+            setDepositDialogSuccess(null);
+            setDepositAmount('');
+          }} maxWidth="sm" fullWidth>
+            <DialogTitle>💰 Deposit Funds</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Add funds to your bank account. Enter the amount you want to deposit.
+              </Typography>
+              
+              {/* Inline Modal Error/Success */}
+              {depositDialogError && (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                  <Typography variant="body2">
+                    <strong>Error:</strong> {depositDialogError}
+                  </Typography>
+                </Alert>
+              )}
+              
+              {depositDialogSuccess && (
+                <Alert severity="success" sx={{ mb: 3 }}>
+                  <Typography variant="body2">
+                    <strong>Success:</strong> {depositDialogSuccess}
+                  </Typography>
+                </Alert>
+              )}
+              
+              <TextField
+                autoFocus
+                label="Amount ($)"
+                placeholder="e.g., 100.00"
+                fullWidth
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                sx={{ mt: 2 }}
+                helperText="Enter the amount to deposit to your account"
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => {
+                setShowDepositDialog(false);
+                setDepositDialogError(null);
+                setDepositDialogSuccess(null);
+                setDepositAmount('');
+              }}>Cancel</Button>
+              <Button
+                onClick={executeDeposit}
+                variant="contained"
+                disabled={loading || !depositAmount.trim()}
+              >
+                {loading ? 'Depositing...' : 'Deposit'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          {/* Withdraw Dialog */}
+          <Dialog open={showWithdrawDialog} onClose={() => {
+            setShowWithdrawDialog(false);
+            setWithdrawDialogError(null);
+            setWithdrawDialogSuccess(null);
+            setWithdrawAmount('');
+          }} maxWidth="sm" fullWidth>
+            <DialogTitle>💸 Withdraw Funds</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Withdraw funds from your bank account. Enter the amount you want to withdraw.
+              </Typography>
+              
+              {/* Inline Modal Error/Success */}
+              {withdrawDialogError && (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                  <Typography variant="body2">
+                    <strong>Error:</strong> {withdrawDialogError}
+                  </Typography>
+                </Alert>
+              )}
+              
+              {withdrawDialogSuccess && (
+                <Alert severity="success" sx={{ mb: 3 }}>
+                  <Typography variant="body2">
+                    <strong>Success:</strong> {withdrawDialogSuccess}
+                  </Typography>
+                </Alert>
+              )}
+              
+              <TextField
+                autoFocus
+                label="Amount ($)"
+                placeholder="e.g., 50.00"
+                fullWidth
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                sx={{ mt: 2 }}
+                helperText="Enter the amount to withdraw from your account"
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => {
+                setShowWithdrawDialog(false);
+                setWithdrawDialogError(null);
+                setWithdrawDialogSuccess(null);
+                setWithdrawAmount('');
+              }}>Cancel</Button>
+              <Button
+                onClick={executeWithdraw}
+                variant="contained"
+                disabled={loading || !withdrawAmount.trim()}
+              >
+                {loading ? 'Withdrawing...' : 'Withdraw'}
+              </Button>
+            </DialogActions>
+          </Dialog>
         </Box>
       </Box>
     </GradientBackground>

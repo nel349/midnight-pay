@@ -109,7 +109,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
     }
   );
 
-  // Load permissions on component mount and when connected
+  // Load permissions when component mounts and user is connected
   useEffect(() => {
     if (isConnected && bankAPI) {
       loadPermissions();
@@ -117,9 +117,10 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
   }, [isConnected, bankAPI]);
 
   const loadPermissions = async () => {
+    if (!bankAPI || !isConnected) return;
+    
     try {
       const pinInput = await getPin('Enter your PIN to view disclosure permissions', bankAPI);
-      
       const perms = await bankAPI.getDisclosurePermissions(pinInput);
       setPermissions(perms);
     } catch (err) {

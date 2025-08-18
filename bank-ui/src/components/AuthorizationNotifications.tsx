@@ -1,10 +1,25 @@
 import React, { useState } from 'react';
-import { Box, Card, CardContent, Typography, Button, Chip, IconButton } from '@mui/material';
+import { 
+  Box, 
+  Card, 
+  CardContent, 
+  Typography, 
+  Button, 
+  Chip, 
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Alert
+} from '@mui/material';
 import { Refresh, Notifications } from '@mui/icons-material';
 import { BankAPI } from '@midnight-bank/bank-api';
 import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
 import { ThemedButton } from './ThemedButton';
 import { usePinSession } from '../contexts/PinSessionContext';
+import { useModalTransactionHandler } from '../utils/errorHandler';
 
 interface AuthorizationNotificationsProps {
   bankAPI: BankAPI | null;
@@ -19,6 +34,24 @@ export function AuthorizationNotifications({
 }: AuthorizationNotificationsProps) {
   const { getPin } = usePinSession();
   const [processingActions, setProcessingActions] = useState<Set<string>>(new Set());
+  
+  // Modal state for approval
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false);
+  const [approvalSenderUserId, setApprovalSenderUserId] = useState('');
+  const [approvalMaxAmount, setApprovalMaxAmount] = useState('');
+  const [approvalDialogError, setApprovalDialogError] = useState<string | null>(null);
+  const [approvalDialogSuccess, setApprovalDialogSuccess] = useState<string | null>(null);
+  
+  // Modal transaction handler for approval
+  const approvalModalHandler = useModalTransactionHandler(
+    () => {}, // Don't set global loading for individual notifications
+    setApprovalDialogError,
+    setApprovalDialogSuccess,
+    {
+      useGlobalError: onError,
+      useGlobalSuccess: onSuccess
+    }
+  );
   
   const {
     pendingRequests,
@@ -44,26 +77,35 @@ export function AuthorizationNotifications({
     });
   };
 
-  const handleApproveRequest = async (senderUserId: string) => {
-    if (!bankAPI) return;
+  const handleApproveRequest = (senderUserId: string) => {
+    setApprovalSenderUserId(senderUserId);
+    setShowApprovalDialog(true);
+  };
+
+  const executeApproval = async () => {
+    if (!bankAPI || !approvalMaxAmount.trim()) return;
     
-    const maxAmount = prompt('Enter the maximum amount they can send you (e.g., 500.00):');
-    if (!maxAmount || !maxAmount.trim()) return;
-    
-    const pin = await getPin('Enter your PIN to approve authorization', bankAPI);
-    
-    const actionKey = `approve-${senderUserId}`;
-    setProcessing(actionKey, true);
-    
-    try {
-      await bankAPI.approveTransferAuthorization(pin, senderUserId, maxAmount);
-      onSuccess?.(`✅ Approved authorization for ${senderUserId} (max: $${maxAmount})`);
-      refresh();
-    } catch (error) {
-      onError?.(`Failed to approve authorization: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setProcessing(actionKey, false);
-    }
+    await approvalModalHandler.execute(
+      async () => {
+        const pin = await getPin('Enter your PIN to approve authorization', bankAPI);
+        await bankAPI.approveTransferAuthorization(pin, approvalSenderUserId, approvalMaxAmount);
+        return { senderUserId: approvalSenderUserId, maxAmount: approvalMaxAmount };
+      },
+      'authorization approval',
+      {
+        onSuccess: ({ senderUserId, maxAmount }) => {
+          setApprovalDialogSuccess(`Approved authorization for ${senderUserId} with limit $${maxAmount}`);
+          setTimeout(async () => {
+            setShowApprovalDialog(false);
+            setApprovalDialogError(null);
+            setApprovalDialogSuccess(null);
+            setApprovalSenderUserId('');
+            setApprovalMaxAmount('');
+            await refresh();
+          }, 1500);
+        }
+      }
+    );
   };
 
   const handleClaimTransfer = async (senderUserId: string) => {
@@ -106,6 +148,7 @@ export function AuthorizationNotifications({
   const totalNotifications = pendingRequests.length + outgoingRequests.length + pendingClaims.length;
 
   return (
+    <>
     <Card>
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
@@ -271,5 +314,66 @@ export function AuthorizationNotifications({
         )}
       </CardContent>
     </Card>
+
+    {/* Approval Dialog */}
+    <Dialog open={showApprovalDialog} onClose={() => {
+      setShowApprovalDialog(false);
+      setApprovalDialogError(null);
+      setApprovalDialogSuccess(null);
+      setApprovalSenderUserId('');
+      setApprovalMaxAmount('');
+    }} maxWidth="sm" fullWidth>
+      <DialogTitle>✅ Approve Transfer Authorization</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Approve {approvalSenderUserId} to send you money up to a maximum amount. Set a limit to control how much they can send in a single transaction.
+        </Typography>
+        
+        {/* Inline Modal Error/Success */}
+        {approvalDialogError && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            <Typography variant="body2">
+              <strong>Error:</strong> {approvalDialogError}
+            </Typography>
+          </Alert>
+        )}
+        
+        {approvalDialogSuccess && (
+          <Alert severity="success" sx={{ mb: 3 }}>
+            <Typography variant="body2">
+              <strong>Success:</strong> {approvalDialogSuccess}
+            </Typography>
+          </Alert>
+        )}
+        
+        <TextField
+          autoFocus
+          label="Maximum Amount ($)"
+          placeholder="e.g., 500.00"
+          fullWidth
+          value={approvalMaxAmount}
+          onChange={(e) => setApprovalMaxAmount(e.target.value)}
+          sx={{ mt: 2 }}
+          helperText="Maximum amount they can send in a single transaction"
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => {
+          setShowApprovalDialog(false);
+          setApprovalDialogError(null);
+          setApprovalDialogSuccess(null);
+          setApprovalSenderUserId('');
+          setApprovalMaxAmount('');
+        }}>Cancel</Button>
+        <Button
+          onClick={executeApproval}
+          variant="contained"
+          disabled={!approvalMaxAmount.trim()}
+        >
+          Approve Authorization
+        </Button>
+      </DialogActions>
+    </Dialog>
+    </>
   );
 }
