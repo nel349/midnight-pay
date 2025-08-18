@@ -10,6 +10,7 @@ import { DisclosurePanel } from '../components/DisclosurePanel';
 import { AuthorizationNotifications } from '../components/AuthorizationNotifications';
 import { usePinSession } from '../contexts/PinSessionContext';
 import { ErrorAlert } from '../components/ErrorAlert';
+import { useTransactionHandler } from '../utils/errorHandler';
 import { 
   ThemedButton, 
   ThemedCard, 
@@ -39,6 +40,9 @@ export const AccountDetails: React.FC = () => {
   const { theme, mode } = useTheme();
   
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+  
+  // Modular transaction handler
+  const transactionHandler = useTransactionHandler(setLoading, setError, setSuccess);
 
   useEffect(() => {
     if (!bankAddress || !userId) return;
@@ -110,56 +114,69 @@ export const AccountDetails: React.FC = () => {
   const handleShowBalance = async () => {
     if (!bankAPI || !isConnected) return;
     
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const pinInput = await getPin('Enter your PIN to reveal balance', bankAPI);
-      
-      await bankAPI.getTokenBalance(pinInput);
-      
-      lastAuthRef.current = Date.now();
-      setUserPin(pinInput);
-      setShowBalance(true);
-      setLoading(false);
-      
-    } catch (err) {
-      setError(err);
-      setLoading(false);
-      setShowBalance(false);
-    }
+    await transactionHandler.execute(
+      async () => {
+        const pinInput = await getPin('Enter your PIN to reveal balance', bankAPI);
+        await bankAPI.getTokenBalance(pinInput);
+        
+        lastAuthRef.current = Date.now();
+        setUserPin(pinInput);
+        return pinInput;
+      },
+      'balance retrieval',
+      {
+        onSuccess: () => {
+          setShowBalance(true);
+        },
+        onError: () => {
+          setShowBalance(false);
+        }
+      }
+    );
   };
 
   const handleDeposit = async () => {
     if (!bankAPI) return;
-    try {
-      const pinInput = await getPin('Enter your PIN to deposit funds', bankAPI);
-      const amountInput = prompt('Enter deposit amount:') ?? '';
-      if (!amountInput) return;
-      
-      setLoading(true);
-      await bankAPI.deposit(pinInput, amountInput);
-      setLoading(false);
-    } catch (err) {
-      setError(err);
-      setLoading(false);
-    }
+    
+    const amountInput = prompt('Enter deposit amount:') ?? '';
+    if (!amountInput) return;
+    
+    await transactionHandler.execute(
+      async () => {
+        const pinInput = await getPin('Enter your PIN to deposit funds', bankAPI);
+        await bankAPI.deposit(pinInput, amountInput);
+        return amountInput;
+      },
+      'deposit',
+      {
+        onSuccess: (amount) => {
+          // Custom success message with amount
+          setSuccess(`✅ Successfully deposited $${amount}`);
+        }
+      }
+    );
   };
 
   const handleWithdraw = async () => {
     if (!bankAPI) return;
-    try {
-      const pinInput = await getPin('Enter your PIN to withdraw funds', bankAPI);
-      const amountInput = prompt('Enter withdrawal amount:') ?? '';
-      if (!amountInput) return;
-      
-      setLoading(true);
-      await bankAPI.withdraw(pinInput, amountInput);
-      setLoading(false);
-    } catch (err) {
-      setError(err);
-      setLoading(false);
-    }
+    
+    const amountInput = prompt('Enter withdrawal amount:') ?? '';
+    if (!amountInput) return;
+    
+    await transactionHandler.execute(
+      async () => {
+        const pinInput = await getPin('Enter your PIN to withdraw funds', bankAPI);
+        await bankAPI.withdraw(pinInput, amountInput);
+        return amountInput;
+      },
+      'withdrawal',
+      {
+        onSuccess: (amount) => {
+          // Custom success message with amount
+          setSuccess(`✅ Successfully withdrew $${amount}`);
+        }
+      }
+    );
   };
 
   if (!bankAddress || !userId) {

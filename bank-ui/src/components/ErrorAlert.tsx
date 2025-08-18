@@ -6,6 +6,7 @@ import {
   Box,
   Collapse,
   IconButton,
+  useTheme,
 } from '@mui/material';
 import { Close, ExpandMore, ExpandLess } from '@mui/icons-material';
 import { parseError, formatErrorMessage, type ParsedError } from '../utils/errorHandling';
@@ -23,6 +24,7 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
   showDetails = false,
   sx 
 }) => {
+  const theme = useTheme();
   const [expanded, setExpanded] = React.useState(false);
   
   if (!error) return null;
@@ -31,22 +33,49 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
   const hasDetails = showDetails && (error.stack || error.code || error.reason);
 
   return (
-    <Alert 
-      severity={parsedError.severity}
-      sx={{ width: '100%', ...sx }}
-      action={
-        onClose && (
-          <IconButton
-            aria-label="close"
-            color="inherit"
-            size="small"
+    <Box sx={{ position: 'relative', width: '100%', ...sx }}>
+      <Alert 
+        severity={parsedError.severity}
+        sx={{ width: '100%' }}
+      >
+        {onClose && (
+          <button
             onClick={onClose}
+            aria-label="close"
+            style={{
+              position: 'absolute',
+              top: '8px',
+              right: '8px',
+              background: theme.palette.mode === 'dark' 
+                ? 'rgba(255, 255, 255, 0.1)' 
+                : 'rgba(0, 0, 0, 0.1)',
+              border: `1px solid ${theme.palette.divider}`,
+              borderRadius: '50%',
+              width: '28px',
+              height: '28px',
+              color: theme.palette.text.primary,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              zIndex: 9999
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.15)'
+                : 'rgba(0, 0, 0, 0.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.1)'
+                : 'rgba(0, 0, 0, 0.1)';
+            }}
           >
-            <Close fontSize="inherit" />
-          </IconButton>
-        )
-      }
-    >
+            ×
+          </button>
+        )}
       <AlertTitle sx={{ fontWeight: 'bold' }}>
         {parsedError.title}
       </AlertTitle>
@@ -106,7 +135,8 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
           </Collapse>
         </Box>
       )}
-    </Alert>
+      </Alert>
+    </Box>
   );
 };
 

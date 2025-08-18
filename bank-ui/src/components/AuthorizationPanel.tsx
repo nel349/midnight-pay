@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -33,6 +33,7 @@ import { utils, type BankAPI } from '@midnight-bank/bank-api';
 import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
 import { ThemedButton } from './ThemedButton';
 import { usePinSession } from '../contexts/PinSessionContext';
+import { useModalTransactionHandler } from '../utils/errorHandler';
 
 interface AuthorizationPanelProps {
   bankAPI: BankAPI;
@@ -61,69 +62,125 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [tabValue, setTabValue] = useState(0);
+  
+  // Modal-specific error/success states
+  const [transferDialogError, setTransferDialogError] = useState<string | null>(null);
+  const [transferDialogSuccess, setTransferDialogSuccess] = useState<string | null>(null);
+  const [requestDialogError, setRequestDialogError] = useState<string | null>(null);
+  const [requestDialogSuccess, setRequestDialogSuccess] = useState<string | null>(null);
+  const [approveDialogError, setApproveDialogError] = useState<string | null>(null);
+  const [approveDialogSuccess, setApproveDialogSuccess] = useState<string | null>(null);
+  
+  
+  // Modal transaction handlers
+  const transferModalHandler = useModalTransactionHandler(
+    setLoading, 
+    setTransferDialogError, 
+    setTransferDialogSuccess,
+    {
+      useGlobalError: onError,
+      useGlobalSuccess: onSuccess
+    }
+  );
+
+  const requestModalHandler = useModalTransactionHandler(
+    setLoading, 
+    setRequestDialogError, 
+    setRequestDialogSuccess,
+    {
+      useGlobalError: onError,
+      useGlobalSuccess: onSuccess
+    }
+  );
+
+  const approveModalHandler = useModalTransactionHandler(
+    setLoading, 
+    setApproveDialogError, 
+    setApproveDialogSuccess,
+    {
+      useGlobalError: onError,
+      useGlobalSuccess: onSuccess
+    }
+  );
 
   const { authorizedContacts, incomingAuthorizations } = useAuthorizationUpdates(bankAPI);
 
   const handleRequestAuthorization = async () => {
     if (!bankAPI || !isConnected || !recipientUserId.trim()) return;
     
-    try {
-      setLoading(true);
-      
-      const pinInput = await getPin('Enter your PIN to request transfer authorization', bankAPI);
-
-      await bankAPI.requestTransferAuthorization(pinInput, recipientUserId.trim());
-      
-      onSuccess(`Authorization request sent to ${recipientUserId}`);
-      setRecipientUserId('');
-      setShowRequestDialog(false);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed to request authorization');
-    } finally {
-      setLoading(false);
-    }
+    await requestModalHandler.execute(
+      async () => {
+        const pinInput = await getPin('Enter your PIN to request transfer authorization', bankAPI);
+        await bankAPI.requestTransferAuthorization(pinInput, recipientUserId.trim());
+        return recipientUserId;
+      },
+      'authorization request',
+      {
+        onSuccess: (recipientUserId) => {
+          setRequestDialogSuccess(`Authorization request sent to ${recipientUserId}`);
+          setTimeout(() => {
+            setRecipientUserId('');
+            setShowRequestDialog(false);
+            setRequestDialogError(null);
+            setRequestDialogSuccess(null);
+          }, 1500);
+        }
+      }
+    );
   };
 
   const handleApproveAuthorization = async () => {
     if (!bankAPI || !isConnected || !senderUserId.trim() || !maxAmount.trim()) return;
     
-    try {
-      setLoading(true);
-      
-      const pinInput = await getPin('Enter your PIN to approve transfer authorization', bankAPI);
-
-      await bankAPI.approveTransferAuthorization(pinInput, senderUserId.trim(), maxAmount);
-      
-      onSuccess(`Authorization approved for ${senderUserId} with limit $${maxAmount}`);
-      setSenderUserId('');
-      setMaxAmount('');
-      setShowApproveDialog(false);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed to approve authorization');
-    } finally {
-      setLoading(false);
-    }
+    await approveModalHandler.execute(
+      async () => {
+        const pinInput = await getPin('Enter your PIN to approve transfer authorization', bankAPI);
+        await bankAPI.approveTransferAuthorization(pinInput, senderUserId.trim(), maxAmount);
+        return { senderUserId, maxAmount };
+      },
+      'authorization approval',
+      {
+        onSuccess: ({ senderUserId, maxAmount }) => {
+          setApproveDialogSuccess(`Authorization approved for ${senderUserId} with limit $${maxAmount}`);
+          setTimeout(() => {
+            setSenderUserId('');
+            setMaxAmount('');
+            setShowApproveDialog(false);
+            setApproveDialogError(null);
+            setApproveDialogSuccess(null);
+          }, 1500);
+        }
+      }
+    );
   };
 
   const handleSendToAuthorized = async () => {
     if (!bankAPI || !isConnected || !recipientUserId.trim() || !transferAmount.trim()) return;
     
-    try {
-      setLoading(true);
-      
-      const pinInput = await getPin('Enter your PIN to send authorized transfer', bankAPI);
-
-      await bankAPI.sendToAuthorizedUser(pinInput, recipientUserId.trim(), transferAmount);
-      
-      onSuccess(`Successfully sent $${transferAmount} to ${recipientUserId}`);
-      setRecipientUserId('');
-      setTransferAmount('');
-      setShowTransferDialog(false);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed to send authorized transfer');
-    } finally {
-      setLoading(false);
-    }
+    await transferModalHandler.execute(
+      async () => {
+        const pinInput = await getPin('Enter your PIN to send authorized transfer', bankAPI);
+        await bankAPI.sendToAuthorizedUser(pinInput, recipientUserId.trim(), transferAmount);
+        return { recipientUserId, transferAmount };
+      },
+      'transfer',
+      {
+        onSuccess: ({ recipientUserId, transferAmount }) => {
+          // Custom success message
+          const successMsg = `Successfully sent $${transferAmount} to ${recipientUserId}`;
+          setTransferDialogSuccess(successMsg);
+          
+          // Reset form and close dialog after short delay
+          setTimeout(() => {
+            setRecipientUserId('');
+            setTransferAmount('');
+            setShowTransferDialog(false);
+            setTransferDialogError(null);
+            setTransferDialogSuccess(null);
+          }, 1500);
+        }
+      }
+    );
   };
 
   return (
@@ -346,12 +403,33 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
         )}
 
         {/* Request Authorization Dialog */}
-        <Dialog open={showRequestDialog} onClose={() => setShowRequestDialog(false)} maxWidth="sm" fullWidth>
+        <Dialog open={showRequestDialog} onClose={() => {
+          setShowRequestDialog(false);
+          setRequestDialogError(null);
+          setRequestDialogSuccess(null);
+        }} maxWidth="sm" fullWidth>
           <DialogTitle>💬 Ask to Send Money</DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Request permission to send money to someone. They'll approve you and set how much you can send.
             </Typography>
+            
+            {/* Inline Modal Error/Success */}
+            {requestDialogError && (
+              <Alert severity="error" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Error:</strong> {requestDialogError}
+                </Typography>
+              </Alert>
+            )}
+            
+            {requestDialogSuccess && (
+              <Alert severity="success" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Success:</strong> {requestDialogSuccess}
+                </Typography>
+              </Alert>
+            )}
             <TextField
               autoFocus
               label="Who do you want to send money to?"
@@ -364,7 +442,11 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setShowRequestDialog(false)}>Cancel</Button>
+            <Button onClick={() => {
+              setShowRequestDialog(false);
+              setRequestDialogError(null);
+              setRequestDialogSuccess(null);
+            }}>Cancel</Button>
             <Button
               onClick={handleRequestAuthorization}
               variant="contained"
@@ -376,12 +458,33 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
         </Dialog>
 
         {/* Approve Authorization Dialog */}
-        <Dialog open={showApproveDialog} onClose={() => setShowApproveDialog(false)} maxWidth="sm" fullWidth>
+        <Dialog open={showApproveDialog} onClose={() => {
+          setShowApproveDialog(false);
+          setApproveDialogError(null);
+          setApproveDialogSuccess(null);
+        }} maxWidth="sm" fullWidth>
           <DialogTitle>Approve Transfer Authorization</DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Approve someone to send you money up to a maximum amount. This is like adding them as a trusted contact.
             </Typography>
+            
+            {/* Inline Modal Error/Success */}
+            {approveDialogError && (
+              <Alert severity="error" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Error:</strong> {approveDialogError}
+                </Typography>
+              </Alert>
+            )}
+            
+            {approveDialogSuccess && (
+              <Alert severity="success" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Success:</strong> {approveDialogSuccess}
+                </Typography>
+              </Alert>
+            )}
             <TextField
               label="Sender User ID"
               placeholder="e.g., bob-bank-account"
@@ -401,7 +504,11 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setShowApproveDialog(false)}>Cancel</Button>
+            <Button onClick={() => {
+              setShowApproveDialog(false);
+              setApproveDialogError(null);
+              setApproveDialogSuccess(null);
+            }}>Cancel</Button>
             <Button
               onClick={handleApproveAuthorization}
               variant="contained"
@@ -413,12 +520,33 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
         </Dialog>
 
         {/* Send Transfer Dialog */}
-        <Dialog open={showTransferDialog} onClose={() => setShowTransferDialog(false)} maxWidth="sm" fullWidth>
+        <Dialog open={showTransferDialog} onClose={() => {
+          setShowTransferDialog(false);
+          setTransferDialogError(null);
+          setTransferDialogSuccess(null);
+        }} maxWidth="sm" fullWidth>
           <DialogTitle>Send to Authorized User</DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Send money to someone who has already authorized you. No additional approval needed!
             </Typography>
+            
+            {/* Inline Modal Error/Success */}
+            {transferDialogError && (
+              <Alert severity="error" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Error:</strong> {transferDialogError}
+                </Typography>
+              </Alert>
+            )}
+            
+            {transferDialogSuccess && (
+              <Alert severity="success" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Success:</strong> {transferDialogSuccess}
+                </Typography>
+              </Alert>
+            )}
             <TextField
               label="Recipient User ID"
               placeholder="e.g., alice-bank-account"
@@ -438,7 +566,11 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setShowTransferDialog(false)}>Cancel</Button>
+            <Button onClick={() => {
+              setShowTransferDialog(false);
+              setTransferDialogError(null);
+              setTransferDialogSuccess(null);
+            }}>Cancel</Button>
             <Button
               onClick={handleSendToAuthorized}
               variant="contained"

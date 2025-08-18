@@ -40,6 +40,7 @@ import {
 import { utils, type BankAPI } from '@midnight-bank/bank-api';
 import { ThemedButton } from './ThemedButton';
 import { usePinSession } from '../contexts/PinSessionContext';
+import { useModalTransactionHandler } from '../utils/errorHandler';
 
 interface DisclosurePanelProps {
   bankAPI: BankAPI;
@@ -87,10 +88,26 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   
+  // Modal-specific error/success states
+  const [grantDialogError, setGrantDialogError] = useState<string | null>(null);
+  const [grantDialogSuccess, setGrantDialogSuccess] = useState<string | null>(null);
+  
+  
   // Dialog states
   const [showGrantDialog, setShowGrantDialog] = useState(false);
   const [showVerifyDialog, setShowVerifyDialog] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
+  
+  // Modal transaction handler for grant dialog
+  const modalHandler = useModalTransactionHandler(
+    setLoading, 
+    setGrantDialogError, 
+    setGrantDialogSuccess,
+    {
+      useGlobalError: onError,
+      useGlobalSuccess: onSuccess
+    }
+  );
 
   // Load permissions on component mount and when connected
   useEffect(() => {
@@ -113,47 +130,55 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
   const handleGrantPermission = async () => {
     if (!bankAPI || !isConnected || !requesterId.trim()) return;
     
-    try {
-      setLoading(true);
-      
-      const pinInput = await getPin('Enter your PIN to grant disclosure permission', bankAPI);
+    await modalHandler.execute(
+      async () => {
+        const pinInput = await getPin('Enter your PIN to grant disclosure permission', bankAPI);
 
-      if (useAbsoluteDate && expirationDate) {
-        // Use absolute date API
-        const expiresAt = new Date(expirationDate);
-        await bankAPI.grantDisclosurePermissionUntil(
-          pinInput, 
-          requesterId.trim(), 
-          permissionType, 
-          thresholdAmount || '0.00', 
-          expiresAt
-        );
-      } else {
-        // Use relative hours API
-        const hours = neverExpires ? 0 : parseInt(expirationHours || '24');
-        await bankAPI.grantDisclosurePermission(
-          pinInput, 
-          requesterId.trim(), 
-          permissionType, 
-          thresholdAmount || '0.00', 
-          hours
-        );
+        if (useAbsoluteDate && expirationDate) {
+          // Use absolute date API
+          const expiresAt = new Date(expirationDate);
+          await bankAPI.grantDisclosurePermissionUntil(
+            pinInput, 
+            requesterId.trim(), 
+            permissionType, 
+            thresholdAmount || '0.00', 
+            expiresAt
+          );
+        } else {
+          // Use relative hours API
+          const hours = neverExpires ? 0 : parseInt(expirationHours || '24');
+          await bankAPI.grantDisclosurePermission(
+            pinInput, 
+            requesterId.trim(), 
+            permissionType, 
+            thresholdAmount || '0.00', 
+            hours
+          );
+        }
+        
+        return { requesterId, permissionType };
+      },
+      'permission grant',
+      {
+        onSuccess: ({ requesterId, permissionType }) => {
+          // Custom success message
+          const successMsg = `${permissionType === 'threshold' ? 'Threshold' : 'Exact'} disclosure permission granted to ${requesterId}`;
+          setGrantDialogSuccess(successMsg);
+          
+          // Reset form and close dialog after short delay
+          setTimeout(() => {
+            setRequesterId('');
+            setThresholdAmount('');
+            setExpirationHours('24');
+            setExpirationDate('');
+            setShowGrantDialog(false);
+            setGrantDialogError(null);
+            setGrantDialogSuccess(null);
+            loadPermissions();
+          }, 1500);
+        }
       }
-      
-      onSuccess(`${permissionType === 'threshold' ? 'Threshold' : 'Exact'} disclosure permission granted to ${requesterId}`);
-      
-      // Reset form and reload permissions
-      setRequesterId('');
-      setThresholdAmount('');
-      setExpirationHours('24');
-      setExpirationDate('');
-      setShowGrantDialog(false);
-      await loadPermissions();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed to grant permission');
-    } finally {
-      setLoading(false);
-    }
+    );
   };
 
   const handleVerifyBalance = async () => {
@@ -483,12 +508,33 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
         )}
 
         {/* Grant Permission Dialog */}
-        <Dialog open={showGrantDialog} onClose={() => setShowGrantDialog(false)} maxWidth="sm" fullWidth>
+        <Dialog open={showGrantDialog} onClose={() => {
+          setShowGrantDialog(false);
+          setGrantDialogError(null);
+          setGrantDialogSuccess(null);
+        }} maxWidth="sm" fullWidth>
           <DialogTitle>Grant Disclosure Permission</DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               Grant someone permission to verify your balance. You can set limits and expiration.
             </Typography>
+            
+            {/* Inline Modal Error/Success */}
+            {grantDialogError && (
+              <Alert severity="error" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Error:</strong> {grantDialogError}
+                </Typography>
+              </Alert>
+            )}
+            
+            {grantDialogSuccess && (
+              <Alert severity="success" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Success:</strong> {grantDialogSuccess}
+                </Typography>
+              </Alert>
+            )}
             
             <TextField
               autoFocus
@@ -585,7 +631,11 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setShowGrantDialog(false)}>Cancel</Button>
+            <Button onClick={() => {
+              setShowGrantDialog(false);
+              setGrantDialogError(null);
+              setGrantDialogSuccess(null);
+            }}>Cancel</Button>
             <Button
               onClick={handleGrantPermission}
               variant="contained"
