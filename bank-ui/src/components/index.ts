@@ -17,3 +17,6 @@ export { DisclosurePanel } from './DisclosurePanel';
 // Transaction History components
 export { TransactionHistory } from './TransactionHistory';
 export { TransactionSummary } from './TransactionSummary';
+
+// Navigation components
+export { SmartNavigationPanel } from './SmartNavigationPanel';

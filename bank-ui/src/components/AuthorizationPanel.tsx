@@ -121,6 +121,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
       },
       'authorization request',
       {
+        useGlobalNotifications: true, // Enable global snackbar notifications
         onSuccess: (recipientUserId) => {
           setRequestDialogSuccess(`Authorization request sent to ${recipientUserId}`);
           setTimeout(() => {
@@ -145,6 +146,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
       },
       'authorization approval',
       {
+        useGlobalNotifications: true, // Enable global snackbar notifications
         onSuccess: ({ senderUserId, maxAmount }) => {
           setApproveDialogSuccess(`Authorization approved for ${senderUserId} with limit $${maxAmount}`);
           setTimeout(() => {

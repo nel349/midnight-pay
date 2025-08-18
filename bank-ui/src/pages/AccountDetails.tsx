@@ -10,7 +10,7 @@ import {
   TextField, 
   Button, 
   Alert} from '@mui/material';
-import { ArrowBack, Visibility, AccountBalance, VisibilityOff } from '@mui/icons-material';
+import { ArrowBack, Visibility, AccountBalance, VisibilityOff, NotificationsActive, AssignmentTurnedIn, History, Security } from '@mui/icons-material';
 import { useBankWallet } from '../components/BankWallet';
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
 import { touchAccount } from '../utils/AccountsLocalState';
@@ -29,7 +29,8 @@ import {
   ThemedCardContent, 
   GradientBackground, 
   TransactionHistory,
-  TransactionSummary
+  TransactionSummary,
+  SmartNavigationPanel
 } from '../components';
 import type { BankAPI, BankDerivedState } from '@midnight-bank/bank-api';
 import { useTheme } from '../theme/ThemeProvider';
@@ -73,6 +74,13 @@ export const AccountDetails: React.FC = () => {
   const [withdrawDialogSuccess, setWithdrawDialogSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
   const [isBalanceVisible, setIsBalanceVisible] = useState(true);
+  
+  // Refs for smart navigation
+  const accountInfoRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const balanceActionsRef = useRef<HTMLDivElement>(null);
+  const authPanelRef = useRef<HTMLDivElement>(null);
+  const transactionHistoryRef = useRef<HTMLDivElement>(null);
   
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
   
@@ -170,6 +178,42 @@ export const AccountDetails: React.FC = () => {
     refreshBalance();
   };
 
+  // Smart navigation function
+  const scrollToComponent = (ref: React.RefObject<HTMLDivElement | null>, highlight: boolean = true) => {
+    if (ref.current) {
+      ref.current.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'center' 
+      });
+      
+      if (highlight) {
+        // Add a temporary highlight effect
+        ref.current.style.transition = 'box-shadow 0.3s ease';
+        ref.current.style.boxShadow = `0 0 20px ${theme.colors.primary[500]}40`;
+        
+        setTimeout(() => {
+          if (ref.current) {
+            ref.current.style.boxShadow = '';
+          }
+        }, 2000);
+      }
+    }
+  };
+
+  // Enhanced navigation functions
+  const navigateToTransactionHistory = () => {
+    setActiveTab(1);
+    setTimeout(() => scrollToComponent(transactionHistoryRef), 100);
+  };
+
+  const navigateToNotifications = () => {
+    scrollToComponent(notificationsRef);
+  };
+
+  const navigateToAuthPanel = () => {
+    scrollToComponent(authPanelRef);
+  };
+
   const handleDeposit = () => {
     setShowDepositDialog(true);
   };
@@ -250,8 +294,53 @@ export const AccountDetails: React.FC = () => {
     );
   }
 
+  // Navigation items configuration
+  const navigationItems = [
+    { 
+      icon: <AccountBalance />, 
+      label: 'Account Info', 
+      action: () => scrollToComponent(accountInfoRef),
+      color: theme.colors.primary[500]
+    },
+    { 
+      icon: <NotificationsActive />, 
+      label: 'Notifications', 
+      action: navigateToNotifications,
+      color: theme.colors.info[500]
+    },
+    { 
+      icon: <AssignmentTurnedIn />, 
+      label: 'Balance & Actions', 
+      action: () => scrollToComponent(balanceActionsRef),
+      color: theme.colors.success[500]
+    },
+    { 
+      icon: <Security />, 
+      label: 'Authorization', 
+      action: navigateToAuthPanel,
+      color: theme.colors.warning[500]
+    },
+    { 
+      icon: <History />, 
+      label: 'Transaction History', 
+      action: navigateToTransactionHistory,
+      color: theme.colors.secondary[500]
+    }
+  ];
+
   return (
     <GradientBackground variant="subtle">
+      {/* Smart Navigation Panel */}
+      <SmartNavigationPanel
+        visible={true}
+        defaultExpanded={false}
+        navigationItems={navigationItems}
+        position={{
+          right: theme.spacing[3],
+          top: '50%',
+          transform: 'translateY(-50%)'
+        }}
+      />
       
       <Box sx={{ minHeight: '100vh', p: theme.spacing[4] }}>
         {/* Compact Header */}
@@ -313,7 +402,7 @@ export const AccountDetails: React.FC = () => {
           }}>
             
             {/* Top Left - Account Information */}
-            <ThemedCard sx={{ display: 'flex', flexDirection: 'column' }}>
+            <ThemedCard ref={accountInfoRef} sx={{ display: 'flex', flexDirection: 'column' }}>
               <ThemedCardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: theme.spacing[3] }}>
                   <Box
@@ -461,15 +550,17 @@ export const AccountDetails: React.FC = () => {
 
             {/* Top Right - Real-time Notifications */}
             {bankAPI && (
-              <AuthorizationNotifications
-                bankAPI={bankAPI}
-                onError={showError}
-                onSuccess={showSuccess}
-              />
+              <Box ref={notificationsRef}>
+                <AuthorizationNotifications
+                  bankAPI={bankAPI}
+                  onError={showError}
+                  onSuccess={showSuccess}
+                />
+              </Box>
             )}
 
             {/* Bottom Left - Balance, Actions & Recent Activity */}
-            <ThemedCard sx={{ height: 'fit-content', minHeight: '300px' }}>
+            <ThemedCard ref={balanceActionsRef} sx={{ height: 'fit-content', minHeight: '300px' }}>
               <ThemedCardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 {/* Balance Section */}
                 <Box sx={{ mb: theme.spacing[4] }}>
@@ -609,7 +700,7 @@ export const AccountDetails: React.FC = () => {
                   <TransactionSummary 
                     bankAPI={bankAPI}
                     maxItems={3}
-                    onViewAll={() => setActiveTab(1)}
+                    onViewAll={navigateToTransactionHistory}
                   />
                 </Box>
               </ThemedCardContent>
@@ -623,16 +714,18 @@ export const AccountDetails: React.FC = () => {
             }}>
               {/* Authorization System */}
               {bankAPI && (
-                <AuthorizationPanel 
-                  bankAPI={bankAPI}
-                  isConnected={isConnected}
-                  userId={userId}
-                  onError={showError}
-                  onSuccess={(message) => {
-                    showSuccess(message);
-                    refreshBalanceIfAuthenticated();
-                  }}
-                />
+                <Box ref={authPanelRef}>
+                  <AuthorizationPanel 
+                    bankAPI={bankAPI}
+                    isConnected={isConnected}
+                    userId={userId}
+                    onError={showError}
+                    onSuccess={(message) => {
+                      showSuccess(message);
+                      refreshBalanceIfAuthenticated();
+                    }}
+                  />
+                </Box>
               )}
 
               {/* Balance Disclosure System */}
@@ -649,7 +742,7 @@ export const AccountDetails: React.FC = () => {
           </Box>
 
           {/* Full Transaction History Section */}
-          <Box sx={{ mt: theme.spacing[6] }}>
+          <Box ref={transactionHistoryRef} sx={{ mt: theme.spacing[6] }}>
             <ThemedCard>
               <ThemedCardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: theme.spacing[4] }}>
@@ -665,7 +758,7 @@ export const AccountDetails: React.FC = () => {
                   {activeTab !== 1 && (
                     <ThemedButton
                       variant="primary"
-                      onClick={() => setActiveTab(1)}
+                      onClick={navigateToTransactionHistory}
                     >
                       Show History
                     </ThemedButton>
