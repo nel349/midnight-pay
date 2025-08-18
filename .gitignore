@@ -60,3 +60,4 @@ bank-contract/src/managed/*
 bank-api/src/logs/*
 bank-ui/public/keys/*
 bank-ui/public/zkir/*
+.vercel
