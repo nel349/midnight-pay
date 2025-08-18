@@ -13,3 +13,7 @@ export { TopBar } from './TopBar';
 export { useBankWallet } from './BankWallet';
 export { AuthorizationPanel } from './AuthorizationPanel';
 export { DisclosurePanel } from './DisclosurePanel';
+
+// Transaction History components
+export { TransactionHistory } from './TransactionHistory';
+export { TransactionSummary } from './TransactionSummary';

@@ -10,7 +10,9 @@ import {
   DialogActions, 
   TextField, 
   Button, 
-  Alert 
+  Alert,
+  Tabs,
+  Tab
 } from '@mui/material';
 import { ArrowBack, Visibility, VisibilityOff, AccountBalance, Notifications } from '@mui/icons-material';
 import { useBankWallet } from '../components/BankWallet';
@@ -28,7 +30,9 @@ import {
   ThemedCard, 
   ThemedCardContent, 
   GradientBackground, 
-  AppHeader
+  AppHeader,
+  TransactionHistory,
+  TransactionSummary
 } from '../components';
 import type { BankAPI, BankDerivedState } from '@midnight-bank/bank-api';
 import { utils } from '@midnight-bank/bank-api';
@@ -61,6 +65,7 @@ export const AccountDetails: React.FC = () => {
   const [depositDialogSuccess, setDepositDialogSuccess] = useState<string | null>(null);
   const [withdrawDialogError, setWithdrawDialogError] = useState<string | null>(null);
   const [withdrawDialogSuccess, setWithdrawDialogSuccess] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState(0);
   
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
   
@@ -629,6 +634,57 @@ export const AccountDetails: React.FC = () => {
                 />
               )}
             </Box>
+          </Box>
+
+          {/* Transaction History Section */}
+          <Box sx={{ mt: theme.spacing[6] }}>
+            <ThemedCard>
+              <ThemedCardContent sx={{ p: 0 }}>
+                {/* Tabs */}
+                <Box sx={{ borderBottom: `1px solid ${theme.colors.border.light}` }}>
+                  <Tabs 
+                    value={activeTab} 
+                    onChange={(_, newValue) => setActiveTab(newValue)}
+                    sx={{ 
+                      px: theme.spacing[4],
+                      pt: theme.spacing[3],
+                    }}
+                  >
+                    <Tab 
+                      label="Recent Activity" 
+                      sx={{ 
+                        textTransform: 'none',
+                        fontWeight: theme.typography.fontWeight.medium,
+                      }}
+                    />
+                    <Tab 
+                      label="Full History" 
+                      sx={{ 
+                        textTransform: 'none',
+                        fontWeight: theme.typography.fontWeight.medium,
+                      }}
+                    />
+                  </Tabs>
+                </Box>
+
+                {/* Tab Content */}
+                <Box sx={{ p: theme.spacing[4] }}>
+                  {activeTab === 0 && (
+                    <TransactionSummary 
+                      bankAPI={bankAPI}
+                      maxItems={8}
+                      onViewAll={() => setActiveTab(1)}
+                    />
+                  )}
+                  
+                  {activeTab === 1 && (
+                    <TransactionHistory 
+                      bankAPI={bankAPI}
+                    />
+                  )}
+                </Box>
+              </ThemedCardContent>
+            </ThemedCard>
           </Box>
 
           {/* Status Messages */}

@@ -166,7 +166,7 @@ export class BankAPI implements DeployedBankAPI {
       }),
     );
 
-    this.detailedLogKey = `${this.accountId}:dlog`;
+    this.detailedLogKey = `${this.deployedContractAddress}:${this.accountId}:dlog`;
     
     // Initialize transaction history cache
     this.updateTransactionHistoryCache().catch(() => {
@@ -1668,7 +1668,7 @@ export class BankAPI implements DeployedBankAPI {
 
     // Write initial detailed log entry for account creation under the same normalized key
     try {
-      const dlogKey = `${normalizedUserId}:dlog` as AccountId;
+      const dlogKey = `${contractAddress}:${normalizedUserId}:dlog` as AccountId;
       const existingLog = (await providers.privateStateProvider.get(dlogKey)) as unknown as DetailedTransaction[] | null;
       const updatedLog: DetailedTransaction[] = [...(existingLog ?? []), {
         type: 'create',
