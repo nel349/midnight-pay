@@ -7,7 +7,7 @@ import { midnightLightTheme } from './themes/midnight-light';
 export type ThemeMode = 'light' | 'dark';
 
 // Theme context
-interface ThemeContextType {
+export interface ThemeContextType {
   theme: MidnightCompleteTheme;
   mode: ThemeMode;
   toggleTheme: () => void;

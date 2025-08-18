@@ -116,15 +116,17 @@ export const handleTransactionOperation = async <T>(
     onSuccess?: (result: T, message: string) => void;
     onError?: (error: TransactionError) => void;
     onFinally?: () => void;
+    setTransactionLoading?: (loading: boolean, operationType?: string) => void;
   } = {}
 ): Promise<T | null> => {
-  const { setLoading, setError, setSuccess, onSuccess, onError, onFinally } = handlers;
+  const { setLoading, setError, setSuccess, onSuccess, onError, onFinally, setTransactionLoading } = handlers;
   
   try {
     // Clear previous states
     setLoading?.(true);
     setError?.(null);
     setSuccess?.(null);
+    setTransactionLoading?.(true, operationName);
     
     const result = await operation();
     
@@ -149,6 +151,7 @@ export const handleTransactionOperation = async <T>(
     return null;
   } finally {
     setLoading?.(false);
+    setTransactionLoading?.(false);
     onFinally?.();
   }
 };
@@ -157,7 +160,8 @@ export const handleTransactionOperation = async <T>(
 export const useTransactionHandler = (
   setLoading: (loading: boolean) => void,
   setError: (error: string | null) => void,
-  setSuccess: (message: string | null) => void
+  setSuccess: (message: string | null) => void,
+  setTransactionLoading?: (loading: boolean, operationType?: string) => void
 ) => {
   return {
     execute: async <T>(
@@ -173,6 +177,7 @@ export const useTransactionHandler = (
         setLoading,
         setError,
         setSuccess,
+        setTransactionLoading,
         ...customHandlers
       });
     }
@@ -187,7 +192,8 @@ export const useModalTransactionHandler = (
   options?: {
     useGlobalError?: (error: string) => void;
     useGlobalSuccess?: (message: string) => void;
-  }
+  },
+  setTransactionLoading?: (loading: boolean, operationType?: string) => void
 ) => {
   return {
     execute: async <T>(
@@ -210,6 +216,7 @@ export const useModalTransactionHandler = (
         setSuccess: useGlobal 
           ? (message) => message && options?.useGlobalSuccess?.(message)
           : setModalSuccess,
+        setTransactionLoading,
         onSuccess: (result, message) => {
           // Always call custom success handler
           customHandlers?.onSuccess?.(result, message);

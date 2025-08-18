@@ -17,10 +17,12 @@ import {
   ThemeToggle
 } from '../components';
 import { useTheme } from '../theme/ThemeProvider';
+import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
 
 export const JoinBank: React.FC = () => {
   const navigate = useNavigate();
   const { theme, mode } = useTheme();
+  const { setTransactionLoading } = useTransactionLoading();
   const [contractAddress, setContractAddress] = useState('');
   const [bankLabel, setBankLabel] = useState('');
   const [error, setError] = useState<any>(null);
@@ -35,6 +37,7 @@ export const JoinBank: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      setTransactionLoading(true, 'Bank Connection');
 
       // Basic validation - check if it looks like a valid address
       if (contractAddress.length < 10) {
@@ -49,11 +52,13 @@ export const JoinBank: React.FC = () => {
       });
 
       // Navigate to the bank page
+      setTransactionLoading(false);
       navigate(`/bank/${contractAddress.trim()}`);
 
     } catch (err) {
       setError(err);
       setLoading(false);
+      setTransactionLoading(false);
     }
   };
 

@@ -41,6 +41,7 @@ import { utils, type BankAPI } from '@midnight-bank/bank-api';
 import { ThemedButton } from './ThemedButton';
 import { usePinSession } from '../contexts/PinSessionContext';
 import { useModalTransactionHandler } from '../utils/errorHandler';
+import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
 
 interface DisclosurePanelProps {
   bankAPI: BankAPI;
@@ -65,6 +66,7 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
   onSuccess
 }) => {
   const { getPin } = usePinSession();
+  const { setTransactionLoading } = useTransactionLoading();
   const [loading, setLoading] = useState(false);
   const [permissions, setPermissions] = useState<DisclosurePermission[]>([]);
   const [tabValue, setTabValue] = useState(0);
@@ -106,7 +108,8 @@ export const DisclosurePanel: React.FC<DisclosurePanelProps> = ({
     {
       useGlobalError: onError,
       useGlobalSuccess: onSuccess
-    }
+    },
+    setTransactionLoading
   );
 
   // Load permissions when component mounts and user is connected

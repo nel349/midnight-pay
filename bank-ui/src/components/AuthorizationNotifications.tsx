@@ -20,6 +20,7 @@ import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
 import { ThemedButton } from './ThemedButton';
 import { usePinSession } from '../contexts/PinSessionContext';
 import { useModalTransactionHandler } from '../utils/errorHandler';
+import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
 
 interface AuthorizationNotificationsProps {
   bankAPI: BankAPI | null;
@@ -33,6 +34,7 @@ export function AuthorizationNotifications({
   onSuccess 
 }: AuthorizationNotificationsProps) {
   const { getPin } = usePinSession();
+  const { setTransactionLoading } = useTransactionLoading();
   const [processingActions, setProcessingActions] = useState<Set<string>>(new Set());
   
   // Modal state for approval
@@ -50,7 +52,8 @@ export function AuthorizationNotifications({
     {
       useGlobalError: onError,
       useGlobalSuccess: onSuccess
-    }
+    },
+    setTransactionLoading
   );
   
   const {

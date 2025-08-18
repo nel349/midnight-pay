@@ -36,6 +36,7 @@ import { listAccountsForBank, saveAccount, touchBank } from '../utils/AccountsLo
 import { useDeployedAccountContext } from '../contexts/DeployedAccountProviderContext';
 import { BankAPI } from '@midnight-bank/bank-api';
 import type { Logger } from 'pino';
+import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
 
 export const BankDetails: React.FC = () => {
   const { bankAddress } = useParams<{ bankAddress: string }>();
@@ -43,6 +44,7 @@ export const BankDetails: React.FC = () => {
   const { providers, isConnected } = useBankWallet();
   const { addAccount } = useDeployedAccountContext();
   const { theme, mode } = useTheme();
+  const { setTransactionLoading } = useTransactionLoading();
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +92,7 @@ export const BankDetails: React.FC = () => {
     
     setLoading(true);
     setError(null);
+    setTransactionLoading(true, 'Account Creation');
     
     BankAPI.createAccount(
       providers,
@@ -116,6 +119,7 @@ export const BankDetails: React.FC = () => {
       setNewPin('');
       setInitialDeposit('');
       setLoading(false);
+      setTransactionLoading(false);
       
       // Navigate to the new account after a brief delay
       setTimeout(() => {
@@ -125,6 +129,7 @@ export const BankDetails: React.FC = () => {
     .catch((err) => {
       setError(err instanceof Error ? err.message : 'Failed to create account');
       setLoading(false);
+      setTransactionLoading(false);
     });
   };
 

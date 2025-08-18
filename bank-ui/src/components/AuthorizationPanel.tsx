@@ -34,6 +34,7 @@ import { useAuthorizationUpdates } from '../hooks/useAuthorizationUpdates';
 import { ThemedButton } from './ThemedButton';
 import { usePinSession } from '../contexts/PinSessionContext';
 import { useModalTransactionHandler } from '../utils/errorHandler';
+import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
 
 interface AuthorizationPanelProps {
   bankAPI: BankAPI;
@@ -52,6 +53,7 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
   onSuccess
 }) => {
   const { getPin } = usePinSession();
+  const { setTransactionLoading } = useTransactionLoading();
   const [loading, setLoading] = useState(false);
   const [recipientUserId, setRecipientUserId] = useState('');
   const [senderUserId, setSenderUserId] = useState('');
@@ -80,7 +82,8 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
     {
       useGlobalError: onError,
       useGlobalSuccess: onSuccess
-    }
+    },
+    setTransactionLoading
   );
 
   const requestModalHandler = useModalTransactionHandler(
@@ -90,7 +93,8 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
     {
       useGlobalError: onError,
       useGlobalSuccess: onSuccess
-    }
+    },
+    setTransactionLoading
   );
 
   const approveModalHandler = useModalTransactionHandler(
@@ -100,7 +104,8 @@ export const AuthorizationPanel: React.FC<AuthorizationPanelProps> = ({
     {
       useGlobalError: onError,
       useGlobalSuccess: onSuccess
-    }
+    },
+    setTransactionLoading
   );
 
   const { authorizedContacts, incomingAuthorizations } = useAuthorizationUpdates(bankAPI);

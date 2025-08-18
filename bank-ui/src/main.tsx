@@ -8,6 +8,7 @@ import { RuntimeConfigurationProvider, useRuntimeConfiguration } from './config/
 import { BankWalletProvider } from './components/BankWallet';
 import { DeployedAccountProvider } from './contexts/DeployedAccountProviderContext';
 import { PinSessionProvider } from './contexts/PinSessionContext';
+import { TransactionLoadingProvider } from './contexts/TransactionLoadingContext';
 import { App as RootApp } from './App';
 import { ThemeProvider, ThemeStyleInjector, DynamicMuiThemeProvider } from './theme';
 import { TopBar } from './components';
@@ -37,7 +38,9 @@ const App: React.FC = () => {
           <BankWalletProvider logger={logger}>
             <DeployedAccountProvider logger={logger}>
               <PinSessionProvider>
-                <RootApp />
+                <TransactionLoadingProvider>
+                  <RootApp />
+                </TransactionLoadingProvider>
               </PinSessionProvider>
             </DeployedAccountProvider>
           </BankWalletProvider>

@@ -6,10 +6,10 @@ import {
   Box,
   Collapse,
   IconButton,
-  useTheme,
 } from '@mui/material';
-import { Close, ExpandMore, ExpandLess } from '@mui/icons-material';
-import { parseError, formatErrorMessage, type ParsedError } from '../utils/errorHandling';
+import { useTheme } from '../theme/ThemeProvider';
+import { ExpandMore, ExpandLess } from '@mui/icons-material';
+import { parseError, type ParsedError } from '../utils/errorHandling';
 
 export interface ErrorAlertProps {
   error: any;
@@ -46,14 +46,14 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
               position: 'absolute',
               top: '8px',
               right: '8px',
-              background: theme.palette.mode === 'dark' 
+              background: theme.mode === 'dark' 
                 ? 'rgba(255, 255, 255, 0.1)' 
                 : 'rgba(0, 0, 0, 0.1)',
-              border: `1px solid ${theme.palette.divider}`,
+              border: `1px solid ${theme.theme.colors.border.default}`,
               borderRadius: '50%',
               width: '28px',
               height: '28px',
-              color: theme.palette.text.primary,
+              color: theme.theme.colors.text.primary,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -63,12 +63,12 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
               zIndex: 9999
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = theme.palette.mode === 'dark'
+              e.currentTarget.style.background = theme.mode === 'dark'
                 ? 'rgba(255, 255, 255, 0.15)'
                 : 'rgba(0, 0, 0, 0.15)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = theme.palette.mode === 'dark'
+              e.currentTarget.style.background = theme.mode === 'dark'
                 ? 'rgba(255, 255, 255, 0.1)'
                 : 'rgba(0, 0, 0, 0.1)';
             }}
@@ -85,7 +85,7 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
       </Typography>
       
       {parsedError.action && (
-        <Typography variant="body2" sx={{ fontWeight: 'medium', color: 'text.secondary' }}>
+        <Typography variant="body2" sx={{ fontWeight: 'medium', color: theme.theme.colors.text.secondary }}>
           {parsedError.action}
         </Typography>
       )}
@@ -95,7 +95,7 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
           <IconButton
             size="small"
             onClick={() => setExpanded(!expanded)}
-            sx={{ p: 0.5, color: 'text.secondary' }}
+            sx={{ p: 0.5, color: theme.theme.colors.text.secondary }}
           >
             {expanded ? <ExpandLess /> : <ExpandMore />}
             <Typography variant="caption" sx={{ ml: 0.5 }}>
@@ -108,7 +108,7 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({
               sx={{ 
                 mt: 1, 
                 p: 1, 
-                backgroundColor: 'rgba(0,0,0,0.1)', 
+                backgroundColor: theme.theme.colors.background.elevated, 
                 borderRadius: 1,
                 fontFamily: 'monospace',
                 fontSize: '0.75rem',

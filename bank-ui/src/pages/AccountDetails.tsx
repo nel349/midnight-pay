@@ -22,6 +22,7 @@ import { AuthorizationNotifications } from '../components/AuthorizationNotificat
 import { usePinSession } from '../contexts/PinSessionContext';
 import { ErrorAlert } from '../components/ErrorAlert';
 import { useTransactionHandler, useModalTransactionHandler } from '../utils/errorHandler';
+import { useTransactionLoading } from '../contexts/TransactionLoadingContext';
 import { 
   ThemedButton, 
   ThemedCard, 
@@ -39,6 +40,7 @@ export const AccountDetails: React.FC = () => {
   const { providers, isConnected } = useBankWallet();
   const { addAccount } = useDeployedAccountContext();
   const { getPin } = usePinSession();
+  const { setTransactionLoading } = useTransactionLoading();
   
   const [bankAPI, setBankAPI] = useState<BankAPI | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,7 +65,7 @@ export const AccountDetails: React.FC = () => {
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
   
   // Modular transaction handler
-  const transactionHandler = useTransactionHandler(setLoading, setError, setSuccess);
+  const transactionHandler = useTransactionHandler(setLoading, setError, setSuccess, setTransactionLoading);
   
   // Modal transaction handlers for deposit and withdrawal
   const depositModalHandler = useModalTransactionHandler(
@@ -73,7 +75,8 @@ export const AccountDetails: React.FC = () => {
     {
       useGlobalError: setError,
       useGlobalSuccess: setSuccess
-    }
+    },
+    setTransactionLoading
   );
   
   const withdrawModalHandler = useModalTransactionHandler(
@@ -83,7 +86,8 @@ export const AccountDetails: React.FC = () => {
     {
       useGlobalError: setError,
       useGlobalSuccess: setSuccess
-    }
+    },
+    setTransactionLoading
   );
 
   useEffect(() => {
