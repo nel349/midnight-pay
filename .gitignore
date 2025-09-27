@@ -61,3 +61,8 @@ bank-api/src/logs/*
 bank-ui/public/keys/*
 bank-ui/public/zkir/*
 .vercel
+pay-api/public/keys/*
+pay-api/public/zkir/*
+pay-api/managed/*
+
+
