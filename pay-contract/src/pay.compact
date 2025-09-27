@@ -251,7 +251,7 @@ export circuit process_subscription_payment(
     frequency_days: subscription.frequency_days,
     status: subscription.status,
     last_payment: current_timestamp,
-    next_payment: current_timestamp + (subscription.frequency_days * 86400 as Uint<16>) as Uint<32>,
+    next_payment: current_timestamp + (subscription.frequency_days * 86400 as Uint<32>) as Uint<32>,
     payment_count: (subscription.payment_count + 1 as Uint<32>) as Uint<32>
   };
 
