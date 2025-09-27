@@ -2,15 +2,20 @@ pragma language_version >= 0.13.0;
 
 import CompactStandardLibrary;
 import "../../pay-commons/PaymentCommons" prefix PC_;
+import "../../pay-commons/TokenOperations" prefix TO_;
 
-// Privacy-Preserving Payment Gateway Contract
+// Privacy-Preserving Payment Gateway Contract with Token Support
 // Public ledger stores only hashes and proofs, private data in witnesses
 
-// Privacy-preserving ledger state (following bank pattern)
+// Privacy-preserving ledger state with token balances
 export ledger merchant_accounts: Map<Bytes<32>, Bytes<32>>; // encrypted merchant existence
 export ledger subscription_accounts: Map<Bytes<32>, Bytes<32>>; // encrypted subscription existence
+export ledger customer_balances: Map<Bytes<32>, Uint<64>>; // customer token balances
+export ledger merchant_balances: Map<Bytes<32>, Uint<64>>; // merchant token balances
+export ledger locked_balances: Map<Bytes<32>, Uint<64>>; // locked funds for subscriptions
 export ledger total_merchants: Counter;
 export ledger total_subscriptions: Counter;
+export ledger total_supply: Uint<64>; // total tokens in circulation
 export ledger current_timestamp: Uint<32>;
 
 // Private state provided through witnesses (payment-specific)
@@ -21,8 +26,85 @@ witness set_customer_subscription_count(customer_id: Bytes<32>, count: Uint<32>)
 witness subscription_info(subscription_id: Bytes<32>): PC_Subscription;
 witness set_subscription_info(subscription_id: Bytes<32>, info: PC_Subscription): [];
 
+// Witness for token operation fee calculations
+witness calculate_percentage_fee(amount: Uint<64>, fee_basis_points: Uint<16>): Uint<64>;
+
 constructor() {
   current_timestamp = 1000000 as Uint<32>;
+  total_supply = 0 as Uint<64>;
+}
+
+// Token Operations - Deposit and Withdrawal
+
+// Customer deposits tokens into the payment gateway
+export circuit deposit_customer_funds(
+  customer_id: Bytes<32>,
+  amount: Uint<64>
+): [] {
+  // Validate deposit amount
+  assert(TO_validate_deposit_amount(amount), "Invalid deposit amount");
+
+  // Get current balance (0 if new customer)
+  const current_balance = customer_balances.member(disclose(customer_id)) ?
+    customer_balances.lookup(disclose(customer_id)) : 0 as Uint<64>;
+
+  // Calculate new balance
+  const new_balance = TO_calculate_deposit(current_balance, disclose(amount));
+
+  // Update customer balance
+  customer_balances.insert(disclose(customer_id), disclose(new_balance));
+
+  // Update total supply
+  total_supply = disclose((total_supply + amount) as Uint<64>);
+}
+
+// Customer withdraws tokens from the payment gateway
+export circuit withdraw_customer_funds(
+  customer_id: Bytes<32>,
+  amount: Uint<64>
+): [] {
+  // Check customer has account
+  assert(customer_balances.member(disclose(customer_id)), "Customer account not found");
+
+  // Get current balance
+  const current_balance = customer_balances.lookup(disclose(customer_id));
+
+  // Validate withdrawal
+  assert(TO_validate_withdrawal_amount(disclose(amount), current_balance), "Invalid withdrawal amount");
+
+  // Calculate new balance
+  const new_balance = TO_calculate_withdrawal(current_balance, disclose(amount));
+
+  // Update customer balance
+  customer_balances.insert(disclose(customer_id), disclose(new_balance));
+
+  // Update total supply
+  total_supply = disclose((total_supply - amount) as Uint<64>);
+}
+
+// Merchant withdraws earned tokens
+export circuit withdraw_merchant_earnings(
+  merchant_id: Bytes<32>,
+  amount: Uint<64>
+): [] {
+  // Check merchant exists
+  assert(merchant_accounts.member(disclose(merchant_id)), "Merchant not found");
+
+  // Get current balance
+  const current_balance = merchant_balances.member(disclose(merchant_id)) ?
+    merchant_balances.lookup(disclose(merchant_id)) : 0 as Uint<64>;
+
+  // Validate withdrawal
+  assert(TO_validate_withdrawal_amount(disclose(amount), current_balance), "Invalid withdrawal amount");
+
+  // Calculate new balance
+  const new_balance = TO_calculate_withdrawal(current_balance, disclose(amount));
+
+  // Update merchant balance
+  merchant_balances.insert(disclose(merchant_id), disclose(new_balance));
+
+  // Update total supply
+  total_supply = disclose((total_supply - amount) as Uint<64>);
 }
 
 // Privacy-Preserving Merchant Operations
@@ -241,6 +323,41 @@ export circuit process_subscription_payment(
   );
   assert(is_due, "Payment not due yet");
 
+  // Check customer has sufficient balance for payment
+  const customer_balance = customer_balances.member(disclose(subscription.customer_id)) ?
+    customer_balances.lookup(disclose(subscription.customer_id)) : 0 as Uint<64>;
+  assert(TO_validate_balance(customer_balance, subscription.amount), "Insufficient customer balance");
+
+  // Get current merchant balance
+  const merchant_balance = merchant_balances.member(disclose(subscription.merchant_id)) ?
+    merchant_balances.lookup(disclose(subscription.merchant_id)) : 0 as Uint<64>;
+
+  // Calculate merchant fee (using merchant tier)
+  const merchant_data = merchant_info(subscription.merchant_id);
+  const fee_basis_points = PC_calculate_fee_basis_points(merchant_data.tier);
+
+  // Calculate percentage-based fee using witness
+  const fee_amount = calculate_percentage_fee(subscription.amount, fee_basis_points);
+
+  // Verify fee calculation on-chain
+  const fee_valid = TO_verify_fee_calculation(subscription.amount, fee_basis_points, fee_amount);
+  assert(fee_valid, "Invalid fee calculation");
+
+  // Calculate net amount after fee
+  const net_amount = subscription.amount > fee_amount ? (subscription.amount - fee_amount) as Uint<64> : 0 as Uint<64>;
+
+  // Transfer tokens from customer to merchant
+  // Customer pays full subscription amount, merchant receives net amount after fees
+  const customer_new_balance = TO_calculate_withdrawal(customer_balance, subscription.amount);
+  const merchant_new_balance = TO_calculate_deposit(merchant_balance, net_amount);
+
+  // Update balances on ledger
+  customer_balances.insert(disclose(subscription.customer_id), disclose(customer_new_balance));
+  merchant_balances.insert(disclose(subscription.merchant_id), disclose(merchant_new_balance));
+
+  // The fee could go to a protocol treasury (for simplicity, we'll reduce total supply)
+  total_supply = disclose((total_supply - fee_amount) as Uint<64>);
+
   // Update subscription with payment processed
   const updated_subscription = PC_Subscription {
     subscription_id: subscription.subscription_id,
@@ -259,7 +376,7 @@ export circuit process_subscription_payment(
   set_subscription_info(subscription_id, updated_subscription);
 
   // Update merchant info (increment transaction count and volume)
-  const merchant_data = merchant_info(subscription.merchant_id);
+  // Note: merchant_data was already fetched earlier for fee calculation
   const updated_merchant_info = PC_MerchantInfo {
     merchant_id: merchant_data.merchant_id,
     business_name: merchant_data.business_name,

@@ -1,0 +1,199 @@
+pragma language_version >= 0.13.0;
+
+module TokenOperations {
+  import CompactStandardLibrary;
+
+  // Token-related constants - using functions instead of const
+  export pure circuit MIN_BALANCE(): Uint<64> { return 0 as Uint<64>; }
+  export pure circuit MAX_BALANCE(): Uint<64> { return 1000000000 as Uint<64>; }
+  export pure circuit MIN_DEPOSIT(): Uint<64> { return 100 as Uint<64>; }
+  export pure circuit MIN_WITHDRAWAL(): Uint<64> { return 100 as Uint<64>; }
+
+  // Token operation types for logging
+  export enum TOKEN_OPERATION {
+    deposit,
+    withdrawal,
+    payment,
+    refund,
+    escrow_lock,
+    escrow_release,
+    merchant_payout
+  }
+
+  // Token transfer result
+  export struct TokenTransfer {
+    from_account: Bytes<32>;
+    to_account: Bytes<32>;
+    amount: Uint<64>;
+    operation: TOKEN_OPERATION;
+    timestamp: Uint<32>;
+    success: Boolean;
+  }
+
+  // Account balance info
+  export struct BalanceInfo {
+    account_id: Bytes<32>;
+    available_balance: Uint<64>;
+    locked_balance: Uint<64>;
+    last_updated: Uint<32>;
+  }
+
+  // Payment failure reasons
+  export enum PAYMENT_FAILURE {
+    insufficient_funds,
+    account_frozen,
+    exceeds_limit,
+    invalid_amount
+  }
+
+  // Validate sufficient balance for payment
+  export pure circuit validate_balance(
+    available_balance: Uint<64>,
+    required_amount: Uint<64>
+  ): Boolean {
+    return available_balance >= required_amount;
+  }
+
+  // Calculate new balance after deposit
+  export pure circuit calculate_deposit(
+    current_balance: Uint<64>,
+    deposit_amount: Uint<64>
+  ): Uint<64> {
+    const new_balance = (current_balance + deposit_amount) as Uint<64>;
+    // Prevent overflow
+    if (new_balance > MAX_BALANCE()) {
+      return MAX_BALANCE();
+    } else {
+      return new_balance;
+    }
+  }
+
+  // Calculate new balance after withdrawal
+  export pure circuit calculate_withdrawal(
+    current_balance: Uint<64>,
+    withdrawal_amount: Uint<64>
+  ): Uint<64> {
+    if (withdrawal_amount > current_balance) {
+      return 0 as Uint<64>;
+    } else {
+      return (current_balance - withdrawal_amount) as Uint<64>;
+    }
+  }
+
+  // Transfer tokens between accounts
+  export pure circuit transfer_tokens(
+    sender_balance: Uint<64>,
+    receiver_balance: Uint<64>,
+    amount: Uint<64>
+  ): Vector<2, Uint<64>> {
+    if (sender_balance < amount) {
+      // Transfer fails - return original balances
+      return [sender_balance, receiver_balance];
+    } else {
+      const new_sender_balance = (sender_balance - amount) as Uint<64>;
+      const new_receiver_balance = calculate_deposit(receiver_balance, amount);
+      return [new_sender_balance, new_receiver_balance];
+    }
+  }
+
+  // Calculate subscription escrow amount (locks funds for N periods)
+  export pure circuit calculate_escrow_amount(
+    subscription_amount: Uint<64>,
+    periods_to_lock: Uint<16>
+  ): Uint<64> {
+    return (subscription_amount * periods_to_lock) as Uint<64>;
+  }
+
+  // Validate deposit amount
+  export pure circuit validate_deposit_amount(amount: Uint<64>): Boolean {
+    return amount >= MIN_DEPOSIT() && amount <= MAX_BALANCE();
+  }
+
+  // Validate withdrawal amount
+  export pure circuit validate_withdrawal_amount(
+    amount: Uint<64>,
+    current_balance: Uint<64>
+  ): Boolean {
+    return amount >= MIN_WITHDRAWAL() && amount <= current_balance;
+  }
+
+  // Witness for percentage-based fee calculation (computed off-chain)
+  export witness calculate_percentage_fee(
+    amount: Uint<64>,
+    fee_basis_points: Uint<16>
+  ): Uint<64>;
+
+  // Verify that the fee calculation is correct using witness
+  export pure circuit verify_fee_calculation(
+    amount: Uint<64>,
+    fee_basis_points: Uint<16>,
+    calculated_fee: Uint<64>
+  ): Boolean {
+    // Verify fee is reasonable (not more than 100% of amount)
+    assert(calculated_fee <= amount, "Fee cannot exceed amount");
+
+    // Verify fee is not negative (implicit with Uint type)
+    // Verify fee calculation with tolerance for integer division
+    // Expected: fee = (amount * fee_basis_points) / 10000
+    // Due to integer division, we allow for rounding errors
+    const expected_fee_times_10000 = amount * fee_basis_points;
+    const calculated_fee_times_10000 = calculated_fee * 10000 as Uint<64>;
+
+    // Allow for rounding: calculated_fee should be within [floor, floor+1] of exact division
+    const upper_bound = calculated_fee_times_10000 + 10000 as Uint<64>;
+    const lower_bound = calculated_fee_times_10000;
+
+    const verification = (expected_fee_times_10000 >= lower_bound) && (expected_fee_times_10000 < upper_bound);
+    assert(verification, "Fee calculation verification failed");
+
+    return true;
+  }
+
+  // Calculate merchant fee using witness-verified percentage
+  export pure circuit calculate_merchant_fee(
+    amount: Uint<64>,
+    fee_basis_points: Uint<16>
+  ): Uint<64> {
+    // Get fee from witness (computed off-chain)
+    const calculated_fee = calculate_percentage_fee(amount, fee_basis_points);
+
+    // Verify the calculation on-chain
+    verify_fee_calculation(amount, fee_basis_points, calculated_fee);
+
+    return calculated_fee;
+  }
+
+  // Calculate net payment after fees
+  export pure circuit calculate_net_payment(
+    gross_amount: Uint<64>,
+    fee_basis_points: Uint<16>
+  ): Vector<2, Uint<64>> {
+    const fee = calculate_merchant_fee(gross_amount, fee_basis_points);
+    const net_amount = gross_amount > fee ? (gross_amount - fee) as Uint<64> : 0 as Uint<64>;
+    return [net_amount, fee];
+  }
+
+  // Check if refund is allowed (within time window)
+  export pure circuit is_refund_allowed(
+    payment_timestamp: Uint<32>,
+    current_timestamp: Uint<32>,
+    refund_window_days: Uint<16>
+  ): Boolean {
+    const refund_window = (refund_window_days * 86400) as Uint<32>;
+    const elapsed_time = (current_timestamp - payment_timestamp) as Uint<32>;
+    return elapsed_time <= refund_window;
+  }
+
+  // Generate balance hash for privacy
+  export pure circuit hash_balance(
+    account_id: Bytes<32>,
+    balance: Uint<64>,
+    nonce: Bytes<32>
+  ): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([
+      pad(32, "midnight:pay:balance:"),
+      account_id,
+      nonce
+    ]);
+  }
+}

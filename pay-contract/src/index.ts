@@ -276,6 +276,22 @@ export const paymentWitnesses = {
       subscriptionData: updatedSubscriptionData,
       customerData: updatedCustomerData
     }, []];
+  },
+
+  // Witness 7: Calculate percentage-based fee (computed off-chain)
+  calculate_percentage_fee: (
+    { privateState }: WitnessContext<Ledger, PaymentPrivateState>,
+    amount: bigint,
+    feeBasisPoints: bigint
+  ): [PaymentPrivateState, bigint] => {
+    // Calculate percentage-based fee: (amount * fee_basis_points) / 10000
+    // Using BigInt arithmetic with division
+    const fee = (amount * feeBasisPoints) / 10000n;
+
+    // Ensure fee doesn't exceed the amount
+    const finalFee = fee > amount ? amount : fee;
+
+    return [privateState, finalFee];
   }
 };
 

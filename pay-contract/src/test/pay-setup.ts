@@ -293,6 +293,56 @@ export class PaymentTestSetup {
     return this.getLedgerState().total_subscriptions;
   }
 
+  // Test method: Deposit customer funds
+  depositCustomerFunds(customerId: string, amount: bigint): Ledger {
+    console.log(`💰 Depositing ${amount} tokens for customer ${customerId}`);
+
+    const customerIdBytes = this.stringToBytes32(customerId);
+
+    const results = this.contract.impureCircuits.deposit_customer_funds(this.turnContext, customerIdBytes, amount);
+    return this.updateStateAndGetLedger(results);
+  }
+
+  // Test method: Withdraw customer funds
+  withdrawCustomerFunds(customerId: string, amount: bigint): Ledger {
+    console.log(`💸 Withdrawing ${amount} tokens for customer ${customerId}`);
+
+    const customerIdBytes = this.stringToBytes32(customerId);
+
+    const results = this.contract.impureCircuits.withdraw_customer_funds(this.turnContext, customerIdBytes, amount);
+    return this.updateStateAndGetLedger(results);
+  }
+
+  // Helper: Get customer balance
+  getCustomerBalance(customerId: string): bigint {
+    const customerIdBytes = this.stringToBytes32(customerId);
+    const ledger = this.getLedgerState();
+
+    // Check if customer has balance
+    const balancesMap = ledger.customer_balances;
+    for (const [key, value] of balancesMap) {
+      if (Array.from(key).every((byte, i) => byte === customerIdBytes[i])) {
+        return value;
+      }
+    }
+    return 0n;
+  }
+
+  // Helper: Get merchant balance
+  getMerchantBalance(merchantId: string): bigint {
+    const merchantIdBytes = this.stringToBytes32(merchantId);
+    const ledger = this.getLedgerState();
+
+    // Check if merchant has balance
+    const balancesMap = ledger.merchant_balances;
+    for (const [key, value] of balancesMap) {
+      if (Array.from(key).every((byte, i) => byte === merchantIdBytes[i])) {
+        return value;
+      }
+    }
+    return 0n;
+  }
+
   // Helper: Get customer active subscription count
   getCustomerActiveCount(customerId: string): bigint {
     const customerData = this.turnContext.currentPrivateState.customerData.get(customerId);

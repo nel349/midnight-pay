@@ -9,6 +9,67 @@ describe('MidnightPay Payment Gateway Tests', () => {
     console.log('\n🔄 Test setup initialized\n');
   });
 
+  describe('Token Operations', () => {
+    test('should deposit and withdraw customer funds', () => {
+      // Arrange
+      const customerId = 'customer_token_001';
+      const depositAmount = 10000n;
+      const withdrawAmount = 3000n;
+
+      // Act - Deposit funds
+      paymentGateway.depositCustomerFunds(customerId, depositAmount);
+
+      // Assert - Check balance after deposit
+      const balanceAfterDeposit = paymentGateway.getCustomerBalance(customerId);
+      expect(balanceAfterDeposit).toBe(depositAmount);
+
+      // Act - Withdraw funds
+      paymentGateway.withdrawCustomerFunds(customerId, withdrawAmount);
+
+      // Assert - Check balance after withdrawal
+      const balanceAfterWithdraw = paymentGateway.getCustomerBalance(customerId);
+      expect(balanceAfterWithdraw).toBe(depositAmount - withdrawAmount);
+
+      console.log('✅ Token deposit and withdrawal test passed');
+    });
+
+    test('should transfer tokens on subscription payment', () => {
+      // Arrange
+      const merchantId = 'merchant_token_001';
+      const customerId = 'customer_token_002';
+      const depositAmount = 5000n;
+      const subscriptionAmount = 999n;
+
+      // Register merchant and deposit customer funds
+      paymentGateway.registerMerchant(merchantId, 'Token Service');
+      paymentGateway.depositCustomerFunds(customerId, depositAmount);
+
+      // Create subscription
+      const { subscriptionId } = paymentGateway.createSubscription(
+        merchantId, customerId, subscriptionAmount, 1999n, 30
+      );
+
+      // Fast-forward time to make payment due
+      const futureTimestamp = paymentGateway.getCurrentTimestamp() + (30 * 24 * 60 * 60);
+      paymentGateway.updateTimestamp(futureTimestamp);
+
+      // Act - Process payment
+      paymentGateway.processSubscriptionPayment(subscriptionId, 'payment_proof');
+
+      // Assert - Check balances after payment
+      const customerBalance = paymentGateway.getCustomerBalance(customerId);
+      const merchantBalance = paymentGateway.getMerchantBalance(merchantId);
+
+      // Customer should have paid (amount minus fee goes to merchant)
+      expect(customerBalance).toBeLessThan(depositAmount);
+      expect(merchantBalance).toBeGreaterThan(0n);
+
+      // The exact amounts depend on the fee structure
+      console.log(`Customer balance: ${customerBalance}, Merchant balance: ${merchantBalance}`);
+      console.log('✅ Token transfer on payment test passed');
+    });
+  });
+
   describe('Merchant Operations', () => {
     test('should register a new merchant successfully', () => {
       // Arrange
@@ -221,8 +282,13 @@ describe('MidnightPay Payment Gateway Tests', () => {
       const amount = 1999n;
       const maxAmount = 2999n;
       const frequencyDays = 30;
+      const customerDeposit = 5000n; // Ensure sufficient funds
 
       paymentGateway.registerMerchant(merchantId, 'Payment Service');
+
+      // Deposit customer funds BEFORE creating subscription
+      paymentGateway.depositCustomerFunds(customerId, customerDeposit);
+
       const { subscriptionId } = paymentGateway.createSubscription(merchantId, customerId, amount, maxAmount, frequencyDays);
 
       // Fast-forward time to make payment due
@@ -299,8 +365,13 @@ describe('MidnightPay Payment Gateway Tests', () => {
       const amount = 500n;
       const maxAmount = 1000n;
       const frequencyDays = 7; // Weekly subscription
+      const customerDeposit = 5000n; // Ensure sufficient funds for multiple payments
 
       paymentGateway.registerMerchant(merchantId, 'Weekly Service');
+
+      // Deposit customer funds BEFORE creating subscription
+      paymentGateway.depositCustomerFunds(customerId, customerDeposit);
+
       const { subscriptionId } = paymentGateway.createSubscription(merchantId, customerId, amount, maxAmount, frequencyDays);
 
       // Act - Process multiple payments over time
@@ -371,6 +442,193 @@ describe('MidnightPay Payment Gateway Tests', () => {
       paymentGateway.printEntityDetailedHistory(customerId);
 
       console.log('✅ Subscription count proof test passed');
+    });
+  });
+
+  describe('Token Operations', () => {
+    test('should deposit and withdraw customer funds', () => {
+      // Arrange
+      const customerId = 'customer_token_001';
+      const depositAmount = 5000n;
+      const withdrawAmount = 2000n;
+
+      // Act - Deposit funds
+      const ledgerAfterDeposit = paymentGateway.depositCustomerFunds(customerId, depositAmount);
+      const balanceAfterDeposit = paymentGateway.getCustomerBalance(customerId);
+
+      // Assert - Verify deposit
+      expect(balanceAfterDeposit).toBe(depositAmount);
+      expect(ledgerAfterDeposit.total_supply).toBe(depositAmount);
+
+      // Act - Withdraw some funds
+      const ledgerAfterWithdrawal = paymentGateway.withdrawCustomerFunds(customerId, withdrawAmount);
+      const balanceAfterWithdrawal = paymentGateway.getCustomerBalance(customerId);
+
+      // Assert - Verify withdrawal
+      expect(balanceAfterWithdrawal).toBe(depositAmount - withdrawAmount);
+      expect(ledgerAfterWithdrawal.total_supply).toBe(depositAmount - withdrawAmount);
+
+      console.log('✅ Customer deposit/withdrawal test passed');
+    });
+
+    test('should handle merchant earnings and withdrawals', () => {
+      // Arrange
+      const merchantId = 'merchant_earnings_001';
+      const customerId = 'customer_earnings_001';
+      const subscriptionAmount = 1000n;
+      const customerDeposit = 5000n;
+
+      // Setup - Register merchant and fund customer
+      paymentGateway.registerMerchant(merchantId, 'Earnings Test Service');
+      paymentGateway.depositCustomerFunds(customerId, customerDeposit);
+
+      // Create subscription
+      const { subscriptionId } = paymentGateway.createSubscription(
+        merchantId, customerId, subscriptionAmount, subscriptionAmount * 2n, 30
+      );
+
+      // Advance time to make payment due (31 days = 2678400 seconds)
+      const futureTimestamp = paymentGateway.getCurrentTimestamp() + (31 * 24 * 60 * 60);
+      paymentGateway.updateTimestamp(futureTimestamp);
+
+      // Act - Process payment to generate merchant earnings
+      paymentGateway.processSubscriptionPayment(subscriptionId, 'service_proof_earnings');
+
+      // Get merchant balance after payment
+      const merchantBalance = paymentGateway.getMerchantBalance(merchantId);
+      const customerBalanceAfterPayment = paymentGateway.getCustomerBalance(customerId);
+
+      // Assert - Verify payment processed correctly
+      expect(customerBalanceAfterPayment).toBe(customerDeposit - subscriptionAmount);
+      expect(merchantBalance).toBeGreaterThan(0n); // Should have earnings after fee
+      expect(merchantBalance).toBeLessThan(subscriptionAmount); // Should be less than full amount due to fees
+
+      // For 1000 amount with 300 basis points (3%), fee should be 30 tokens, so merchant gets 970
+      expect(merchantBalance).toBe(970n);
+
+      console.log(`Customer balance after payment: ${customerBalanceAfterPayment}`);
+      console.log(`Merchant balance after payment: ${merchantBalance}`);
+      console.log('✅ Merchant earnings test passed');
+    });
+
+    test('should validate token balances during subscription payments', () => {
+      // Arrange
+      const merchantId = 'merchant_balance_validation';
+      const customerId = 'customer_balance_validation';
+      const subscriptionAmount = 3000n;
+      const insufficientDeposit = 1000n; // Less than subscription amount
+
+      // Setup
+      paymentGateway.registerMerchant(merchantId, 'Balance Validation Service');
+      paymentGateway.depositCustomerFunds(customerId, insufficientDeposit);
+
+      const { subscriptionId } = paymentGateway.createSubscription(
+        merchantId, customerId, subscriptionAmount, subscriptionAmount * 2n, 30
+      );
+
+      // Advance time to make payment due first
+      const paymentTime = paymentGateway.getCurrentTimestamp() + (31 * 24 * 60 * 60);
+      paymentGateway.updateTimestamp(paymentTime);
+
+      // Act & Assert - Should fail due to insufficient balance
+      expect(() => {
+        paymentGateway.processSubscriptionPayment(subscriptionId, 'insufficient_balance_proof');
+      }).toThrow(); // Payment should fail due to insufficient customer balance
+
+      // Add sufficient funds and retry (time is already advanced)
+      paymentGateway.depositCustomerFunds(customerId, 4000n); // Now has 5000 total
+      const customerBalance = paymentGateway.getCustomerBalance(customerId);
+      expect(customerBalance).toBe(5000n);
+
+      // Now payment should succeed (time is already advanced)
+      paymentGateway.processSubscriptionPayment(subscriptionId, 'sufficient_balance_proof');
+      const finalBalance = paymentGateway.getCustomerBalance(customerId);
+      expect(finalBalance).toBe(5000n - subscriptionAmount); // Customer loses full subscription amount
+
+      console.log('✅ Balance validation test passed');
+    });
+
+    test('should track total token supply correctly', () => {
+      // Arrange
+      const customer1 = 'customer_supply_001';
+      const customer2 = 'customer_supply_002';
+      const deposit1 = 2000n;
+      const deposit2 = 3000n;
+      const withdrawal1 = 500n;
+
+      // Get initial supply
+      const initialSupply = paymentGateway.getLedgerState().total_supply;
+
+      // Act - Multiple deposits
+      paymentGateway.depositCustomerFunds(customer1, deposit1);
+      paymentGateway.depositCustomerFunds(customer2, deposit2);
+
+      // Assert - Supply increased
+      const supplyAfterDeposits = paymentGateway.getLedgerState().total_supply;
+      expect(supplyAfterDeposits).toBe(initialSupply + deposit1 + deposit2);
+
+      // Act - Withdrawal
+      paymentGateway.withdrawCustomerFunds(customer1, withdrawal1);
+
+      // Assert - Supply decreased
+      const supplyAfterWithdrawal = paymentGateway.getLedgerState().total_supply;
+      expect(supplyAfterWithdrawal).toBe(initialSupply + deposit1 + deposit2 - withdrawal1);
+
+      console.log(`Initial supply: ${initialSupply}`);
+      console.log(`Final supply: ${supplyAfterWithdrawal}`);
+      console.log('✅ Total supply tracking test passed');
+    });
+
+    test('should handle payment processing with fee calculations', () => {
+      // Arrange
+      const merchantId = 'merchant_fee_test';
+      const customerId = 'customer_fee_test';
+      const subscriptionAmount = 1500n; // Amount that will trigger medium fee tier
+      const customerDeposit = 5000n;
+
+      // Setup
+      paymentGateway.registerMerchant(merchantId, 'Fee Calculation Service');
+      paymentGateway.depositCustomerFunds(customerId, customerDeposit);
+
+      const { subscriptionId } = paymentGateway.createSubscription(
+        merchantId, customerId, subscriptionAmount, subscriptionAmount * 2n, 30
+      );
+
+      // Record initial balances
+      const initialCustomerBalance = paymentGateway.getCustomerBalance(customerId);
+      const initialMerchantBalance = paymentGateway.getMerchantBalance(merchantId);
+      const initialSupply = paymentGateway.getLedgerState().total_supply;
+
+      // Advance time to make payment due (31 days = 2678400 seconds)
+      const paymentTimestamp = paymentGateway.getCurrentTimestamp() + (31 * 24 * 60 * 60);
+      paymentGateway.updateTimestamp(paymentTimestamp);
+
+      // Act - Process payment
+      paymentGateway.processSubscriptionPayment(subscriptionId, 'fee_calculation_proof');
+
+      // Get final balances
+      const finalCustomerBalance = paymentGateway.getCustomerBalance(customerId);
+      const finalMerchantBalance = paymentGateway.getMerchantBalance(merchantId);
+      const finalSupply = paymentGateway.getLedgerState().total_supply;
+
+      // Assert - Verify fee was deducted
+      expect(finalCustomerBalance).toBe(initialCustomerBalance - subscriptionAmount);
+      expect(finalMerchantBalance).toBeGreaterThan(initialMerchantBalance);
+      expect(finalMerchantBalance).toBeLessThan(initialMerchantBalance + subscriptionAmount); // Less due to fees
+      expect(finalSupply).toBeLessThan(initialSupply); // Fees reduce total supply
+
+      const merchantEarnings = finalMerchantBalance - initialMerchantBalance;
+      const feeAmount = subscriptionAmount - merchantEarnings;
+
+      // For 1500 amount with 300 basis points (3%), fee should be 45 tokens, so merchant gets 1455
+      expect(merchantEarnings).toBe(1455n);
+      expect(feeAmount).toBe(45n);
+
+      console.log(`Subscription amount: ${subscriptionAmount}`);
+      console.log(`Merchant earnings: ${merchantEarnings}`);
+      console.log(`Fee amount: ${feeAmount}`);
+      console.log(`Supply reduction: ${initialSupply - finalSupply}`);
+      console.log('✅ Fee calculation test passed');
     });
   });
 });
