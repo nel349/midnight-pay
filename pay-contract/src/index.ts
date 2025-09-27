@@ -278,6 +278,7 @@ export const paymentWitnesses = {
     }, []];
   },
 
+  // https://docs.midnight.network/blog/compact-division
   // Witness 7: Calculate percentage-based fee (computed off-chain)
   calculate_percentage_fee: (
     { privateState }: WitnessContext<Ledger, PaymentPrivateState>,
