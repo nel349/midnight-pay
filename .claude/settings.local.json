@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/norman/Development/midnight/midnight-bank/bank-contract/src/test/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
