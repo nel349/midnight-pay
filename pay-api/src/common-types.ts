@@ -1,10 +1,12 @@
-// Note: Using simplified types for now, following bank pattern
+// Following bank pattern for provider types
 import {
   type PaymentPrivateState,
   type Contract,
   type paymentWitnesses,
   TransactionType
 } from '@midnight-pay/pay-contract';
+import { type MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
+import { type FoundContract } from '@midnight-ntwrk/midnight-js-contracts';
 
 export type PaymentAccountId = string;
 
@@ -12,10 +14,10 @@ export type PaymentContract = Contract<PaymentPrivateState, typeof paymentWitnes
 
 export type PaymentCircuitKeys = Exclude<keyof PaymentContract['impureCircuits'], number | symbol>;
 
-// Simplified provider types for now
-export type PaymentProviders = any; // TODO: Define proper provider types
+// Proper provider types following bank pattern
+export type PaymentProviders = MidnightProviders<PaymentCircuitKeys, PaymentAccountId, PaymentPrivateState>;
 
-export type DeployedPaymentContract = any; // TODO: Define proper deployed contract type
+export type DeployedPaymentContract = FoundContract<PaymentContract>;
 
 export type PaymentTransaction = {
   type: TransactionType;

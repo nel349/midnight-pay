@@ -4,7 +4,10 @@
       "Read(//Users/norman/Development/midnight/midnight-bank/bank-contract/src/test/**)",
       "Read(//Users/norman/Development/midnight/midnight-seabattle/battleship-east-contract/src/**)",
       "Read(//Users/norman/Development/midnight/midnight-seabattle/**)",
-      "Read(//Users/norman/Development/midnight/midnight-bank/bank-contract/src/**)"
+      "Read(//Users/norman/Development/midnight/midnight-bank/bank-contract/src/**)",
+      "Bash(npm run typecheck:*)",
+      "Read(//Users/norman/Development/midnight/midnight-bank/bank-api/src/**)",
+      "Read(//Users/norman/Development/midnight/midnight-bank/**)"
     ],
     "deny": [],
     "ask": []

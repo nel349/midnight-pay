@@ -20,6 +20,7 @@ import {
   Contract,
   createPaymentPrivateState,
   ledger,
+  type Ledger,
   pureCircuits,
   paymentWitnesses,
   TransactionType,
@@ -28,6 +29,7 @@ import {
 } from '@midnight-pay/pay-contract';
 import * as utils from './utils/index';
 import { combineLatest, concat, defer, firstValueFrom, from, map, type Observable, of, retry, scan, Subject } from 'rxjs';
+import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import type { DetailedPaymentTransaction } from './common-types';
 
 const paymentContract: PaymentContract = new Contract(paymentWitnesses);
@@ -106,11 +108,11 @@ export class PaymentAPI implements DeployedPaymentAPI {
       };
     };
 
-    this.deployedContractAddress = deployedContract as any; // Simplified for now
+    this.deployedContractAddress = deployedContract.deployTxData.public.contractAddress;
     this.state$ = combineLatest([
       providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState: any) => ledger(contractState.data))),
+        .pipe(map((contractState) => ledger(contractState.data))),
 
       concat(
         from(defer(() => providers.privateStateProvider.get(this.accountId) as Promise<PaymentPrivateState>)),
@@ -154,19 +156,31 @@ export class PaymentAPI implements DeployedPaymentAPI {
     let deployedContract: DeployedPaymentContract;
 
     if (contractAddress) {
-      deployedContract = contractAddress as any; // Simplified for now
+      // Connect to existing contract
+      const initialPrivateState = createPaymentPrivateState();
+      deployedContract = await findDeployedContract(providers, {
+        contractAddress,
+        contract: paymentContract,
+        privateStateId: accountId,
+        initialPrivateState,
+      });
+      defaultLogger.info(`Connected to existing payment contract at ${contractAddress}`);
     } else {
       // Deploy new contract if no address provided
       const initialPrivateState = createPaymentPrivateState();
-      deployedContract = contractAddress as any; // Simplified for now
-      defaultLogger.info('Deployed new payment contract');
+      deployedContract = await deployContract(providers, {
+        privateStateId: accountId,
+        contract: paymentContract,
+        initialPrivateState,
+      });
+      defaultLogger.info(`Deployed new payment contract at ${deployedContract.deployTxData.public.contractAddress}`);
     }
 
     return new PaymentAPI(accountId, entityId, deployedContract, providers, defaultLogger);
   }
 
   // Helper methods
-  private getEntityBalance(ledgerState: any, entityId: string, type: 'customer' | 'merchant'): bigint | undefined {
+  private getEntityBalance(ledgerState: Ledger, entityId: string, type: 'customer' | 'merchant'): bigint | undefined {
     const balancesMap = type === 'customer' ? ledgerState.customer_balances : ledgerState.merchant_balances;
     const entityIdBytes = new TextEncoder().encode(entityId);
     const paddedId = new Uint8Array(32);
@@ -269,7 +283,7 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState: any) => ledger(contractState.data)))
+        .pipe(map((contractState) => ledger(contractState.data)))
     );
 
     const balance = this.getEntityBalance(ledgerState, merchantId, 'merchant') ?? 0n;
@@ -342,7 +356,7 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState: any) => ledger(contractState.data)))
+        .pipe(map((contractState) => ledger(contractState.data)))
     );
 
     const balance = this.getEntityBalance(ledgerState, customerId, 'customer') ?? 0n;
@@ -488,36 +502,36 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState: any) => ledger(contractState.data)))
+        .pipe(map((contractState) => ledger(contractState.data)))
     );
-    return (ledgerState as any).total_supply;
+    return ledgerState.total_supply;
   }
 
   async getTotalMerchants(): Promise<bigint> {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState: any) => ledger(contractState.data)))
+        .pipe(map((contractState) => ledger(contractState.data)))
     );
-    return (ledgerState as any).total_merchants;
+    return ledgerState.total_merchants;
   }
 
   async getTotalSubscriptions(): Promise<bigint> {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState: any) => ledger(contractState.data)))
+        .pipe(map((contractState) => ledger(contractState.data)))
     );
-    return (ledgerState as any).total_subscriptions;
+    return ledgerState.total_subscriptions;
   }
 
   async getCurrentTimestamp(): Promise<number> {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState: any) => ledger(contractState.data)))
+        .pipe(map((contractState) => ledger(contractState.data)))
     );
-    return Number((ledgerState as any).current_timestamp);
+    return Number(ledgerState.current_timestamp);
   }
 
   // State queries implementation
@@ -588,12 +602,12 @@ export class PaymentAPI implements DeployedPaymentAPI {
       const privateState = await this.providers.privateStateProvider.get(this.accountId) as PaymentPrivateState;
 
       // Execute the circuit
-      const result = await (this.deployedContract.circuit as any)[circuitName](...args);
+      const txData = await (this.deployedContract.callTx as any)[circuitName](...args);
 
       // Update private state if needed
-      if (result.privateState) {
-        await this.providers.privateStateProvider.set(this.accountId, result.privateState);
-        this.privateStates$.next(result.privateState);
+      if (txData.privateState) {
+        await this.providers.privateStateProvider.set(this.accountId, txData.privateState);
+        this.privateStates$.next(txData.privateState);
       }
 
       // Emit transaction
@@ -601,7 +615,7 @@ export class PaymentAPI implements DeployedPaymentAPI {
         this.transactions$.next({ transaction, cancelledTransaction: undefined });
       }
 
-      return result.result;
+      return txData;
     } catch (error) {
       this.logger.error(`Circuit ${circuitName} failed:`, error);
 
