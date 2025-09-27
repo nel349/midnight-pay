@@ -1,4 +1,4 @@
-import { type ContractAddress } from '@midnight-ntwrk/compact-runtime';
+import { type ContractAddress, StateValue, CostModel } from '@midnight-ntwrk/compact-runtime';
 import { type Logger } from 'pino';
 import {
   type PaymentContract,
@@ -621,7 +621,7 @@ export class PaymentAPI implements DeployedPaymentAPI {
     try {
       const privateState = await this.providers.privateStateProvider.get(this.accountId) as PaymentPrivateState;
 
-      // Execute the circuit
+      // Execute the circuit - callTx handles context automatically
       const txData = await (this.deployedContract.callTx as any)[circuitName](...args);
 
       // Update private state if needed
