@@ -9,18 +9,27 @@
 ## Current Project Structure
 ```
 midnight-pay/
-├── pay-contract/          # Compact smart contracts
-├── pay-api/              # TypeScript API layer  
+├── pay-merchant-contract/ # Merchant operations smart contract
+├── pay-customer-contract/ # Customer operations smart contract (future)
+├── pay-commons/          # Shared types and utilities
+├── pay-api/              # TypeScript API layer
 ├── pay-ui/               # React frontend
 └── CLAUDE.md             # This file
 ```
 
-## Banking Features (V1)
-1. **create_account** - ZK proof for PIN validation
-2. **deposit** - Confidential smart contract for balance updates
-3. **check_balance** - Private state management  
-4. **verify_account** - Selective disclosure for verification
-5. **withdraw** - Private balance validation and updates
+## Future pay-customer-contract Operations
+1. **approve_subscription** - Customer authorizes subscription with spending limits
+2. **pause_subscription** - Customer pauses their subscription temporarily
+3. **cancel_subscription** - Customer permanently cancels subscription
+4. **prove_spending_pattern** - ZK proof of spending without revealing amounts
+5. **prove_subscription_status** - ZK proof of active subscriber status
+
+## Payment Gateway Features (V1)
+1. **register_merchant** - Merchant registration with tier tracking
+2. **create_subscription** - Subscription with cryptographic spending limits
+3. **process_subscription_payment** - Recurring payment processing with auto-pause
+4. **prove_merchant_tier** - ZK proof of merchant verification level
+5. **prove_subscription_count** - ZK proof of merchant transaction volume
 
 ## Key Patterns from Battleship /Users/norman/Development/midnight/midnight-seabattle
 - **Witnesses**: Provide private data to circuits

@@ -10,109 +10,71 @@ export const pureCircuits = ContractModule.pureCircuits;
 export const { Contract } = ContractModule;
 export type Contract<T, W extends Witnesses<T> = Witnesses<T>> = ContractType<T, W>;
 
-// Payment Gateway Private State - stored locally, never revealed publicly
+// Payment Gateway Private State - simplified for modular contract
 export type PaymentPrivateState = {
-  readonly userPinHashes: Map<string, Uint8Array>;        // user_id -> PIN hash
-  readonly userBalances: Map<string, bigint>;             // user_id -> balance
-  readonly merchantSecrets: Map<string, Uint8Array>;      // merchant_id -> merchant secret
-  readonly pendingTransferAmounts: Map<string, bigint>;   // auth_id -> actual amount
+  readonly merchantData: Map<string, MerchantData>;
+  readonly customerData: Map<string, CustomerData>;
+  readonly subscriptionData: Map<string, SubscriptionData>;
 };
+
+export interface MerchantData {
+  merchantId: string;
+  businessName: string;
+  createdAt: number;
+}
+
+export interface CustomerData {
+  customerId: string;
+  subscriptions: string[];
+}
+
+export interface SubscriptionData {
+  subscriptionId: string;
+  merchantId: string;
+  customerId: string;
+  amount: bigint;
+  maxAmount: bigint;
+  frequencyDays: number;
+  status: 'active' | 'paused' | 'cancelled' | 'expired';
+  lastPayment: number;
+  nextPayment: number;
+  paymentCount: number;
+}
 
 // Create initial private state for payment gateway
 export const createPaymentPrivateState = (): PaymentPrivateState => ({
-  userPinHashes: new Map(),
-  userBalances: new Map(),
-  merchantSecrets: new Map(),
-  pendingTransferAmounts: new Map()
+  merchantData: new Map(),
+  customerData: new Map(),
+  subscriptionData: new Map()
 });
 
-// Helper to add a new user to private state
-export const addUserToPrivateState = (
+// Helper functions for managing private state
+export const addMerchantData = (
   state: PaymentPrivateState,
-  userId: string,
-  pinHash: Uint8Array,
-  initialBalance: bigint
+  merchantData: MerchantData
 ): PaymentPrivateState => ({
-  userPinHashes: new Map(state.userPinHashes).set(userId, pinHash),
-  userBalances: new Map(state.userBalances).set(userId, initialBalance),
-  merchantSecrets: new Map(state.merchantSecrets),
-  pendingTransferAmounts: new Map(state.pendingTransferAmounts)
+  ...state,
+  merchantData: new Map(state.merchantData).set(merchantData.merchantId, merchantData)
 });
 
-// Helper to add a new merchant to private state
-export const addMerchantToPrivateState = (
+export const addCustomerData = (
   state: PaymentPrivateState,
-  merchantId: string,
-  pinHash: Uint8Array,
-  secret: Uint8Array,
-  initialBalance: bigint
+  customerData: CustomerData
 ): PaymentPrivateState => ({
-  userPinHashes: new Map(state.userPinHashes).set(merchantId, pinHash),
-  userBalances: new Map(state.userBalances).set(merchantId, initialBalance),
-  merchantSecrets: new Map(state.merchantSecrets).set(merchantId, secret),
-  pendingTransferAmounts: new Map(state.pendingTransferAmounts)
+  ...state,
+  customerData: new Map(state.customerData).set(customerData.customerId, customerData)
 });
 
-// Witness Functions - provide private data to circuits
-export const paymentWitnesses = {
-  // Witness 1: Provides user's PIN hash for authentication
-  user_pin_hash: ({
-    privateState
-  }: WitnessContext<Ledger, PaymentPrivateState>,
-    userId: Uint8Array
-  ): [PaymentPrivateState, Uint8Array] => {
-    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
-    const pinHash = privateState.userPinHashes.get(userIdStr);
-    if (!pinHash) {
-      throw new Error(`User ${userIdStr} not found in private state`);
-    }
-    return [privateState, pinHash];
-  },
+export const addSubscriptionData = (
+  state: PaymentPrivateState,
+  subscriptionData: SubscriptionData
+): PaymentPrivateState => ({
+  ...state,
+  subscriptionData: new Map(state.subscriptionData).set(subscriptionData.subscriptionId, subscriptionData)
+});
 
-  // Witness 2: Provides user's current balance
-  user_balance: ({
-    privateState
-  }: WitnessContext<Ledger, PaymentPrivateState>,
-    userId: Uint8Array
-  ): [PaymentPrivateState, bigint] => {
-    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
-    const balance = privateState.userBalances.get(userIdStr);
-    return [privateState, balance ?? 0n];
-  },
-
-  // Witness 3: Updates user's balance in private state
-  set_user_balance: (
-    { privateState }: WitnessContext<Ledger, PaymentPrivateState>,
-    userId: Uint8Array,
-    newBalance: bigint
-  ): [PaymentPrivateState, []] => {
-    const userIdStr = new TextDecoder().decode(userId).replace(/\0/g, '');
-    const newUserBalances = new Map(privateState.userBalances);
-    newUserBalances.set(userIdStr, newBalance);
-
-    return [
-      {
-        ...privateState,
-        userBalances: newUserBalances
-      },
-      []
-    ];
-  },
-
-  // Witness 4: Provides merchant's secret for verification
-  merchant_secret: ({
-    privateState
-  }: WitnessContext<Ledger, PaymentPrivateState>,
-    merchantId: Uint8Array
-  ): [PaymentPrivateState, Uint8Array] => {
-    const merchantIdStr = new TextDecoder().decode(merchantId).replace(/\0/g, '');
-    const secret = privateState.merchantSecrets.get(merchantIdStr);
-    if (!secret) {
-      throw new Error(`Merchant ${merchantIdStr} not found in private state`);
-    }
-    return [privateState, secret];
-  }
-};
+// Simplified witness functions (no witnesses needed for this contract)
+export const paymentWitnesses = {};
 
 // Utility functions
 export function hashPin(pin: string): Uint8Array {
@@ -181,8 +143,9 @@ export default {
   pureCircuits,
   paymentWitnesses,
   createPaymentPrivateState,
-  addUserToPrivateState,
-  addMerchantToPrivateState,
+  addMerchantData,
+  addCustomerData,
+  addSubscriptionData,
   hashPin,
   validatePin,
   validateAmount,
