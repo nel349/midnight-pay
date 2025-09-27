@@ -143,6 +143,26 @@ export class PaymentAPI implements DeployedPaymentAPI {
     );
   }
 
+  // Static deploy method - following bank pattern
+  static async deploy(
+    providers: PaymentProviders,
+    logger?: Logger,
+  ): Promise<ContractAddress> {
+    const defaultLogger = logger ?? { info: console.log, error: console.error } as Logger;
+    defaultLogger.info('🚀 Payment contract deployment started');
+
+    const deployedContract = await deployContract(providers, {
+      privateStateId: 'payment-deploy' as PaymentAccountId,
+      contract: paymentContract,
+      initialPrivateState: createPaymentPrivateState(),
+    });
+
+    const contractAddress = deployedContract.deployTxData.public.contractAddress;
+    defaultLogger.info(`🎉 Payment contract deployed at ${contractAddress}`);
+
+    return contractAddress;
+  }
+
   // Static factory method - following bank pattern
   static async build(
     entityId: string,

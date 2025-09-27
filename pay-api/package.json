@@ -17,6 +17,8 @@
   "scripts": {
     "clean": "rm -rf dist/",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit --project tsconfig.test.json",
+    "typecheck:all": "npm run typecheck && npm run typecheck:test",
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "RUN_STANDALONE=true vitest run --passWithNoTests",
