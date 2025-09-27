@@ -3,10 +3,29 @@ import type { Contract as ContractType, Witnesses } from './managed/pay/contract
 import * as ContractModule from './managed/pay/contract/index.cjs';
 type Ledger = ContractModule.Ledger;
 
-// Import PaymentCommons types
-import * as PC from '../pay-commons/PaymentCommons';
-type PC_MerchantInfo = PC.MerchantInfo;
-type PC_Subscription = PC.Subscription;
+// Define PaymentCommons types locally (since .compact files aren't TS modules)
+export interface PC_MerchantInfo {
+  merchant_id: Uint8Array;
+  business_name: Uint8Array;
+  tier: number;
+  transaction_count: bigint;
+  total_volume: bigint;
+  created_at: bigint;
+  is_active: boolean;
+}
+
+export interface PC_Subscription {
+  subscription_id: Uint8Array;
+  merchant_id: Uint8Array;
+  customer_id: Uint8Array;
+  amount: bigint;
+  max_amount: bigint;
+  frequency_days: bigint;
+  status: number;
+  last_payment: bigint;
+  next_payment: bigint;
+  payment_count: bigint;
+}
 
 // Re-export contract types and functions
 export * from './managed/pay/contract/index.cjs';
@@ -118,7 +137,7 @@ export const paymentWitnesses = {
     { privateState }: WitnessContext<Ledger, PaymentPrivateState>,
     merchantId: Uint8Array,
     merchantInfo: PC_MerchantInfo
-  ): [PaymentPrivateState, Array<never>] => {
+  ): [PaymentPrivateState, []] => {
     const merchantIdStr = new TextDecoder().decode(merchantId).replace(/\0/g, '');
     const updatedMerchantData = new Map(privateState.merchantData);
 
@@ -167,7 +186,7 @@ export const paymentWitnesses = {
     { privateState }: WitnessContext<Ledger, PaymentPrivateState>,
     customerId: Uint8Array,
     count: bigint
-  ): [PaymentPrivateState, Array<never>] => {
+  ): [PaymentPrivateState, []] => {
     // For this simplified implementation, we don't need to store the count separately
     // as it's calculated from the actual subscription data
     return [privateState, []];
@@ -204,11 +223,11 @@ export const paymentWitnesses = {
       customer_id: customerIdBytes,
       amount: subscriptionData.amount,
       max_amount: subscriptionData.maxAmount,
-      frequency_days: subscriptionData.frequencyDays,
+      frequency_days: BigInt(subscriptionData.frequencyDays),
       status: subscriptionData.status === 'active' ? 0 : subscriptionData.status === 'paused' ? 1 : subscriptionData.status === 'cancelled' ? 2 : 3,
-      last_payment: subscriptionData.lastPayment,
-      next_payment: subscriptionData.nextPayment,
-      payment_count: subscriptionData.paymentCount
+      last_payment: BigInt(subscriptionData.lastPayment),
+      next_payment: BigInt(subscriptionData.nextPayment),
+      payment_count: BigInt(subscriptionData.paymentCount)
     };
 
     return [privateState, contractSubscription];
@@ -219,7 +238,7 @@ export const paymentWitnesses = {
     { privateState }: WitnessContext<Ledger, PaymentPrivateState>,
     subscriptionId: Uint8Array,
     subscription: PC_Subscription
-  ): [PaymentPrivateState, Array<never>] => {
+  ): [PaymentPrivateState, []] => {
     const subscriptionIdStr = new TextDecoder().decode(subscriptionId).replace(/\0/g, '');
     const updatedSubscriptionData = new Map(privateState.subscriptionData);
 
@@ -230,11 +249,11 @@ export const paymentWitnesses = {
       customerId: new TextDecoder().decode(subscription.customer_id).replace(/\0/g, ''),
       amount: subscription.amount,
       maxAmount: subscription.max_amount,
-      frequencyDays: subscription.frequency_days,
+      frequencyDays: Number(subscription.frequency_days),
       status: subscription.status === 0 ? 'active' : subscription.status === 1 ? 'paused' : subscription.status === 2 ? 'cancelled' : 'expired',
-      lastPayment: subscription.last_payment,
-      nextPayment: subscription.next_payment,
-      paymentCount: subscription.payment_count
+      lastPayment: Number(subscription.last_payment),
+      nextPayment: Number(subscription.next_payment),
+      paymentCount: Number(subscription.payment_count)
     };
 
     updatedSubscriptionData.set(subscriptionIdStr, localSubscriptionData);
