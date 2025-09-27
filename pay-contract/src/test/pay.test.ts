@@ -22,7 +22,7 @@ describe('MidnightPay Payment Gateway Tests', () => {
       expect(paymentGateway.getTotalMerchants()).toBe(1n);
 
       // Verify merchant exists in the ledger
-      const merchantsMap = ledger.all_merchants;
+      const merchantsMap = ledger.merchant_accounts;
       expect(merchantsMap.size()).toBe(1n);
 
       // Print state for debugging
@@ -81,7 +81,7 @@ describe('MidnightPay Payment Gateway Tests', () => {
       expect(subscriptionId.length).toBe(32); // Bytes<32>
 
       // Verify subscription exists in the ledger
-      const subscriptionsMap = ledger.all_subscriptions;
+      const subscriptionsMap = ledger.subscription_accounts;
       expect(subscriptionsMap.size()).toBe(1n);
 
       // Print state for debugging

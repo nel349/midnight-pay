@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/norman/Development/midnight/midnight-bank/bank-contract/src/test/**)"
+      "Read(//Users/norman/Development/midnight/midnight-bank/bank-contract/src/test/**)",
+      "Read(//Users/norman/Development/midnight/midnight-seabattle/battleship-east-contract/src/**)",
+      "Read(//Users/norman/Development/midnight/midnight-seabattle/**)",
+      "Read(//Users/norman/Development/midnight/midnight-bank/bank-contract/src/**)"
     ],
     "deny": [],
     "ask": []

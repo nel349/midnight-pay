@@ -296,16 +296,19 @@ export class PaymentTestSetup {
   // Helper: Get customer active subscription count
   getCustomerActiveCount(customerId: string): bigint {
     const customerIdBytes = this.stringToBytes32(customerId);
-    const customerActiveCountsMap = this.getLedgerState().customer_active_counts;
 
-    // Check if customer exists in the map
-    const customerIdKey = Array.from(customerIdBytes);
-    for (const [key, value] of customerActiveCountsMap) {
-      if (Array.from(key).every((byte, i) => byte === customerIdKey[i])) {
-        return value;
-      }
-    }
-    return 0n;
+    // Use the witness function to get the count from private state
+    const [, count] = this.contract.witnesses.customer_subscription_count(
+      {
+        privateState: this.turnContext.currentPrivateState,
+        currentZswapLocalState: this.turnContext.currentZswapLocalState,
+        originalState: this.turnContext.originalState,
+        transactionContext: this.turnContext.transactionContext
+      },
+      customerIdBytes
+    );
+
+    return count;
   }
 
   // Debug helper: Print current payment gateway state

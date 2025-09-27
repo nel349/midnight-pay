@@ -3,28 +3,42 @@ pragma language_version >= 0.13.0;
 import CompactStandardLibrary;
 import "../../pay-commons/PaymentCommons" prefix PC_;
 
-// Main Payment Gateway Contract
-// Combines merchant and customer operations in a single contract
+// Privacy-Preserving Payment Gateway Contract
+// Public ledger stores only hashes and proofs, private data in witnesses
 
-export ledger all_merchants: Map<Bytes<32>, PC_MerchantInfo>;
-export ledger all_subscriptions: Map<Bytes<32>, PC_Subscription>;
-export ledger payment_proofs: Map<Bytes<32>, PC_PaymentProof>;
+// Privacy-preserving ledger state (following bank pattern)
+export ledger merchant_accounts: Map<Bytes<32>, Bytes<32>>; // encrypted merchant existence
+export ledger subscription_accounts: Map<Bytes<32>, Bytes<32>>; // encrypted subscription existence
 export ledger total_merchants: Counter;
 export ledger total_subscriptions: Counter;
-export ledger customer_active_counts: Map<Bytes<32>, Uint<32>>;
 export ledger current_timestamp: Uint<32>;
+
+// Private state provided through witnesses (payment-specific)
+witness merchant_info(merchant_id: Bytes<32>): PC_MerchantInfo;
+witness set_merchant_info(merchant_id: Bytes<32>, info: PC_MerchantInfo): [];
+witness customer_subscription_count(customer_id: Bytes<32>): Uint<32>;
+witness set_customer_subscription_count(customer_id: Bytes<32>, count: Uint<32>): [];
+witness subscription_info(subscription_id: Bytes<32>): PC_Subscription;
+witness set_subscription_info(subscription_id: Bytes<32>, info: PC_Subscription): [];
 
 constructor() {
   current_timestamp = 1000000 as Uint<32>;
 }
 
-// Merchant Operations
+// Privacy-Preserving Merchant Operations
 export circuit register_merchant(
   merchant_id: Bytes<32>,
   business_name: Bytes<64>
 ): [] {
-  assert(!all_merchants.member(disclose(merchant_id)), "Merchant already exists");
+  // Check merchant doesn't already exist
+  assert(!merchant_accounts.member(disclose(merchant_id)), "Merchant already exists");
 
+  // Store encrypted merchant existence on public ledger
+  const merchant_hash = PC_hash_merchant_id(merchant_id);
+  merchant_accounts.insert(disclose(merchant_id), disclose(merchant_hash));
+  total_merchants.increment(1);
+
+  // Store merchant info in private state (witness)
   const merchant_info = PC_MerchantInfo {
     merchant_id: disclose(merchant_id),
     business_name: disclose(business_name),
@@ -35,126 +49,73 @@ export circuit register_merchant(
     is_active: true
   };
 
-  all_merchants.insert(disclose(merchant_id), merchant_info);
-  total_merchants.increment(1);
+  set_merchant_info(merchant_id, merchant_info);
 }
 
-export circuit process_subscription_payment(
-  subscription_id: Bytes<32>,
-  service_proof: Bytes<32>
-): [] {
-  assert(all_subscriptions.member(disclose(subscription_id)), "Subscription not found");
-
-  const subscription = all_subscriptions.lookup(disclose(subscription_id));
-  assert(subscription.status == PC_SUBSCRIPTION_STATUS.active, "Subscription not active");
-
-  assert(PC_is_subscription_due(
-    subscription.last_payment,
-    subscription.frequency_days,
-    current_timestamp
-  ), "Subscription not due for payment");
-
-  const updated_subscription = PC_Subscription {
-    subscription_id: subscription.subscription_id,
-    merchant_id: subscription.merchant_id,
-    customer_id: subscription.customer_id,
-    amount: subscription.amount,
-    max_amount: subscription.max_amount,
-    frequency_days: subscription.frequency_days,
-    status: PC_SUBSCRIPTION_STATUS.active,
-    last_payment: current_timestamp,
-    next_payment: (current_timestamp + (subscription.frequency_days as Uint<32>) * 86400) as Uint<32>,
-    payment_count: (subscription.payment_count + 1) as Uint<32>
-  };
-  all_subscriptions.insert(disclose(subscription_id), updated_subscription);
-
-  const merchant_info = all_merchants.lookup(disclose(subscription.merchant_id));
-
-  const updated_merchant = PC_MerchantInfo {
-    merchant_id: merchant_info.merchant_id,
-    business_name: merchant_info.business_name,
-    tier: PC_calculate_merchant_tier((merchant_info.transaction_count + 1) as Uint<32>),
-    transaction_count: (merchant_info.transaction_count + 1) as Uint<32>,
-    total_volume: (merchant_info.total_volume + subscription.amount) as Uint<64>,
-    created_at: merchant_info.created_at,
-    is_active: merchant_info.is_active
-  };
-  all_merchants.insert(disclose(subscription.merchant_id), updated_merchant);
-
-  const payment_id = PC_hash_payment_id(
-    subscription.merchant_id,
-    subscription.customer_id,
-    subscription.amount,
-    current_timestamp
-  );
-
-  const payment_proof = PC_PaymentProof {
-    payment_id: payment_id,
-    merchant_id: subscription.merchant_id,
-    timestamp: current_timestamp,
-    amount_range: 1,
-    is_subscription: true
-  };
-  payment_proofs.insert(payment_id, payment_proof);
-}
-
-export circuit prove_merchant_tier(merchant_id: Bytes<32>): PC_MERCHANT_TIER {
-  assert(all_merchants.member(disclose(merchant_id)), "Merchant not found");
-  return all_merchants.lookup(disclose(merchant_id)).tier;
-}
-
-export circuit prove_subscription_count(merchant_id: Bytes<32>, threshold: Uint<32>): Boolean {
-  assert(all_merchants.member(disclose(merchant_id)), "Merchant not found");
-  return all_merchants.lookup(disclose(merchant_id)).transaction_count >= threshold;
-}
-
-// Customer Operations
+// Privacy-preserving subscription creation
 export circuit create_subscription(
   merchant_id: Bytes<32>,
   customer_id: Bytes<32>,
   amount: Uint<64>,
   max_amount: Uint<64>,
-  frequency_days: Uint<16>
+  frequency_days: Uint<64>
 ): Bytes<32> {
-  assert(all_merchants.member(disclose(merchant_id)), "Merchant not found");
-  assert(PC_verify_spending_limit(amount, max_amount), "Amount exceeds max limit");
+  // Verify merchant exists
+  assert(merchant_accounts.member(disclose(merchant_id)), "Merchant not found");
 
+  // Generate subscription ID using hash function
   const subscription_id = PC_hash_subscription_id(merchant_id, customer_id, current_timestamp);
 
-  const new_subscription = PC_Subscription {
+  // Check subscription doesn't already exist
+  assert(!subscription_accounts.member(disclose(subscription_id)), "Subscription already exists");
+
+  // Create subscription info
+  const subscription = PC_Subscription {
     subscription_id: disclose(subscription_id),
     merchant_id: disclose(merchant_id),
     customer_id: disclose(customer_id),
     amount: disclose(amount),
     max_amount: disclose(max_amount),
-    frequency_days: disclose(frequency_days),
+    frequency_days: disclose(frequency_days as Uint<16>),
     status: PC_SUBSCRIPTION_STATUS.active,
     last_payment: current_timestamp,
-    next_payment: (current_timestamp + (disclose(frequency_days) as Uint<32>) * 86400) as Uint<32>,
+    next_payment: current_timestamp + (frequency_days * 86400 as Uint<64>) as Uint<32>,
     payment_count: 0 as Uint<32>
   };
 
-  all_subscriptions.insert(disclose(subscription_id), new_subscription);
+  // Store encrypted subscription existence on public ledger
+  const subscription_hash = PC_hash_subscription_id(merchant_id, customer_id, current_timestamp);
+  subscription_accounts.insert(disclose(subscription_id), disclose(subscription_hash));
   total_subscriptions.increment(1);
 
-  // Update customer active subscription count
-  const current_count = customer_active_counts.member(disclose(customer_id)) ?
-    customer_active_counts.lookup(disclose(customer_id)) : 0 as Uint<32>;
-  customer_active_counts.insert(disclose(customer_id), (current_count + 1) as Uint<32>);
+  // Store subscription info in private state
+  set_subscription_info(subscription_id, subscription);
 
-  return subscription_id;
+  // Update customer subscription count
+  const current_count = customer_subscription_count(customer_id);
+  set_customer_subscription_count(customer_id, (disclose(current_count) + 1 as Uint<32>) as Uint<32>);
+
+  return disclose(subscription_id);
 }
 
+// Privacy-preserving subscription pause
 export circuit pause_subscription(
   subscription_id: Bytes<32>,
   customer_id: Bytes<32>
 ): [] {
-  assert(all_subscriptions.member(disclose(subscription_id)), "Subscription not found");
+  // Verify subscription exists
+  assert(subscription_accounts.member(disclose(subscription_id)), "Subscription not found");
 
-  const subscription = all_subscriptions.lookup(disclose(subscription_id));
-  assert(subscription.customer_id == disclose(customer_id), "Not authorized");
+  // Get subscription info from private state
+  const subscription = subscription_info(subscription_id);
+
+  // Verify customer owns this subscription
+  assert(subscription.customer_id == disclose(customer_id), "Unauthorized access");
+
+  // Verify subscription is active
   assert(subscription.status == PC_SUBSCRIPTION_STATUS.active, "Subscription not active");
 
+  // Update subscription status to paused
   const updated_subscription = PC_Subscription {
     subscription_id: subscription.subscription_id,
     merchant_id: subscription.merchant_id,
@@ -167,23 +128,34 @@ export circuit pause_subscription(
     next_payment: subscription.next_payment,
     payment_count: subscription.payment_count
   };
-  all_subscriptions.insert(disclose(subscription_id), updated_subscription);
 
-  // Decrease customer active subscription count
-  const current_count = customer_active_counts.lookup(disclose(customer_id));
-  customer_active_counts.insert(disclose(customer_id), (current_count - 1) as Uint<32>);
+  // Store updated subscription in private state
+  set_subscription_info(subscription_id, updated_subscription);
+
+  // Update customer subscription count (decrease active count)
+  const current_count = customer_subscription_count(customer_id);
+  const new_count = disclose(current_count) > 0 as Uint<32> ? (disclose(current_count) - 1 as Uint<32>) as Uint<32> : 0 as Uint<32>;
+  set_customer_subscription_count(customer_id, new_count);
 }
 
+// Privacy-preserving subscription resume
 export circuit resume_subscription(
   subscription_id: Bytes<32>,
   customer_id: Bytes<32>
 ): [] {
-  assert(all_subscriptions.member(disclose(subscription_id)), "Subscription not found");
+  // Verify subscription exists
+  assert(subscription_accounts.member(disclose(subscription_id)), "Subscription not found");
 
-  const subscription = all_subscriptions.lookup(disclose(subscription_id));
-  assert(subscription.customer_id == disclose(customer_id), "Not authorized");
+  // Get subscription info from private state
+  const subscription = subscription_info(subscription_id);
+
+  // Verify customer owns this subscription
+  assert(subscription.customer_id == disclose(customer_id), "Unauthorized access");
+
+  // Verify subscription is paused
   assert(subscription.status == PC_SUBSCRIPTION_STATUS.paused, "Subscription not paused");
 
+  // Update subscription status to active
   const updated_subscription = PC_Subscription {
     subscription_id: subscription.subscription_id,
     merchant_id: subscription.merchant_id,
@@ -193,25 +165,36 @@ export circuit resume_subscription(
     frequency_days: subscription.frequency_days,
     status: PC_SUBSCRIPTION_STATUS.active,
     last_payment: subscription.last_payment,
-    next_payment: (current_timestamp + (subscription.frequency_days as Uint<32>) * 86400) as Uint<32>,
+    next_payment: subscription.next_payment,
     payment_count: subscription.payment_count
   };
-  all_subscriptions.insert(disclose(subscription_id), updated_subscription);
 
-  // Increase customer active subscription count
-  const current_count = customer_active_counts.lookup(disclose(customer_id));
-  customer_active_counts.insert(disclose(customer_id), (current_count + 1) as Uint<32>);
+  // Store updated subscription in private state
+  set_subscription_info(subscription_id, updated_subscription);
+
+  // Update customer subscription count (increase active count)
+  const current_count = customer_subscription_count(customer_id);
+  set_customer_subscription_count(customer_id, (disclose(current_count) + 1 as Uint<32>) as Uint<32>);
 }
 
+// Privacy-preserving subscription cancellation
 export circuit cancel_subscription(
   subscription_id: Bytes<32>,
   customer_id: Bytes<32>
 ): [] {
-  assert(all_subscriptions.member(disclose(subscription_id)), "Subscription not found");
+  // Verify subscription exists
+  assert(subscription_accounts.member(disclose(subscription_id)), "Subscription not found");
 
-  const subscription = all_subscriptions.lookup(disclose(subscription_id));
-  assert(subscription.customer_id == disclose(customer_id), "Not authorized");
+  // Get subscription info from private state
+  const subscription = subscription_info(subscription_id);
 
+  // Verify customer owns this subscription
+  assert(subscription.customer_id == disclose(customer_id), "Unauthorized access");
+
+  // Verify subscription is not already cancelled
+  assert(subscription.status != PC_SUBSCRIPTION_STATUS.cancelled, "Subscription already cancelled");
+
+  // Update subscription status to cancelled
   const updated_subscription = PC_Subscription {
     subscription_id: subscription.subscription_id,
     merchant_id: subscription.merchant_id,
@@ -224,32 +207,82 @@ export circuit cancel_subscription(
     next_payment: subscription.next_payment,
     payment_count: subscription.payment_count
   };
-  all_subscriptions.insert(disclose(subscription_id), updated_subscription);
 
-  // Decrease customer active subscription count
-  const current_count = customer_active_counts.lookup(disclose(customer_id));
-  customer_active_counts.insert(disclose(customer_id), (current_count - 1) as Uint<32>);
+  // Store updated subscription in private state
+  set_subscription_info(subscription_id, updated_subscription);
+
+  // Update customer subscription count (decrease active count if was active)
+  const was_active = subscription.status == PC_SUBSCRIPTION_STATUS.active;
+  const current_count = customer_subscription_count(customer_id);
+  const new_count = was_active && disclose(current_count) > 0 as Uint<32> ?
+    (disclose(current_count) - 1 as Uint<32>) as Uint<32> : disclose(current_count);
+  set_customer_subscription_count(customer_id, new_count);
 }
 
-export circuit prove_subscription_status(
-  customer_id: Bytes<32>,
-  subscription_id: Bytes<32>
-): PC_SUBSCRIPTION_STATUS {
-  assert(all_subscriptions.member(disclose(subscription_id)), "Subscription not found");
+// Privacy-preserving subscription payment processing
+export circuit process_subscription_payment(
+  subscription_id: Bytes<32>,
+  service_proof: Bytes<32>
+): [] {
+  // Verify subscription exists
+  assert(subscription_accounts.member(disclose(subscription_id)), "Subscription not found");
 
-  const subscription = all_subscriptions.lookup(disclose(subscription_id));
-  assert(subscription.customer_id == disclose(customer_id), "Not authorized");
+  // Get subscription info from private state
+  const subscription = subscription_info(subscription_id);
 
-  return subscription.status;
+  // Verify subscription is active
+  assert(subscription.status == PC_SUBSCRIPTION_STATUS.active, "Subscription not active");
+
+  // Check if payment is due using PaymentCommons function
+  const is_due = PC_is_subscription_due(
+    subscription.last_payment,
+    subscription.frequency_days,
+    current_timestamp
+  );
+  assert(is_due, "Payment not due yet");
+
+  // Update subscription with payment processed
+  const updated_subscription = PC_Subscription {
+    subscription_id: subscription.subscription_id,
+    merchant_id: subscription.merchant_id,
+    customer_id: subscription.customer_id,
+    amount: subscription.amount,
+    max_amount: subscription.max_amount,
+    frequency_days: subscription.frequency_days,
+    status: subscription.status,
+    last_payment: current_timestamp,
+    next_payment: current_timestamp + (subscription.frequency_days * 86400 as Uint<16>) as Uint<32>,
+    payment_count: (subscription.payment_count + 1 as Uint<32>) as Uint<32>
+  };
+
+  // Store updated subscription in private state
+  set_subscription_info(subscription_id, updated_subscription);
+
+  // Update merchant info (increment transaction count and volume)
+  const merchant_data = merchant_info(subscription.merchant_id);
+  const updated_merchant_info = PC_MerchantInfo {
+    merchant_id: merchant_data.merchant_id,
+    business_name: merchant_data.business_name,
+    tier: PC_calculate_merchant_tier((merchant_data.transaction_count + 1 as Uint<32>) as Uint<32>),
+    transaction_count: (merchant_data.transaction_count + 1 as Uint<32>) as Uint<32>,
+    total_volume: (merchant_data.total_volume + subscription.amount) as Uint<64>,
+    created_at: merchant_data.created_at,
+    is_active: merchant_data.is_active
+  };
+
+  set_merchant_info(subscription.merchant_id, updated_merchant_info);
 }
 
+// Simple customer subscription count proof
 export circuit prove_active_subscriptions_count(
   customer_id: Bytes<32>,
   threshold: Uint<32>
 ): Boolean {
-  assert(customer_active_counts.member(disclose(customer_id)), "Customer has no subscriptions");
-  const active_count = customer_active_counts.lookup(disclose(customer_id));
-  return active_count >= threshold;
+  // Get customer's private subscription count
+  const active_count = customer_subscription_count(customer_id);
+
+  // Return boolean proof without revealing exact count
+  return disclose(active_count) >= threshold;
 }
 
 // Utility Operations

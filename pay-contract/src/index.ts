@@ -3,6 +3,11 @@ import type { Contract as ContractType, Witnesses } from './managed/pay/contract
 import * as ContractModule from './managed/pay/contract/index.cjs';
 type Ledger = ContractModule.Ledger;
 
+// Import PaymentCommons types
+import * as PC from '../pay-commons/PaymentCommons';
+type PC_MerchantInfo = PC.MerchantInfo;
+type PC_Subscription = PC.Subscription;
+
 // Re-export contract types and functions
 export * from './managed/pay/contract/index.cjs';
 export const ledger = ContractModule.ledger;
@@ -73,26 +78,189 @@ export const addSubscriptionData = (
   subscriptionData: new Map(state.subscriptionData).set(subscriptionData.subscriptionId, subscriptionData)
 });
 
-// Simplified witness functions (no witnesses needed for this contract)
-export const paymentWitnesses = {};
+// Privacy-preserving witness functions (payment-specific)
+export const paymentWitnesses = {
+  // Witness 1: Provides merchant info from private state
+  merchant_info: ({
+    privateState
+  }: WitnessContext<Ledger, PaymentPrivateState>,
+    merchantId: Uint8Array
+  ): [PaymentPrivateState, PC_MerchantInfo] => {
+    const merchantIdStr = new TextDecoder().decode(merchantId).replace(/\0/g, '');
+    const merchantData = privateState.merchantData.get(merchantIdStr);
+    if (!merchantData) {
+      throw new Error(`Merchant ${merchantIdStr} not found in private state`);
+    }
+
+    // Convert local type to contract type, properly padding bytes
+    const merchantIdBytes = new Uint8Array(32);
+    const merchantIdEncoded = new TextEncoder().encode(merchantData.merchantId);
+    merchantIdBytes.set(merchantIdEncoded.slice(0, Math.min(merchantIdEncoded.length, 32)));
+
+    const businessNameBytes = new Uint8Array(64);
+    const businessNameEncoded = new TextEncoder().encode(merchantData.businessName);
+    businessNameBytes.set(businessNameEncoded.slice(0, Math.min(businessNameEncoded.length, 64)));
+
+    const contractMerchantInfo: PC_MerchantInfo = {
+      merchant_id: merchantIdBytes,
+      business_name: businessNameBytes,
+      tier: 0, // MERCHANT_TIER.unverified
+      transaction_count: 0n,
+      total_volume: 0n,
+      created_at: BigInt(merchantData.createdAt),
+      is_active: true
+    };
+    return [privateState, contractMerchantInfo];
+  },
+
+  // Witness 2: Updates merchant info in private state
+  set_merchant_info: (
+    { privateState }: WitnessContext<Ledger, PaymentPrivateState>,
+    merchantId: Uint8Array,
+    merchantInfo: PC_MerchantInfo
+  ): [PaymentPrivateState, Array<never>] => {
+    const merchantIdStr = new TextDecoder().decode(merchantId).replace(/\0/g, '');
+    const updatedMerchantData = new Map(privateState.merchantData);
+
+    // Convert contract type back to local type
+    const localMerchantData: MerchantData = {
+      merchantId: merchantIdStr,
+      businessName: new TextDecoder().decode(merchantInfo.business_name).replace(/\0/g, ''),
+      createdAt: Number(merchantInfo.created_at)
+    };
+
+    updatedMerchantData.set(merchantIdStr, localMerchantData);
+
+    return [{
+      ...privateState,
+      merchantData: updatedMerchantData
+    }, []];
+  },
+
+  // Witness 3: Get customer subscription count
+  customer_subscription_count: ({
+    privateState
+  }: WitnessContext<Ledger, PaymentPrivateState>,
+    customerId: Uint8Array
+  ): [PaymentPrivateState, bigint] => {
+    const customerIdStr = new TextDecoder().decode(customerId).replace(/\0/g, '');
+    const customerData = privateState.customerData.get(customerIdStr);
+
+    if (!customerData) {
+      return [privateState, 0n];
+    }
+
+    // Count active subscriptions
+    let activeCount = 0;
+    customerData.subscriptions.forEach(subId => {
+      const subscription = privateState.subscriptionData.get(subId);
+      if (subscription && subscription.status === 'active') {
+        activeCount++;
+      }
+    });
+
+    return [privateState, BigInt(activeCount)];
+  },
+
+  // Witness 4: Set customer subscription count
+  set_customer_subscription_count: (
+    { privateState }: WitnessContext<Ledger, PaymentPrivateState>,
+    customerId: Uint8Array,
+    count: bigint
+  ): [PaymentPrivateState, Array<never>] => {
+    // For this simplified implementation, we don't need to store the count separately
+    // as it's calculated from the actual subscription data
+    return [privateState, []];
+  },
+
+  // Witness 5: Get subscription info from private state
+  subscription_info: ({
+    privateState
+  }: WitnessContext<Ledger, PaymentPrivateState>,
+    subscriptionId: Uint8Array
+  ): [PaymentPrivateState, PC_Subscription] => {
+    const subscriptionIdStr = new TextDecoder().decode(subscriptionId).replace(/\0/g, '');
+    const subscriptionData = privateState.subscriptionData.get(subscriptionIdStr);
+    if (!subscriptionData) {
+      throw new Error(`Subscription ${subscriptionIdStr} not found in private state`);
+    }
+
+    // Convert local type to contract type, properly padding bytes
+    const subscriptionIdBytes = new Uint8Array(32);
+    const subscriptionIdEncoded = new TextEncoder().encode(subscriptionData.subscriptionId);
+    subscriptionIdBytes.set(subscriptionIdEncoded.slice(0, Math.min(subscriptionIdEncoded.length, 32)));
+
+    const merchantIdBytes = new Uint8Array(32);
+    const merchantIdEncoded = new TextEncoder().encode(subscriptionData.merchantId);
+    merchantIdBytes.set(merchantIdEncoded.slice(0, Math.min(merchantIdEncoded.length, 32)));
+
+    const customerIdBytes = new Uint8Array(32);
+    const customerIdEncoded = new TextEncoder().encode(subscriptionData.customerId);
+    customerIdBytes.set(customerIdEncoded.slice(0, Math.min(customerIdEncoded.length, 32)));
+
+    const contractSubscription: PC_Subscription = {
+      subscription_id: subscriptionIdBytes,
+      merchant_id: merchantIdBytes,
+      customer_id: customerIdBytes,
+      amount: subscriptionData.amount,
+      max_amount: subscriptionData.maxAmount,
+      frequency_days: subscriptionData.frequencyDays,
+      status: subscriptionData.status === 'active' ? 0 : subscriptionData.status === 'paused' ? 1 : subscriptionData.status === 'cancelled' ? 2 : 3,
+      last_payment: subscriptionData.lastPayment,
+      next_payment: subscriptionData.nextPayment,
+      payment_count: subscriptionData.paymentCount
+    };
+
+    return [privateState, contractSubscription];
+  },
+
+  // Witness 6: Set subscription info in private state
+  set_subscription_info: (
+    { privateState }: WitnessContext<Ledger, PaymentPrivateState>,
+    subscriptionId: Uint8Array,
+    subscription: PC_Subscription
+  ): [PaymentPrivateState, Array<never>] => {
+    const subscriptionIdStr = new TextDecoder().decode(subscriptionId).replace(/\0/g, '');
+    const updatedSubscriptionData = new Map(privateState.subscriptionData);
+
+    // Convert contract type back to local type
+    const localSubscriptionData: SubscriptionData = {
+      subscriptionId: subscriptionIdStr,
+      merchantId: new TextDecoder().decode(subscription.merchant_id).replace(/\0/g, ''),
+      customerId: new TextDecoder().decode(subscription.customer_id).replace(/\0/g, ''),
+      amount: subscription.amount,
+      maxAmount: subscription.max_amount,
+      frequencyDays: subscription.frequency_days,
+      status: subscription.status === 0 ? 'active' : subscription.status === 1 ? 'paused' : subscription.status === 2 ? 'cancelled' : 'expired',
+      lastPayment: subscription.last_payment,
+      nextPayment: subscription.next_payment,
+      paymentCount: subscription.payment_count
+    };
+
+    updatedSubscriptionData.set(subscriptionIdStr, localSubscriptionData);
+
+    // Also update customer data to include this subscription
+    const customerId = localSubscriptionData.customerId;
+    const updatedCustomerData = new Map(privateState.customerData);
+    const existingCustomerData = updatedCustomerData.get(customerId) || {
+      customerId: customerId,
+      subscriptions: []
+    };
+
+    if (!existingCustomerData.subscriptions.includes(subscriptionIdStr)) {
+      existingCustomerData.subscriptions.push(subscriptionIdStr);
+    }
+    updatedCustomerData.set(customerId, existingCustomerData);
+
+    return [{
+      ...privateState,
+      subscriptionData: updatedSubscriptionData,
+      customerData: updatedCustomerData
+    }, []];
+  }
+};
 
 // Utility functions
-export function hashPin(pin: string): Uint8Array {
-  const encoder = new TextEncoder();
-  const pinBytes = encoder.encode(pin);
-  const hash = new Uint8Array(32);
-
-  for (let i = 0; i < pinBytes.length && i < 32; i++) {
-    hash[i] = pinBytes[i] ^ (i + 1);
-  }
-
-  return hash;
-}
-
-export function generateAccountId(): string {
-  return 'ACC' + Math.random().toString(36).substring(2, 11).toUpperCase();
-}
-
 export function generateMerchantId(): string {
   return 'MCH' + Math.random().toString(36).substring(2, 11).toUpperCase();
 }
@@ -103,13 +271,12 @@ export function generateSubscriptionId(): string {
 
 // Transaction types
 export enum TransactionType {
-  ACCOUNT_CREATED = 'account_created',
   MERCHANT_REGISTERED = 'merchant_registered',
   SUBSCRIPTION_CREATED = 'subscription_created',
   SUBSCRIPTION_PAYMENT = 'subscription_payment',
   SUBSCRIPTION_PAUSED = 'subscription_paused',
-  DEPOSIT = 'deposit',
-  WITHDRAWAL = 'withdrawal'
+  SUBSCRIPTION_RESUMED = 'subscription_resumed',
+  SUBSCRIPTION_CANCELLED = 'subscription_cancelled'
 }
 
 export interface TransactionInfo {
@@ -119,10 +286,6 @@ export interface TransactionInfo {
 }
 
 // Validation helpers
-export function validatePin(pin: string): boolean {
-  return pin.length >= 4 && pin.length <= 8 && /^\d+$/.test(pin);
-}
-
 export function validateAmount(amount: string): boolean {
   const num = parseFloat(amount);
   return !isNaN(num) && num > 0 && num <= 1000000;
@@ -131,11 +294,6 @@ export function validateAmount(amount: string): boolean {
 export function validateBusinessName(name: string): boolean {
   return name.length >= 3 && name.length <= 50;
 }
-
-// Demo data for testing
-export const DEMO_CUSTOMER_PIN = '1234';
-export const DEMO_MERCHANT_PIN = '5678';
-export const DEMO_INITIAL_DEPOSIT = 1000n;
 
 export default {
   Contract,
@@ -146,8 +304,6 @@ export default {
   addMerchantData,
   addCustomerData,
   addSubscriptionData,
-  hashPin,
-  validatePin,
   validateAmount,
   validateBusinessName,
   TransactionType

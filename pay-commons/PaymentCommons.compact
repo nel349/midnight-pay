@@ -54,6 +54,14 @@ module PaymentCommons {
     return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midnight:pay:pk:"), sk]);
   }
 
+  // Generate merchant ID hash for privacy
+  export pure circuit hash_merchant_id(merchant_id: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([
+      pad(32, "midnight:pay:merchant:"),
+      merchant_id
+    ]);
+  }
+
   export pure circuit hash_subscription_id(
     merchant_id: Bytes<32>,
     customer_id: Bytes<32>,
@@ -129,5 +137,33 @@ module PaymentCommons {
 
   export pure circuit subscription_key(): Bytes<32> {
     return public_key(pad(32, "midnight:pay:subscription:"));
+  }
+
+  // Count active subscriptions in a vector (privacy-preserving)
+  export pure circuit count_active_subscriptions(
+    subscriptions: Vector<10, Subscription>
+  ): Uint<32> {
+    const sub1_active = subscriptions[0].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+    const sub2_active = subscriptions[1].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+    const sub3_active = subscriptions[2].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+    const sub4_active = subscriptions[3].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+    const sub5_active = subscriptions[4].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+    const sub6_active = subscriptions[5].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+    const sub7_active = subscriptions[6].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+    const sub8_active = subscriptions[7].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+    const sub9_active = subscriptions[8].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+    const sub10_active = subscriptions[9].status == SUBSCRIPTION_STATUS.active ? 1 as Uint<32> : 0 as Uint<32>;
+
+    const count1 = sub1_active + sub2_active;
+    const count2 = (count1 + sub3_active) as Uint<32>;
+    const count3 = (count2 + sub4_active) as Uint<32>;
+    const count4 = (count3 + sub5_active) as Uint<32>;
+    const count5 = (count4 + sub6_active) as Uint<32>;
+    const count6 = (count5 + sub7_active) as Uint<32>;
+    const count7 = (count6 + sub8_active) as Uint<32>;
+    const count8 = (count7 + sub9_active) as Uint<32>;
+    const final_count = (count8 + sub10_active) as Uint<32>;
+
+    return final_count;
   }
 }
