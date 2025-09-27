@@ -1,4 +1,4 @@
-# Midnight Bank Development Notes
+# Midnight Pay Development Notes
 
 ## Development Workflow
 1. **After any contract modifications, always run `npm run compile` to check for errors**
@@ -8,10 +8,10 @@
 
 ## Current Project Structure
 ```
-midnight-bank/
-├── bank-contract/          # Compact smart contracts
-├── bank-api/              # TypeScript API layer  
-├── bank-ui/               # React frontend
+midnight-pay/
+├── pay-contract/          # Compact smart contracts
+├── pay-api/              # TypeScript API layer  
+├── pay-ui/               # React frontend
 └── CLAUDE.md             # This file
 ```
 
@@ -22,11 +22,17 @@ midnight-bank/
 4. **verify_account** - Selective disclosure for verification
 5. **withdraw** - Private balance validation and updates
 
-## Key Patterns from Battleship
+## Key Patterns from Battleship /Users/norman/Development/midnight/midnight-seabattle
 - **Witnesses**: Provide private data to circuits
 - **Hash Commitments**: Prevent cheating/data tampering
 - **Private State**: Store secrets locally, never on blockchain
 - **ZK Proofs**: Validate without revealing sensitive data
+
+## Contract Modularization Pattern (from Seabattle)
+- **Separate Commons Module**: Create shared types, structs, and utility functions in separate .compact file
+- **Import Commons**: Use `import ModuleName;` to access shared functionality
+- **Keep Contracts Focused**: Each contract should handle specific domain logic
+- **Export Shared Types**: Use `export` keyword for types/functions needed by other contracts
 
 ## Compilation Issues to Watch
 - Import all required functions (public_key, etc.)

@@ -1,0 +1,44 @@
+{
+  "name": "@midnight-pay/pay-contract",
+  "version": "0.1.0",
+  "description": "MidnightPay - Privacy-Preserving Payment Gateway Smart Contract",
+  "author": "Midnight Developer",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "rm -rf dist/ && rm -rf src/managed/",
+    "compile": "npm run compile:cached",
+    "compile:cached": "npm run _check-compile-cache || npm run _compile-contracts",
+    "_check-compile-cache": "./scripts/_check_compile_cache.sh",
+    "_compile-contracts": "echo 'Compiling contract...' && compact compile src/pay.compact ./src/managed/pay && touch .compile-cache && echo 'Contract compiled and cached'",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run compile && rm -rf dist && tsc && cp -Rf ./src/managed ./dist/managed && npm run update-api-resources",
+    "update-api-resources": "npm run update-api-resources:compiler && npm run update-api-resources:keys",
+    "update-api-resources:compiler": "mkdir -p ../pay-api/managed/pay && cp -r src/managed/pay/compiler ../pay-api/managed/pay/ && cp -r src/managed/pay/contract ../pay-api/managed/pay/",
+    "update-api-resources:keys": "mkdir -p ../pay-api/public/keys ../pay-api/public/zkir && cp src/managed/pay/keys/* ../pay-api/public/keys/ 2>/dev/null || true && cp src/managed/pay/zkir/* ../pay-api/public/zkir/ 2>/dev/null || true",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "^0.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.2.2",
+    "vitest": "^1.0.0"
+  },
+  "files": [
+    "dist/"
+  ]
+}

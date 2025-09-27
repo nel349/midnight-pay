@@ -1,6 +1,6 @@
 services:
   proof-server:
-    container_name: 'bank-proof-server'
+    container_name: 'pay-proof-server'
     image: 'midnight-proof-server:k17'
     ports:
       - '6300:6300'
@@ -10,7 +10,7 @@ services:
       - bank-network
 
   indexer:
-    container_name: 'bank-indexer'
+    container_name: 'pay-indexer'
     image: 'midnightntwrk/indexer-standalone:latest'
     ports:
       - '8088:8088'
@@ -26,7 +26,7 @@ services:
 
   node:
     image: 'midnightnetwork/midnight-node:0.12.0-arm64'
-    container_name: 'bank-node'
+    container_name: 'pay-node'
     ports:
       - '9944:9944'
     healthcheck:

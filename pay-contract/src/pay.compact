@@ -1,0 +1,147 @@
+pragma language_version >= 0.13.0;
+
+import CompactStandardLibrary;
+import "../../pay-commons/PaymentCommons" prefix PC_;
+
+// Simple Payment Gateway Contract
+// Focuses only on merchant-customer subscription payments
+
+export ledger all_merchants: Map<Bytes<32>, PC_MerchantInfo>;
+export ledger all_subscriptions: Map<Bytes<32>, PC_Subscription>;
+export ledger payment_proofs: Map<Bytes<32>, PC_PaymentProof>;
+export ledger total_merchants: Counter;
+export ledger total_subscriptions: Counter;
+export ledger current_timestamp: Uint<32>;
+
+
+constructor() {
+  current_timestamp = 1000000 as Uint<32>;
+}
+
+export circuit register_merchant(
+  merchant_id: Bytes<32>,
+  business_name: Bytes<64>
+): [] {
+  assert(!all_merchants.member(disclose(merchant_id)), "Merchant already exists");
+
+  const merchant_info = PC_MerchantInfo {
+    merchant_id: disclose(merchant_id),
+    business_name: disclose(business_name),
+    tier: PC_MERCHANT_TIER.unverified,
+    transaction_count: 0 as Uint<32>,
+    total_volume: 0 as Uint<64>,
+    created_at: current_timestamp,
+    is_active: true
+  };
+
+  all_merchants.insert(disclose(merchant_id), merchant_info);
+  total_merchants.increment(1);
+}
+
+export circuit create_subscription(
+  merchant_id: Bytes<32>,
+  customer_id: Bytes<32>,
+  amount: Uint<64>,
+  max_amount: Uint<64>,
+  frequency_days: Uint<16>
+): Bytes<32> {
+  assert(all_merchants.member(disclose(merchant_id)), "Merchant not found");
+
+  assert(PC_verify_spending_limit(amount, max_amount), "Amount exceeds max limit");
+
+  const subscription_id = PC_hash_subscription_id(merchant_id, customer_id, current_timestamp);
+
+  const new_subscription = PC_Subscription {
+    subscription_id: disclose(subscription_id),
+    merchant_id: disclose(merchant_id),
+    customer_id: disclose(customer_id),
+    amount: disclose(amount),
+    max_amount: disclose(max_amount),
+    frequency_days: disclose(frequency_days),
+    status: PC_SUBSCRIPTION_STATUS.active,
+    last_payment: current_timestamp,
+    next_payment: (current_timestamp + (disclose(frequency_days) as Uint<32>) * 86400) as Uint<32>,
+    payment_count: 0 as Uint<32>
+  };
+
+  all_subscriptions.insert(disclose(subscription_id), new_subscription);
+  total_subscriptions.increment(1);
+
+  return subscription_id;
+}
+
+export circuit process_subscription_payment(
+  subscription_id: Bytes<32>,
+  service_proof: Bytes<32>
+): [] {
+  assert(all_subscriptions.member(disclose(subscription_id)), "Subscription not found");
+
+  const subscription = all_subscriptions.lookup(disclose(subscription_id));
+  assert(subscription.status == PC_SUBSCRIPTION_STATUS.active, "Subscription not active");
+
+  assert(PC_is_subscription_due(
+    subscription.last_payment,
+    subscription.frequency_days,
+    current_timestamp
+  ), "Subscription not due for payment");
+
+  const updated_subscription = PC_Subscription {
+    subscription_id: subscription.subscription_id,
+    merchant_id: subscription.merchant_id,
+    customer_id: subscription.customer_id,
+    amount: subscription.amount,
+    max_amount: subscription.max_amount,
+    frequency_days: subscription.frequency_days,
+    status: PC_SUBSCRIPTION_STATUS.active,
+    last_payment: current_timestamp,
+    next_payment: (current_timestamp + (subscription.frequency_days as Uint<32>) * 86400) as Uint<32>,
+    payment_count: (subscription.payment_count + 1) as Uint<32>
+  };
+  all_subscriptions.insert(disclose(subscription_id), updated_subscription);
+
+  const merchant_info = all_merchants.lookup(subscription.merchant_id);
+
+  const updated_merchant = PC_MerchantInfo {
+    merchant_id: merchant_info.merchant_id,
+    business_name: merchant_info.business_name,
+    tier: PC_calculate_merchant_tier((merchant_info.transaction_count + 1) as Uint<32>),
+    transaction_count: (merchant_info.transaction_count + 1) as Uint<32>,
+    total_volume: (merchant_info.total_volume + subscription.amount) as Uint<64>,
+    created_at: merchant_info.created_at,
+    is_active: merchant_info.is_active
+  };
+  all_merchants.insert(subscription.merchant_id, updated_merchant);
+
+  const payment_id = PC_hash_payment_id(
+    subscription.merchant_id,
+    subscription.customer_id,
+    subscription.amount,
+    current_timestamp
+  );
+
+  const payment_proof = PC_PaymentProof {
+    payment_id: payment_id,
+    merchant_id: subscription.merchant_id,
+    timestamp: current_timestamp,
+    amount_range: 1,
+    is_subscription: true
+  };
+  payment_proofs.insert(payment_id, payment_proof);
+}
+
+export circuit prove_merchant_tier(merchant_id: Bytes<32>): PC_MERCHANT_TIER {
+  assert(all_merchants.member(disclose(merchant_id)), "Merchant not found");
+
+  return all_merchants.lookup(disclose(merchant_id)).tier;
+}
+
+export circuit prove_subscription_count(merchant_id: Bytes<32>, threshold: Uint<32>): Boolean {
+  assert(all_merchants.member(disclose(merchant_id)), "Merchant not found");
+
+  return all_merchants.lookup(disclose(merchant_id)).transaction_count >= threshold;
+}
+
+export circuit update_timestamp(new_timestamp: Uint<32>): [] {
+  assert(new_timestamp > current_timestamp, "Timestamp must be in the future");
+  current_timestamp = disclose(new_timestamp);
+}

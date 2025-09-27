@@ -1,7 +1,7 @@
 {
   "name": "@midnight-bank/workspace",
   "version": "0.1.0",
-  "description": "Midnight Bank - Privacy-Preserving Banking DApp Workspace",
+  "description": "Midnight Pay - Privacy-Preserving Payment DApp Workspace",
   "author": "Midnight Developer",
   "license": "MIT",
   "private": true,

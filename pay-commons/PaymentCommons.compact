@@ -1,0 +1,133 @@
+pragma language_version >= 0.13.0;
+
+module PaymentCommons {
+  import CompactStandardLibrary;
+
+  export enum ACCOUNT_TYPE { customer, merchant, admin }
+  export enum SUBSCRIPTION_STATUS { active, paused, cancelled, expired }
+  export enum PAYMENT_TYPE { one_time, recurring, subscription }
+  export enum MERCHANT_TIER { unverified, basic, verified, premium }
+
+  export struct MerchantInfo {
+    merchant_id: Bytes<32>;
+    business_name: Bytes<64>;
+    tier: MERCHANT_TIER;
+    transaction_count: Uint<32>;
+    total_volume: Uint<64>;
+    created_at: Uint<32>;
+    is_active: Boolean;
+  }
+
+  export struct Subscription {
+    subscription_id: Bytes<32>;
+    merchant_id: Bytes<32>;
+    customer_id: Bytes<32>;
+    amount: Uint<64>;
+    max_amount: Uint<64>;
+    frequency_days: Uint<16>;
+    status: SUBSCRIPTION_STATUS;
+    last_payment: Uint<32>;
+    next_payment: Uint<32>;
+    payment_count: Uint<32>;
+  }
+
+  export struct PaymentRequest {
+    request_id: Bytes<32>;
+    merchant_id: Bytes<32>;
+    customer_id: Bytes<32>;
+    amount: Uint<64>;
+    payment_type: PAYMENT_TYPE;
+    description: Bytes<128>;
+    timestamp: Uint<32>;
+    is_processed: Boolean;
+  }
+
+  export struct PaymentProof {
+    payment_id: Bytes<32>;
+    merchant_id: Bytes<32>;
+    timestamp: Uint<32>;
+    amount_range: Uint<8>;
+    is_subscription: Boolean;
+  }
+
+  export pure circuit public_key(sk: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([pad(32, "midnight:pay:pk:"), sk]);
+  }
+
+  export pure circuit hash_subscription_id(
+    merchant_id: Bytes<32>,
+    customer_id: Bytes<32>,
+    timestamp: Uint<32>
+  ): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([
+      pad(32, "midnight:pay:subscription:"),
+      merchant_id,
+      customer_id
+    ]);
+  }
+
+  export pure circuit hash_payment_id(
+    merchant_id: Bytes<32>,
+    customer_id: Bytes<32>,
+    amount: Uint<64>,
+    timestamp: Uint<32>
+  ): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([
+      pad(32, "midnight:pay:payment:"),
+      merchant_id,
+      customer_id
+    ]);
+  }
+
+  export pure circuit verify_spending_limit(
+    requested_amount: Uint<64>,
+    max_allowed: Uint<64>
+  ): Boolean {
+    return requested_amount <= max_allowed;
+  }
+
+  export pure circuit calculate_merchant_tier(
+    transaction_count: Uint<32>
+  ): MERCHANT_TIER {
+    if (transaction_count >= 1000) {
+      return MERCHANT_TIER.premium;
+    } else if (transaction_count >= 100) {
+      return MERCHANT_TIER.verified;
+    } else if (transaction_count >= 10) {
+      return MERCHANT_TIER.basic;
+    } else {
+      return MERCHANT_TIER.unverified;
+    }
+  }
+
+  export pure circuit is_subscription_due(
+    last_payment: Uint<32>,
+    frequency_days: Uint<16>,
+    current_time: Uint<32>
+  ): Boolean {
+    const next_due = last_payment + (frequency_days * 86400);
+    return current_time >= next_due;
+  }
+
+  export pure circuit calculate_fee_basis_points(
+    tier: MERCHANT_TIER
+  ): Uint<16> {
+    if (tier == MERCHANT_TIER.premium) {
+      return 150;
+    } else if (tier == MERCHANT_TIER.verified) {
+      return 200;
+    } else if (tier == MERCHANT_TIER.basic) {
+      return 250;
+    } else {
+      return 300;
+    }
+  }
+
+  export pure circuit merchant_key(): Bytes<32> {
+    return public_key(pad(32, "midnight:pay:merchant:"));
+  }
+
+  export pure circuit subscription_key(): Bytes<32> {
+    return public_key(pad(32, "midnight:pay:subscription:"));
+  }
+}
