@@ -276,7 +276,7 @@ describe('Payment API', () => {
       expect(subscriptionInfo.customerId).toBe(customerId);
       expect(subscriptionInfo.amount).toBe(1000n); // 10.00 in cents
       expect(subscriptionInfo.maxAmount).toBe(5000n); // 50.00 in cents
-      expect(subscriptionInfo.frequencyDays).toBe(BigInt(frequencyDays));
+      expect(subscriptionInfo.frequencyDays).toBe(frequencyDays);
       expect(subscriptionInfo.status).toBe(SUBSCRIPTION_STATUS.active);
 
       // Pause subscription
@@ -299,7 +299,7 @@ describe('Payment API', () => {
 
       const cancelledInfo = await customerAPI.getSubscriptionInfo(subscriptionId);
       expect(cancelledInfo.status).toBe(SUBSCRIPTION_STATUS.cancelled);
-    }, 120000);
+    }, 280000);
 
     test('should process subscription payments', async () => {
       if (!providers) {
@@ -322,8 +322,8 @@ describe('Payment API', () => {
       const customerAPI = await PaymentAPI.build(customerId, providers, contractAddress, logger);
       await customerAPI.depositCustomerFunds(customerId, '100.00');
 
-      // Create subscription
-      const { subscriptionId } = await customerAPI.createSubscription(
+      // Create subscription (merchant creates it for the customer)
+      const { subscriptionId } = await merchantAPI.createSubscription(
         merchantId,
         customerId,
         '10.00',
@@ -332,6 +332,11 @@ describe('Payment API', () => {
       );
 
       await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Advance time to make payment due (30 days * 86400 seconds/day + 1 second)
+      const currentTime = await merchantAPI.getCurrentTimestamp();
+      const newTimestamp = Number(currentTime) + (30 * 86400) + 1;
+      await merchantAPI.updateTimestamp(newTimestamp);
 
       // Get initial balances
       const initialCustomerBalance = await customerAPI.getCustomerBalance(customerId);
@@ -346,6 +351,11 @@ describe('Payment API', () => {
       const finalCustomerBalance = await customerAPI.getCustomerBalance(customerId);
       const finalMerchantBalance = await merchantAPI.getMerchantBalance(merchantId);
 
+      // Debug: Log current state to see what transactions exist
+      const currentState = await firstValueFrom(customerAPI.state$);
+      console.log('Customer transaction count:', currentState.transactionHistory?.length || 0);
+      console.log('Transaction types:', currentState.transactionHistory?.map(tx => ({ type: tx.type, amount: tx.amount?.toString(), customerId: tx.customerId })));
+
       // Customer should have 10.00 less (payment amount)
       expect(finalCustomerBalance.availableBalance).toBe(initialCustomerBalance.availableBalance - 1000n);
 
@@ -354,7 +364,7 @@ describe('Payment API', () => {
 
       // Customer's total spent should increase
       expect(finalCustomerBalance.totalSpent).toBe(1000n);
-    }, 120000);
+    }, 280000); //  minutes for ZK operations
 
     test('should get system information', async () => {
       if (!providers) {
@@ -390,7 +400,7 @@ describe('Payment API', () => {
       expect(totalMerchants).toBe(1n); // We registered one merchant
       expect(totalSubscriptions).toBeGreaterThanOrEqual(0n);
       expect(currentTimestamp).toBeGreaterThan(0n);
-    }, 60000);
+    }, 280000);
 
     test('should handle error scenarios', async () => {
       if (!providers) {
@@ -446,6 +456,6 @@ describe('Payment API', () => {
         '50.00',
         30
       )).rejects.toThrow();
-    }, 60000);
+    }, 280000);
   });
 });

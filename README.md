@@ -1,8 +1,8 @@
-# Midnight Bank - Privacy-First Banking DApp
+# Midnight Pay - Privacy-First Payment Gateway
 
-![Midnight Bank](bank-ui/assets/midnight_sky.png)
+![Midnight Pay](bank-ui/assets/midnight_sky.png)
 
-A zero-knowledge banking application built on [Midnight](https://midnight.network) demonstrating private transfers, encrypted balances, and selective disclosure.
+A zero-knowledge payment gateway built on [Midnight](https://midnight.network) demonstrating private transactions, encrypted payment details, and selective disclosure for merchants and customers.
 
 ## 🚀 Quick Start
 
@@ -11,42 +11,43 @@ A zero-knowledge banking application built on [Midnight](https://midnight.networ
 npm install && npm run build
 
 # Run locally (Recommended)
-npm run bank-ui:local
+npm run pay-ui:local
 ```
 
 Open http://localhost:5173 in Chrome with [Lace Wallet](https://docs.midnight.network/develop/tutorial/using/chrome-ext) set to "Undeployed" network.
 
-## 🏦 Using the Application
+## 💳 Using the Application
 
-The application runs on a local Midnight network and provides a complete banking experience with privacy-first principles.
+The application runs on a local Midnight network and provides a complete payment gateway experience with privacy-first principles.
 
-To use Midnight Bank, you'll need:
+To use Midnight Pay, you'll need:
 - Chrome browser with [Midnight Lace Wallet](https://docs.midnight.network/develop/tutorial/using/chrome-ext) installed
 - Lace Wallet configured for "Undeployed" network (local development mode)
 
 ## 💰 Features
 
-### Core Banking
-- **Account Creation**: Deploy your own private bank contract with customizable settings
-- **Private Balances**: Account balances remain encrypted and private to the account holder
-- **Secure Transactions**: Deposit/withdraw funds with PIN authentication and zero-knowledge proofs
-- **Transaction History**: View your private transaction history with real-time updates
+### Core Features
+- **Merchant Registration**: Merchants can register their businesses on the payment gateway
+- **Subscription Management**: Customers can create, pause, resume, and cancel subscriptions for recurring payments
+- **Private Transactions**: All payment details (amounts, recipients) remain encrypted and private
+- **Secure Payments**: Process payments with zero-knowledge proofs for authenticity and privacy
+- **Transaction History**: Merchants and customers can view their private transaction history with real-time updates
 
 ### Advanced Privacy Features
-- **Authorization System**: Zelle-like transfer permissions between trusted contacts
-- **Encrypted Transfers**: Send money with amounts hidden until claimed by recipients
-- **Selective Disclosure**: Prove account status or balance thresholds for compliance
-- **Multi-Account Support**: Single contract supporting multiple users efficiently
+- **Customizable Payment Rules**: Merchants can define flexible payment terms and conditions
+- **Encrypted Payment Details**: Payment amounts and recipient information are hidden until explicitly disclosed
+- **Selective Disclosure**: Merchants can prove payment compliance or customer activity without revealing sensitive data
+- **Multi-Merchant Support**: Single payment gateway contract supporting multiple merchants efficiently
 
 ## 🏗️ Architecture
 
-### Smart Contract (`bank-contract/`)
+### Smart Contract (`pay-contract/`)
 - **Compact language** smart contract with 12 circuits
-- **Shared contract** architecture supporting multiple users
-- **Encrypted balance** storage with PIN-based authentication
-- **Zero-knowledge proofs** for all operations
+- **Payment gateway contract** architecture supporting multiple merchants and customers
+- **Encrypted payment details** storage with zero-knowledge proofs
+- **Zero-knowledge proofs** for all payment operations
 
-### API Layer (`bank-api/`)
+### API Layer (`pay-api/`)
 - **TypeScript API** with RxJS reactive state management
 - **Private state provider** for local encrypted storage
 - **Transaction handling** with comprehensive error recovery
@@ -76,8 +77,8 @@ npm run build
 
 | Command | Description |
 |---------|-------------|
-| `npm run bank-ui:local` | Build and start UI (local network) |
-| `npm run bank-ui:testnet` | Build and start UI (testnet) |
+| `npm run pay-ui:local` | Build and start UI (local network) |
+| `npm run pay-ui:testnet` | Build and start UI (testnet) |
 | `npm run dev:local` | Development mode with hot reload (local) |
 | `npm run dev:testnet` | Development mode with hot reload (testnet) |
 | `npm run build` | Build all packages |
@@ -97,10 +98,10 @@ Network configs are in `bank-ui/public/`:
 npm test
 
 # Run contract tests
-cd bank-contract && npm test
+cd pay-contract && npm test
 
 # Run API tests  
-cd bank-api && npm test
+cd pay-api && npm test
 
 # Run UI tests
 cd bank-ui && npm test
@@ -115,7 +116,7 @@ cd bank-ui && npm test
 
 ## 🤝 Contributing
 
-We welcome contributions to Midnight Bank! Please read our contributing guidelines and submit pull requests for any improvements.
+We welcome contributions to Midnight Pay! Please read our contributing guidelines and submit pull requests for any improvements.
 
 ## 📄 License
 
@@ -123,10 +124,10 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## 🙏 Acknowledgments
 
-- [Midnight Network](https://midnight.network) for the privacy-preserving blockchain infrastructure
+- [Midnight Network](https://midnight.network) for the privacy-preserving blockchain infrastructure for payments
 - [Input Output Global](https://iohk.io) for developing the Midnight ecosystem
 - The zero-knowledge cryptography community for advancing privacy technology
 
 ---
 
-*Built with ❤️ for financial privacy*
+*Built with ❤️ for private and secure payments*

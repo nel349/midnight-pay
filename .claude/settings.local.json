@@ -7,7 +7,8 @@
       "Read(//Users/norman/Development/midnight/midnight-bank/bank-contract/src/**)",
       "Bash(npm run typecheck:*)",
       "Read(//Users/norman/Development/midnight/midnight-bank/bank-api/src/**)",
-      "Read(//Users/norman/Development/midnight/midnight-bank/**)"
+      "Read(//Users/norman/Development/midnight/midnight-bank/**)",
+      "Read(//Users/norman/Development/midnight/**)"
     ],
     "deny": [],
     "ask": []

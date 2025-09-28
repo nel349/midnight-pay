@@ -30,7 +30,7 @@ export type PaymentTransaction = {
 };
 
 export type DetailedPaymentTransaction = {
-  readonly type: 'register_merchant' | 'create_subscription' | 'pause_subscription' | 'resume_subscription' | 'cancel_subscription' | 'process_payment' | 'deposit_funds' | 'withdraw_funds';
+  readonly type: 'register_merchant' | 'create_subscription' | 'pause_subscription' | 'resume_subscription' | 'cancel_subscription' | 'process_payment' | 'process_subscription_payment' | 'deposit_funds' | 'withdraw_funds';
   readonly amount?: bigint;
   readonly timestamp: Date;
   readonly merchantId?: string;

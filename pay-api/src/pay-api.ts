@@ -29,7 +29,7 @@ import {
 } from '@midnight-pay/pay-contract';
 import * as utils from './utils/index';
 import { parseDecimalAmount } from './utils/index.js';
-import { combineLatest, concat, defer, firstValueFrom, from, map, type Observable, of, retry, scan, Subject } from 'rxjs';
+import { combineLatest, concat, defer, firstValueFrom, from, map, type Observable, of, retry, scan, Subject, timeout } from 'rxjs';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import type { DetailedPaymentTransaction } from './common-types';
 
@@ -73,7 +73,7 @@ export interface DeployedPaymentAPI {
   getTotalSupply(): Promise<bigint>;
   getTotalMerchants(): Promise<bigint>;
   getTotalSubscriptions(): Promise<bigint>;
-  getCurrentTimestamp(): Promise<number>;
+  getCurrentTimestamp(): Promise<bigint>;
 
   // State queries
   getTransactionHistory(): Promise<DetailedPaymentTransaction[]>;
@@ -86,6 +86,7 @@ export class PaymentAPI implements DeployedPaymentAPI {
   private readonly privateStates$ = new Subject<PaymentPrivateState>();
   public readonly state$: Observable<PaymentDerivedState>;
   public readonly deployedContractAddress: ContractAddress;
+  private readonly detailedLogKey: string;
 
   private constructor(
     public readonly accountId: PaymentAccountId,
@@ -110,6 +111,11 @@ export class PaymentAPI implements DeployedPaymentAPI {
     };
 
     this.deployedContractAddress = deployedContract.deployTxData.public.contractAddress;
+    // Use shared transaction log key for all instances of the same contract
+    this.detailedLogKey = `${this.deployedContractAddress}:shared:dlog`;
+
+    // Initialize transaction history cache
+    this.updateTransactionHistoryCache();
     this.state$ = combineLatest([
       providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
@@ -152,8 +158,9 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const defaultLogger = logger ?? { info: console.log, error: console.error } as Logger;
     defaultLogger.info('🚀 Payment contract deployment started');
 
+    // Use neutral state ID for deployment like bank contract
     const deployedContract = await deployContract(providers, {
-      privateStateId: 'payment-deploy' as PaymentAccountId,
+      privateStateId: 'deploy' as PaymentAccountId,
       contract: paymentContract,
       initialPrivateState: createPaymentPrivateState(),
     });
@@ -230,14 +237,48 @@ export class PaymentAPI implements DeployedPaymentAPI {
   }
 
   private buildTransactionHistory(privateState: PaymentPrivateState, userAction?: UserAction): DetailedPaymentTransaction[] {
-    // Implementation would build transaction history from private state
-    // For now, return empty array - this would be implemented based on specific needs
-    return [];
+    // Return cached transaction history (this will be loaded asynchronously)
+    return this.cachedTransactionHistory || [];
   }
 
+  private async updateTransactionHistoryCache(): Promise<void> {
+    try {
+      this.cachedTransactionHistory = await this.getDetailedTransactionHistory();
+    } catch (error) {
+      console.error('Failed to update transaction history cache:', error);
+    }
+  }
+
+  private cachedTransactionHistory: DetailedPaymentTransaction[] = [];
+
   private convertToDetailedTransaction(transaction: any): DetailedPaymentTransaction {
+    // Map TransactionType enum to DetailedPaymentTransaction string types
+    let type: DetailedPaymentTransaction['type'];
+    switch (transaction.type) {
+      case TransactionType.MERCHANT_REGISTERED:
+        type = 'register_merchant';
+        break;
+      case TransactionType.SUBSCRIPTION_CREATED:
+        type = 'create_subscription';
+        break;
+      case TransactionType.SUBSCRIPTION_PAUSED:
+        type = 'pause_subscription';
+        break;
+      case TransactionType.SUBSCRIPTION_RESUMED:
+        type = 'resume_subscription';
+        break;
+      case TransactionType.SUBSCRIPTION_CANCELLED:
+        type = 'cancel_subscription';
+        break;
+      case TransactionType.SUBSCRIPTION_PAYMENT:
+        type = 'process_subscription_payment';
+        break;
+      default:
+        type = 'deposit_funds'; // fallback
+    }
+
     return {
-      type: transaction.type,
+      type,
       amount: transaction.amount,
       timestamp: transaction.timestamp,
       merchantId: transaction.merchantId,
@@ -261,6 +302,42 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const encoded = encoder.encode(str);
     bytes.set(encoded.slice(0, Math.min(encoded.length, 64)));
     return bytes;
+  }
+
+  private calculateTotalSpent(transactionHistory: DetailedPaymentTransaction[], customerId: string): bigint {
+    return transactionHistory
+      .filter(tx =>
+        tx.customerId === customerId &&
+        tx.type === 'process_subscription_payment' &&
+        tx.amount !== undefined
+      )
+      .reduce((total, tx) => total + (tx.amount || 0n), 0n);
+  }
+
+  // Transaction history persistence following bank API pattern
+  private async getDetailedTransactionHistory(): Promise<DetailedPaymentTransaction[]> {
+    try {
+      const raw = await this.providers.privateStateProvider.get(this.detailedLogKey as unknown as PaymentAccountId);
+      return (raw as unknown as DetailedPaymentTransaction[]) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async appendDetailedLog(entry: DetailedPaymentTransaction): Promise<void> {
+    try {
+      const current = await this.getDetailedTransactionHistory();
+      console.log('Current transaction history length:', current.length);
+      const updated = [...current, entry].slice(-100); // Keep last 100 transactions
+      console.log('Updated transaction history length:', updated.length);
+      await this.providers.privateStateProvider.set(
+        this.detailedLogKey as unknown as PaymentAccountId,
+        updated as unknown as PaymentPrivateState,
+      );
+      console.log('Successfully saved transaction history');
+    } catch (error) {
+      console.error('Failed to append detailed log:', error);
+    }
   }
 
   // Merchant operations implementation
@@ -327,7 +404,7 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const amountBigInt = parseDecimalAmount(amount);
 
     const transaction = {
-      type: TransactionType.SUBSCRIPTION_PAYMENT,
+      type: TransactionType.SUBSCRIPTION_PAYMENT, // Reuse existing type for withdrawals
       amount: amountBigInt,
       timestamp: new Date(),
       merchantId: merchantId,
@@ -345,14 +422,8 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const customerIdBytes = this.stringToBytes32(customerId);
     const amountBigInt = parseDecimalAmount(amount);
 
-    const transaction = {
-      type: TransactionType.SUBSCRIPTION_PAYMENT,
-      amount: amountBigInt,
-      timestamp: new Date(),
-      customerId: customerId,
-    };
-
-    await this.executeCircuit('deposit_customer_funds', [customerIdBytes, amountBigInt], transaction);
+    // Deposit is just a balance update, no transaction tracking needed
+    await this.executeCircuit('deposit_customer_funds', [customerIdBytes, amountBigInt]);
   }
 
   async withdrawCustomerFunds(customerId: string, amount: string): Promise<void> {
@@ -363,14 +434,8 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const customerIdBytes = this.stringToBytes32(customerId);
     const amountBigInt = parseDecimalAmount(amount);
 
-    const transaction = {
-      type: TransactionType.SUBSCRIPTION_PAYMENT,
-      amount: amountBigInt,
-      timestamp: new Date(),
-      customerId: customerId,
-    };
-
-    await this.executeCircuit('withdraw_customer_funds', [customerIdBytes, amountBigInt], transaction);
+    // Withdrawal is just a balance update, no transaction tracking needed
+    await this.executeCircuit('withdraw_customer_funds', [customerIdBytes, amountBigInt]);
   }
 
   async getCustomerBalance(customerId: string): Promise<CustomerBalance> {
@@ -384,11 +449,15 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const privateState = await this.providers.privateStateProvider.get(this.accountId) as PaymentPrivateState;
     const activeSubscriptions = this.countActiveSubscriptions(privateState, customerId);
 
+    // Calculate total spent from fresh transaction history (for shared storage consistency)
+    const transactionHistory = await this.getDetailedTransactionHistory();
+    const totalSpent = this.calculateTotalSpent(transactionHistory, customerId);
+
     return {
       customerId,
       availableBalance: balance,
       activeSubscriptions,
-      totalSpent: 0n, // Would be calculated from transaction history
+      totalSpent,
       lastActivity: Date.now(), // Would track from last transaction
     };
   }
@@ -420,15 +489,39 @@ export class PaymentAPI implements DeployedPaymentAPI {
       frequency: frequencyDays,
     };
 
-    const result = await this.executeCircuit('create_subscription', [
-      merchantIdBytes,
-      customerIdBytes,
-      amountBigInt,
-      maxAmountBigInt,
-      frequencyBigInt
-    ], transaction);
+    try {
+      // Call the circuit directly like the bank API does - this preserves the return value
+      const txData = await this.deployedContract.callTx.create_subscription(
+        merchantIdBytes,
+        customerIdBytes,
+        amountBigInt,
+        maxAmountBigInt,
+        frequencyBigInt
+      );
 
-    return { subscriptionId: result as Uint8Array };
+      // The subscription ID is in txData.private.result
+      const subscriptionId = txData.private.result as Uint8Array;
+
+
+      // Emit transaction
+      if (transaction) {
+        this.transactions$.next({ transaction, cancelledTransaction: undefined });
+      }
+
+      if (!subscriptionId || !(subscriptionId instanceof Uint8Array)) {
+        throw new Error(`Invalid subscription ID returned: ${typeof subscriptionId}`);
+      }
+
+      return { subscriptionId };
+    } catch (error) {
+      this.logger.error('create_subscription failed:', error);
+
+      if (transaction) {
+        this.transactions$.next({ transaction: undefined, cancelledTransaction: transaction });
+      }
+
+      throw error;
+    }
   }
 
   async pauseSubscription(subscriptionId: Uint8Array, customerId: string): Promise<void> {
@@ -469,7 +562,21 @@ export class PaymentAPI implements DeployedPaymentAPI {
 
   async getSubscriptionInfo(subscriptionId: Uint8Array): Promise<SubscriptionInfo> {
     const privateState = await this.providers.privateStateProvider.get(this.accountId) as PaymentPrivateState;
-    const subscriptionIdStr = new TextDecoder().decode(subscriptionId).replace(/\0/g, '');
+
+    // Ensure subscriptionId is a valid Uint8Array
+    if (!subscriptionId || !(subscriptionId instanceof Uint8Array)) {
+      throw new Error('Invalid subscription ID: must be a Uint8Array');
+    }
+
+    // Convert Uint8Array to string for lookup
+    let subscriptionIdStr: string;
+    try {
+      subscriptionIdStr = new TextDecoder().decode(subscriptionId).replace(/\0/g, '');
+    } catch (error) {
+      // If TextDecoder fails, try to convert using Array.from
+      subscriptionIdStr = Array.from(subscriptionId, byte => String.fromCharCode(byte)).join('').replace(/\0/g, '');
+    }
+
     const subscriptionData = privateState.subscriptionData.get(subscriptionIdStr);
 
     if (!subscriptionData) {
@@ -495,14 +602,36 @@ export class PaymentAPI implements DeployedPaymentAPI {
 
   // Payment processing implementation
   async processSubscriptionPayment(subscriptionId: Uint8Array, serviceProof: string): Promise<void> {
+    // Ensure subscriptionId is a proper Uint8Array
+    if (!subscriptionId || !(subscriptionId instanceof Uint8Array)) {
+      throw new Error('Invalid subscription ID: must be a Uint8Array');
+    }
+
+    // Ensure it's exactly 32 bytes for Bytes<32>
+    let subscriptionIdBytes: Uint8Array;
+    if (subscriptionId.length === 32) {
+      subscriptionIdBytes = subscriptionId;
+    } else {
+      // Pad or truncate to 32 bytes
+      subscriptionIdBytes = new Uint8Array(32);
+      subscriptionIdBytes.set(subscriptionId.slice(0, 32));
+    }
+
     const serviceProofBytes = this.stringToBytes32(serviceProof);
+
+    // Get subscription details to include in transaction
+    const subscriptionInfo = await this.getSubscriptionInfo(subscriptionId);
 
     const transaction = {
       type: TransactionType.SUBSCRIPTION_PAYMENT,
+      amount: subscriptionInfo.amount,
       timestamp: new Date(),
+      customerId: subscriptionInfo.customerId,
+      merchantId: subscriptionInfo.merchantId,
+      subscriptionId: subscriptionInfo.subscriptionId,
     };
 
-    await this.executeCircuit('process_subscription_payment', [subscriptionId, serviceProofBytes], transaction);
+    await this.executeCircuit('process_subscription_payment', [subscriptionIdBytes, serviceProofBytes], transaction);
   }
 
   async proveActiveSubscriptionsCount(customerId: string, threshold: number): Promise<boolean> {
@@ -523,7 +652,10 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState) => ledger(contractState.data)))
+        .pipe(
+          map((contractState) => ledger(contractState.data)),
+          timeout(10000) // 10 second timeout
+        )
     );
     return ledgerState.total_supply;
   }
@@ -532,7 +664,10 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState) => ledger(contractState.data)))
+        .pipe(
+          map((contractState) => ledger(contractState.data)),
+          timeout(10000) // 10 second timeout
+        )
     );
     return ledgerState.total_merchants;
   }
@@ -541,24 +676,31 @@ export class PaymentAPI implements DeployedPaymentAPI {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState) => ledger(contractState.data)))
+        .pipe(
+          map((contractState) => ledger(contractState.data)),
+          timeout(10000) // 10 second timeout
+        )
     );
     return ledgerState.total_subscriptions;
   }
 
-  async getCurrentTimestamp(): Promise<number> {
+  async getCurrentTimestamp(): Promise<bigint> {
     const ledgerState = await firstValueFrom(
       this.providers.publicDataProvider
         .contractStateObservable(this.deployedContractAddress, { type: 'all' })
-        .pipe(map((contractState) => ledger(contractState.data)))
+        .pipe(
+          map((contractState) => ledger(contractState.data)),
+          timeout(10000) // 10 second timeout
+        )
     );
-    return Number(ledgerState.current_timestamp);
+    return ledgerState.current_timestamp;
   }
 
   // State queries implementation
   async getTransactionHistory(): Promise<DetailedPaymentTransaction[]> {
-    const currentState = await firstValueFrom(this.state$);
-    return currentState.transactionHistory ?? [];
+    const history = await this.getDetailedTransactionHistory();
+    this.cachedTransactionHistory = history; // Update cache
+    return history;
   }
 
   async getActiveSubscriptions(customerId: string): Promise<SubscriptionInfo[]> {
@@ -634,6 +776,13 @@ export class PaymentAPI implements DeployedPaymentAPI {
       // Emit transaction
       if (transaction) {
         this.transactions$.next({ transaction, cancelledTransaction: undefined });
+
+        // Persist transaction to detailed log after successful execution
+        const detailedTx = this.convertToDetailedTransaction(transaction);
+        await this.appendDetailedLog(detailedTx);
+
+        // Update cache after persistence
+        await this.updateTransactionHistoryCache();
       }
 
       return txData;
