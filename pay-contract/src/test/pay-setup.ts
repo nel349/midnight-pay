@@ -129,8 +129,8 @@ export class PaymentTestSetup {
     // Convert subscriptionId to string for logging
     let subscriptionIdStr = 'unknown';
     if (subscriptionId && typeof subscriptionId.slice === 'function') {
-      subscriptionIdStr = Array.from(subscriptionId.slice(0, 8))
-        .map(b => b.toString(16).padStart(2, '0'))
+      subscriptionIdStr = Array.from(subscriptionId.slice(0, 8) as Uint8Array)
+        .map((b: number) => b.toString(16).padStart(2, '0'))
         .join('');
     } else if (subscriptionId) {
       subscriptionIdStr = 'output_exists_but_no_slice';
@@ -159,8 +159,8 @@ export class PaymentTestSetup {
     const ledger = this.updateStateAndGetLedger(results);
 
     const subscriptionIdStr = subscriptionId && typeof subscriptionId.slice === 'function'
-      ? Array.from(subscriptionId.slice(0, 8))
-          .map(b => b.toString(16).padStart(2, '0'))
+      ? Array.from(subscriptionId.slice(0, 8) as Uint8Array)
+          .map((b: number) => b.toString(16).padStart(2, '0'))
           .join('')
       : 'unknown';
 
@@ -184,8 +184,8 @@ export class PaymentTestSetup {
     const ledger = this.updateStateAndGetLedger(results);
 
     const subscriptionIdStr = subscriptionId && typeof subscriptionId.slice === 'function'
-      ? Array.from(subscriptionId.slice(0, 8))
-          .map(b => b.toString(16).padStart(2, '0'))
+      ? Array.from(subscriptionId.slice(0, 8) as Uint8Array)
+          .map((b: number) => b.toString(16).padStart(2, '0'))
           .join('')
       : 'unknown';
 
@@ -209,8 +209,8 @@ export class PaymentTestSetup {
     const ledger = this.updateStateAndGetLedger(results);
 
     const subscriptionIdStr = subscriptionId && typeof subscriptionId.slice === 'function'
-      ? Array.from(subscriptionId.slice(0, 8))
-          .map(b => b.toString(16).padStart(2, '0'))
+      ? Array.from(subscriptionId.slice(0, 8) as Uint8Array)
+          .map((b: number) => b.toString(16).padStart(2, '0'))
           .join('')
       : 'unknown';
 
@@ -234,8 +234,8 @@ export class PaymentTestSetup {
     const ledger = this.updateStateAndGetLedger(results);
 
     const subscriptionIdStr = subscriptionId && typeof subscriptionId.slice === 'function'
-      ? Array.from(subscriptionId.slice(0, 8))
-          .map(b => b.toString(16).padStart(2, '0'))
+      ? Array.from(subscriptionId.slice(0, 8) as Uint8Array)
+          .map((b: number) => b.toString(16).padStart(2, '0'))
           .join('')
       : 'unknown';
 
@@ -353,7 +353,7 @@ export class PaymentTestSetup {
 
     // Count active subscriptions
     let activeCount = 0;
-    customerData.subscriptions.forEach(subId => {
+    customerData.subscriptions.forEach((subId: string) => {
       const subscription = this.turnContext.currentPrivateState.subscriptionData.get(subId);
       if (subscription && subscription.status === 'active') {
         activeCount++;

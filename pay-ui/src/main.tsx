@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { RuntimeConfigurationProvider, useRuntimeConfiguration } from './config/RuntimeConfiguration';
-import { BankWalletProvider } from './components/BankWallet';
+import { PaymentWalletProvider } from './components/PaymentWallet';
 import { PinSessionProvider } from './contexts/PinSessionContext';
 import { TransactionLoadingProvider } from './contexts/TransactionLoadingContext';
 import { App as RootApp } from './App';
@@ -34,13 +34,13 @@ const App: React.FC = () => {
         <DynamicMuiThemeProvider> {/* Dynamic Material-UI theme provider */}
           <CssBaseline />
           <TopBar />
-          <BankWalletProvider logger={logger}>
+          <PaymentWalletProvider logger={logger}>
               <PinSessionProvider>
                 <TransactionLoadingProvider>
                   <RootApp />
                 </TransactionLoadingProvider>
               </PinSessionProvider>
-          </BankWalletProvider>
+          </PaymentWalletProvider>
         </DynamicMuiThemeProvider>
       </ThemeProvider>
     </QueryClientProvider>

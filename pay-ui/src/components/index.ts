@@ -9,8 +9,8 @@ export { AppHeader } from './AppHeader';
 export { BankCard } from './BankCard';
 export { TopBar } from './TopBar';
 
-// Existing components
-export { useBankWallet } from './BankWallet';
+// Payment wallet component
+export { usePaymentWallet, PaymentWalletProvider } from './PaymentWallet';
 
 // Navigation components
 export { SmartNavigationPanel } from './SmartNavigationPanel';

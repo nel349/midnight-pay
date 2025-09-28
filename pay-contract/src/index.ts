@@ -171,7 +171,7 @@ export const paymentWitnesses = {
 
     // Count active subscriptions
     let activeCount = 0;
-    customerData.subscriptions.forEach(subId => {
+    customerData.subscriptions.forEach((subId: string) => {
       const subscription = privateState.subscriptionData.get(subId);
       if (subscription && subscription.status === 'active') {
         activeCount++;
@@ -261,10 +261,13 @@ export const paymentWitnesses = {
     // Also update customer data to include this subscription
     const customerId = localSubscriptionData.customerId;
     const updatedCustomerData = new Map(privateState.customerData);
-    const existingCustomerData = updatedCustomerData.get(customerId) || {
-      customerId: customerId,
-      subscriptions: []
-    };
+    let existingCustomerData = updatedCustomerData.get(customerId);
+    if (!existingCustomerData) {
+      existingCustomerData = {
+        customerId: customerId,
+        subscriptions: [] as string[]
+      };
+    }
 
     if (!existingCustomerData.subscriptions.includes(subscriptionIdStr)) {
       existingCustomerData.subscriptions.push(subscriptionIdStr);
