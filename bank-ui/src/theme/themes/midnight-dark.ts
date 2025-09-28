@@ -1,10 +1,10 @@
-// Midnight Dark Theme - Inspired by Midnight Protocol
-// Deep dark theme with black/charcoal accents and purple highlights
+// MidnightPay Dark Theme - Privacy-First Payment Gateway
+// Deep dark theme with black/charcoal accents and purple highlights for payment UI
 
 import type { MidnightCompleteTheme } from '../types';
 
 export const midnightDarkTheme: MidnightCompleteTheme = {
-  name: 'Midnight Dark',
+  name: 'MidnightPay Dark',
   
   colors: {
     // Primary colors - Deep blacks and charcoals (as requested - black instead of blue)

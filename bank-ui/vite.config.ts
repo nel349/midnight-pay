@@ -12,9 +12,9 @@ export default defineConfig({
       // Allow serving UI root as well as local workspace lib paths
       allow: [
         '.',
-        '../bank-api',
-        '../bank-api/dist',
-        '../bank-api/src',
+        '../pay-api',
+        '../pay-api/dist',
+        '../pay-api/src',
         '../..',
       ],
     },
@@ -42,7 +42,7 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       '@midnight-ntwrk/compact-runtime',
-      '@midnight-bank/bank-contract',
+      '@midnight-pay/pay-contract',
     ],
     exclude: [
       // Avoid pre-bundling the wasm runtime to prevent TLA in esbuild

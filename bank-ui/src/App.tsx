@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { Landing } from './pages/Landing';
+import { MerchantDashboard } from './pages/MerchantDashboard';
 import { AccountsHome } from './pages/AccountsHome';
 import { AccountDetails } from './pages/AccountDetails';
 import { BankDetails } from './pages/BankDetails';
@@ -19,10 +21,19 @@ export const App: React.FC = () => {
     <NotificationProvider>
       <BrowserRouter basename="/">
         <Routes>
-          <Route path="/" element={<Navigate to="/accounts" replace />} />
+          <Route path="/" element={
+            <Landing
+              onMerchantSignup={() => (window.location.href = '/merchant/dashboard')}
+              onCustomerSignup={() => (window.location.href = '/customer/wallet')}
+            />
+          } />
+          <Route path="/merchant/dashboard" element={<MerchantDashboard />} />
+          <Route path="/customer/wallet" element={<MerchantDashboard />} /> {/* Placeholder for now */}
+
+          {/* Keep original bank routes for compatibility */}
           <Route path="/accounts" element={
-            <AccountsHome 
-              onCreateBank={() => (window.location.href = '/bank/create')} 
+            <AccountsHome
+              onCreateBank={() => (window.location.href = '/bank/create')}
               onJoinBank={() => (window.location.href = '/bank/join')}
               onOpenBank={(bankAddress, userId) => {
                 if (userId) {
@@ -30,14 +41,14 @@ export const App: React.FC = () => {
                 } else {
                   window.location.href = `/bank/${bankAddress}`;
                 }
-              }} 
+              }}
             />
           } />
           <Route path="/bank/create" element={<CreateBank logger={logger} onComplete={(bankAddress) => (window.location.href = `/bank/${bankAddress}`)} />} />
           <Route path="/bank/join" element={<JoinBank />} />
           <Route path="/bank/:bankAddress" element={<BankDetails />} />
           <Route path="/bank/:bankAddress/account/:userId" element={<AccountDetails />} />
-          <Route path="*" element={<Navigate to="/accounts" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </NotificationProvider>
