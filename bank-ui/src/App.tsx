@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Landing } from './pages/Landing';
 import { MerchantDashboard } from './pages/MerchantDashboard';
+import { CustomerWallet } from './pages/CustomerWallet';
 import { AccountsHome } from './pages/AccountsHome';
 import { AccountDetails } from './pages/AccountDetails';
 import { BankDetails } from './pages/BankDetails';
@@ -9,6 +10,7 @@ import { JoinBank } from './pages/JoinBank';
 import CreateBank from './pages/CreateBank';
 import { useRuntimeConfiguration } from './config/RuntimeConfiguration';
 import { NotificationProvider } from './contexts/NotificationContext';
+import { PaymentWalletProvider } from './components/PaymentWallet';
 import pino from 'pino';
 import { NetworkId, setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 
@@ -19,8 +21,9 @@ export const App: React.FC = () => {
   
   return (
     <NotificationProvider>
-      <BrowserRouter basename="/">
-        <Routes>
+      <PaymentWalletProvider logger={logger}>
+        <BrowserRouter basename="/">
+          <Routes>
           <Route path="/" element={
             <Landing
               onMerchantSignup={() => (window.location.href = '/merchant/dashboard')}
@@ -28,7 +31,7 @@ export const App: React.FC = () => {
             />
           } />
           <Route path="/merchant/dashboard" element={<MerchantDashboard />} />
-          <Route path="/customer/wallet" element={<MerchantDashboard />} /> {/* Placeholder for now */}
+          <Route path="/customer/wallet" element={<CustomerWallet />} />
 
           {/* Keep original bank routes for compatibility */}
           <Route path="/accounts" element={
@@ -49,8 +52,9 @@ export const App: React.FC = () => {
           <Route path="/bank/:bankAddress" element={<BankDetails />} />
           <Route path="/bank/:bankAddress/account/:userId" element={<AccountDetails />} />
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+          </Routes>
+        </BrowserRouter>
+      </PaymentWalletProvider>
     </NotificationProvider>
   );
 };

@@ -114,7 +114,13 @@ export const Landing: React.FC<LandingProps> = ({
             label="Built on Midnight Network"
             color="primary"
             variant="outlined"
-            sx={{ fontSize: '0.9rem', px: 1 }}
+            sx={{
+              fontSize: '0.9rem',
+              fontWeight: 500,
+              px: 2,
+              py: 0.5,
+              height: 'auto'
+            }}
           />
         </Box>
 

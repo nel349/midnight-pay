@@ -7,17 +7,25 @@ import {
   Container,
   Stack,
   Chip,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Card,
+  CardContent,
 } from '@mui/material';
 import {
   AccountBalanceWallet,
   Add,
-  TrendingUp,
+  Remove,
+  TrendingDown,
   Subscriptions,
-  People,
-  Download,
+  History,
+  Payment,
 } from '@mui/icons-material';
 import { usePaymentWallet } from '../components/PaymentWallet';
-import { PaymentAPI, MERCHANT_TIER } from '@midnight-pay/pay-api';
+import { PaymentAPI, SUBSCRIPTION_STATUS } from '@midnight-pay/pay-api';
 import { take } from 'rxjs/operators';
 import {
   ThemedButton,
@@ -26,31 +34,32 @@ import {
   ThemedCard,
   ThemedCardContent,
 } from '../components';
-import { useTheme } from '../theme';
 
-interface MerchantStats {
-  totalEarnings: string;
-  activeSubscriptions: number;
-  totalCustomers: number;
-  thisMonthRevenue: string;
+interface CustomerStats {
   availableBalance: string;
-  merchantTier: MERCHANT_TIER;
+  totalSpent: string;
+  activeSubscriptions: number;
+  lastActivity: string;
 }
 
-export const MerchantDashboard: React.FC = () => {
+export const CustomerWallet: React.FC = () => {
   const { isConnected, connect, providers } = usePaymentWallet();
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [paymentAPI, setPaymentAPI] = useState<PaymentAPI | null>(null);
-  const [merchantId] = useState(() => `merchant-${Date.now()}`); // In real app, this would be from auth
-  const [stats, setStats] = useState<MerchantStats>({
-    totalEarnings: '0.00',
-    activeSubscriptions: 0,
-    totalCustomers: 0,
-    thisMonthRevenue: '0.00',
+  const [customerId] = useState(() => `customer-${Date.now()}`); // In real app, this would be from auth
+  const [stats, setStats] = useState<CustomerStats>({
     availableBalance: '0.00',
-    merchantTier: MERCHANT_TIER.unverified,
+    totalSpent: '0.00',
+    activeSubscriptions: 0,
+    lastActivity: 'Never',
   });
+
+  // Dialog states
+  const [depositDialog, setDepositDialog] = useState(false);
+  const [withdrawDialog, setWithdrawDialog] = useState(false);
+  const [depositAmount, setDepositAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -69,17 +78,8 @@ export const MerchantDashboard: React.FC = () => {
       const initializeAPI = async () => {
         try {
           setLoading(true);
-          // For demo, use a deployed contract address or deploy if needed
-          const api = await PaymentAPI.build(merchantId, providers);
+          const api = await PaymentAPI.build(customerId, providers);
           setPaymentAPI(api);
-
-          // Register merchant if not already registered
-          try {
-            await api.registerMerchant(merchantId, 'Demo Merchant Business');
-          } catch (error) {
-            // Merchant might already be registered, which is fine
-            console.log('Merchant already registered or registration failed:', error);
-          }
         } catch (error) {
           console.error('Failed to initialize PaymentAPI:', error);
         } finally {
@@ -89,48 +89,75 @@ export const MerchantDashboard: React.FC = () => {
 
       initializeAPI();
     }
-  }, [isConnected, providers, paymentAPI, merchantId]);
+  }, [isConnected, providers, paymentAPI, customerId]);
 
   // Fetch real data from PaymentAPI
   useEffect(() => {
     if (paymentAPI) {
-      const fetchMerchantData = async () => {
+      const fetchCustomerData = async () => {
         try {
-          const balance = await paymentAPI.getMerchantBalance(merchantId);
-          const state = await paymentAPI.state$.pipe(take(1)).toPromise();
+          const balance = await paymentAPI.getCustomerBalance(customerId);
 
           setStats({
-            totalEarnings: (Number(balance.totalEarnings) / 100).toFixed(2),
-            activeSubscriptions: balance.activeSubscribers,
-            totalCustomers: balance.activeSubscribers, // For now, same as active subscriptions
-            thisMonthRevenue: (Number(balance.totalEarnings) / 100).toFixed(2), // Simplified
             availableBalance: (Number(balance.availableBalance) / 100).toFixed(2),
-            merchantTier: MERCHANT_TIER.unverified, // This would come from merchant info
+            totalSpent: (Number(balance.totalSpent) / 100).toFixed(2),
+            activeSubscriptions: balance.activeSubscriptions,
+            lastActivity: balance.lastActivity > 0 ? new Date(balance.lastActivity).toLocaleDateString() : 'Never',
           });
         } catch (error) {
-          console.error('Failed to fetch merchant data:', error);
-          // Keep mock data on error
+          console.error('Failed to fetch customer data:', error);
+          // Keep default data on error
           setStats({
-            totalEarnings: '0.00',
-            activeSubscriptions: 0,
-            totalCustomers: 0,
-            thisMonthRevenue: '0.00',
             availableBalance: '0.00',
-            merchantTier: MERCHANT_TIER.unverified,
+            totalSpent: '0.00',
+            activeSubscriptions: 0,
+            lastActivity: 'Never',
           });
         }
       };
 
-      fetchMerchantData();
+      fetchCustomerData();
 
       // Subscribe to real-time updates
       const subscription = paymentAPI.state$.subscribe(() => {
-        fetchMerchantData();
+        fetchCustomerData();
       });
 
       return () => subscription.unsubscribe();
     }
-  }, [paymentAPI, merchantId]);
+  }, [paymentAPI, customerId]);
+
+  const handleDeposit = async () => {
+    if (!paymentAPI || !depositAmount) return;
+
+    try {
+      setLoading(true);
+      await paymentAPI.depositCustomerFunds(customerId, depositAmount);
+      setDepositDialog(false);
+      setDepositAmount('');
+    } catch (error) {
+      console.error('Deposit failed:', error);
+      alert('Deposit failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!paymentAPI || !withdrawAmount) return;
+
+    try {
+      setLoading(true);
+      await paymentAPI.withdrawCustomerFunds(customerId, withdrawAmount);
+      setWithdrawDialog(false);
+      setWithdrawAmount('');
+    } catch (error) {
+      console.error('Withdrawal failed:', error);
+      alert('Withdrawal failed. Please check your balance and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const StatCard: React.FC<{
     title: string;
@@ -168,8 +195,8 @@ export const MerchantDashboard: React.FC = () => {
               Connect Your Lace Wallet
             </Typography>
             <Typography variant="body1" color="textSecondary" sx={{ mb: 4, maxWidth: 500, mx: 'auto' }}>
-              To access your merchant dashboard and manage payments, please connect your Lace wallet.
-              This enables secure, private transactions on the Midnight Network.
+              To access your customer wallet and manage payments, please connect your Lace wallet.
+              Enjoy private, secure transactions on the Midnight Network.
             </Typography>
             <ThemedButton
               variant="primary"
@@ -196,7 +223,7 @@ export const MerchantDashboard: React.FC = () => {
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
             <Box>
               <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold', mb: 1 }}>
-                Merchant Dashboard
+                Customer Wallet
               </Typography>
               <Stack direction="row" alignItems="center" spacing={1}>
                 <Chip
@@ -211,24 +238,28 @@ export const MerchantDashboard: React.FC = () => {
                   }}
                 />
                 <Typography variant="body2" color="textSecondary">
-                  Welcome back! Here's your payment overview.
+                  Manage your funds and subscriptions securely
                 </Typography>
               </Stack>
             </Box>
             <Stack direction="row" spacing={2}>
               <ThemedButton
                 variant="outlined"
-                startIcon={<Download />}
+                startIcon={<Remove />}
                 size="small"
+                onClick={() => setWithdrawDialog(true)}
+                disabled={loading}
               >
-                Export Data
+                Withdraw
               </ThemedButton>
               <ThemedButton
                 variant="primary"
                 startIcon={<Add />}
                 size="small"
+                onClick={() => setDepositDialog(true)}
+                disabled={loading}
               >
-                Create Subscription Plan
+                Deposit Funds
               </ThemedButton>
             </Stack>
           </Stack>
@@ -238,10 +269,18 @@ export const MerchantDashboard: React.FC = () => {
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, mb: 4 }}>
           <Box sx={{ flex: { xs: '1 1 100%', sm: '1 1 45%', md: '1 1 22%' }, minWidth: 250 }}>
             <StatCard
-              title="Total Earnings"
-              value={`$${stats.totalEarnings}`}
-              icon={<TrendingUp />}
+              title="Available Balance"
+              value={`$${stats.availableBalance}`}
+              icon={<AccountBalanceWallet />}
               color="success"
+            />
+          </Box>
+          <Box sx={{ flex: { xs: '1 1 100%', sm: '1 1 45%', md: '1 1 22%' }, minWidth: 250 }}>
+            <StatCard
+              title="Total Spent"
+              value={`$${stats.totalSpent}`}
+              icon={<TrendingDown />}
+              color="info"
             />
           </Box>
           <Box sx={{ flex: { xs: '1 1 100%', sm: '1 1 45%', md: '1 1 22%' }, minWidth: 250 }}>
@@ -254,17 +293,9 @@ export const MerchantDashboard: React.FC = () => {
           </Box>
           <Box sx={{ flex: { xs: '1 1 100%', sm: '1 1 45%', md: '1 1 22%' }, minWidth: 250 }}>
             <StatCard
-              title="Total Customers"
-              value={stats.totalCustomers.toString()}
-              icon={<People />}
-              color="info"
-            />
-          </Box>
-          <Box sx={{ flex: { xs: '1 1 100%', sm: '1 1 45%', md: '1 1 22%' }, minWidth: 250 }}>
-            <StatCard
-              title="This Month"
-              value={`$${stats.thisMonthRevenue}`}
-              icon={<TrendingUp />}
+              title="Last Activity"
+              value={stats.lastActivity}
+              icon={<History />}
               color="secondary"
             />
           </Box>
@@ -285,28 +316,30 @@ export const MerchantDashboard: React.FC = () => {
                       fullWidth
                       startIcon={<Add />}
                       sx={{ py: 2 }}
+                      onClick={() => setDepositDialog(true)}
+                      disabled={loading}
                     >
-                      New Subscription
+                      Deposit Funds
                     </ThemedButton>
                   </Box>
                   <Box sx={{ flex: { xs: '1 1 100%', sm: '1 1 45%', md: '1 1 30%' } }}>
                     <ThemedButton
                       variant="outlined"
                       fullWidth
-                      startIcon={<AccountBalanceWallet />}
+                      startIcon={<Subscriptions />}
                       sx={{ py: 2 }}
                     >
-                      Withdraw Earnings
+                      Manage Subscriptions
                     </ThemedButton>
                   </Box>
                   <Box sx={{ flex: { xs: '1 1 100%', sm: '1 1 45%', md: '1 1 30%' } }}>
                     <ThemedButton
                       variant="outlined"
                       fullWidth
-                      startIcon={<People />}
+                      startIcon={<History />}
                       sx={{ py: 2 }}
                     >
-                      View Customers
+                      Transaction History
                     </ThemedButton>
                   </Box>
                 </Box>
@@ -318,37 +351,39 @@ export const MerchantDashboard: React.FC = () => {
             <ThemedCard>
               <ThemedCardContent>
                 <Typography variant="h6" component="h2" sx={{ mb: 3, fontWeight: 'bold' }}>
-                  Account Status
+                  Account Info
                 </Typography>
                 <Stack spacing={2}>
                   <Box>
                     <Typography variant="body2" color="textSecondary">
-                      Merchant Tier
+                      Customer ID
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>
+                      {customerId.slice(0, 20)}...
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" color="textSecondary">
+                      Privacy Status
                     </Typography>
                     <Chip
-                      label={MERCHANT_TIER[stats.merchantTier] || 'Unverified'}
-                      color={stats.merchantTier >= MERCHANT_TIER.verified ? 'success' : 'primary'}
+                      label="ZK Protected"
+                      color="success"
                       size="small"
+                      sx={{
+                        fontSize: '0.875rem',
+                        fontWeight: 500,
+                        px: 1.5,
+                        py: 0.5
+                      }}
                     />
                   </Box>
                   <Box>
                     <Typography variant="body2" color="textSecondary">
-                      Available Balance
-                    </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                      {loading ? (
-                        <CircularProgress size={20} />
-                      ) : (
-                        `$${stats.availableBalance}`
-                      )}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="body2" color="textSecondary">
-                      Transaction Fee
+                      Network
                     </Typography>
                     <Typography variant="body1">
-                      2.5% + $0.30
+                      Midnight Network
                     </Typography>
                   </Box>
                 </Stack>
@@ -365,7 +400,7 @@ export const MerchantDashboard: React.FC = () => {
             </Typography>
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography variant="body1" color="textSecondary">
-                Transaction history will appear here once you start processing payments.
+                Your transaction history will appear here as you make payments.
               </Typography>
               <ThemedButton
                 variant="outlined"
@@ -377,6 +412,76 @@ export const MerchantDashboard: React.FC = () => {
           </ThemedCardContent>
         </ThemedCard>
       </Container>
+
+      {/* Deposit Dialog */}
+      <Dialog open={depositDialog} onClose={() => setDepositDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Deposit Funds</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+            Add funds to your wallet to enable payments and subscriptions.
+          </Typography>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Amount (USD)"
+            type="number"
+            fullWidth
+            variant="outlined"
+            value={depositAmount}
+            onChange={(e) => setDepositAmount(e.target.value)}
+            placeholder="10.00"
+            inputProps={{ min: 0, step: 0.01 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <ThemedButton onClick={() => setDepositDialog(false)} variant="outlined">
+            Cancel
+          </ThemedButton>
+          <ThemedButton
+            onClick={handleDeposit}
+            variant="primary"
+            disabled={!depositAmount || loading}
+            startIcon={loading ? <CircularProgress size={20} /> : <Add />}
+          >
+            {loading ? 'Processing...' : 'Deposit'}
+          </ThemedButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Withdraw Dialog */}
+      <Dialog open={withdrawDialog} onClose={() => setWithdrawDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Withdraw Funds</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+            Withdraw funds from your wallet. Available balance: ${stats.availableBalance}
+          </Typography>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Amount (USD)"
+            type="number"
+            fullWidth
+            variant="outlined"
+            value={withdrawAmount}
+            onChange={(e) => setWithdrawAmount(e.target.value)}
+            placeholder="10.00"
+            inputProps={{ min: 0, step: 0.01, max: parseFloat(stats.availableBalance) }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <ThemedButton onClick={() => setWithdrawDialog(false)} variant="outlined">
+            Cancel
+          </ThemedButton>
+          <ThemedButton
+            onClick={handleWithdraw}
+            variant="primary"
+            disabled={!withdrawAmount || loading}
+            startIcon={loading ? <CircularProgress size={20} /> : <Remove />}
+          >
+            {loading ? 'Processing...' : 'Withdraw'}
+          </ThemedButton>
+        </DialogActions>
+      </Dialog>
     </GradientBackground>
   );
 };
