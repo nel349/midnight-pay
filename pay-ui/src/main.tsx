@@ -6,7 +6,6 @@ import { ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { RuntimeConfigurationProvider, useRuntimeConfiguration } from './config/RuntimeConfiguration';
 import { PaymentWalletProvider } from './components/PaymentWallet';
-import { PinSessionProvider } from './contexts/PinSessionContext';
 import { TransactionLoadingProvider } from './contexts/TransactionLoadingContext';
 import { App as RootApp } from './App';
 import { ThemeProvider, ThemeStyleInjector, DynamicMuiThemeProvider } from './theme';
@@ -35,11 +34,9 @@ const App: React.FC = () => {
           <CssBaseline />
           <TopBar />
           <PaymentWalletProvider logger={logger}>
-              <PinSessionProvider>
-                <TransactionLoadingProvider>
-                  <RootApp />
-                </TransactionLoadingProvider>
-              </PinSessionProvider>
+              <TransactionLoadingProvider>
+                <RootApp />
+              </TransactionLoadingProvider>
           </PaymentWalletProvider>
         </DynamicMuiThemeProvider>
       </ThemeProvider>
