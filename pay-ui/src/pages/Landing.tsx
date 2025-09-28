@@ -15,13 +15,11 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 
 interface LandingProps {
-  onMerchantSignup: () => void;
-  onCustomerSignup: () => void;
+  onGetStarted: () => void;
 }
 
 export const Landing: React.FC<LandingProps> = ({
-  onMerchantSignup,
-  onCustomerSignup
+  onGetStarted
 }) => {
   const theme = useTheme();
 
@@ -86,29 +84,17 @@ export const Landing: React.FC<LandingProps> = ({
             Accept payments without compromising your customers' financial privacy.
           </Typography>
 
-          {/* Dual CTAs */}
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={3}
-            sx={{ justifyContent: 'center', mb: 4 }}
-          >
+          {/* Get Started CTA */}
+          <Box sx={{ justifyContent: 'center', mb: 4 }}>
             <ThemedButton
               variant="primary"
               size="large"
-              onClick={onMerchantSignup}
-              sx={{ px: 4, py: 2, fontSize: '1.1rem' }}
+              onClick={onGetStarted}
+              sx={{ px: 6, py: 2.5, fontSize: '1.1rem' }}
             >
-              I'm a Merchant
+              Get Started
             </ThemedButton>
-            <ThemedButton
-              variant="outlined"
-              size="large"
-              onClick={onCustomerSignup}
-              sx={{ px: 4, py: 2, fontSize: '1.1rem' }}
-            >
-              I'm a Customer
-            </ThemedButton>
-          </Stack>
+          </Box>
 
           <Chip
             label="Built on Midnight Network"
@@ -163,48 +149,37 @@ export const Landing: React.FC<LandingProps> = ({
           </Typography>
 
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
-            <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 45%' }, maxWidth: 500 }}>
-              <Box sx={{ mb: 4 }}>
-                <Typography variant="h5" component="h4" sx={{ mb: 2, fontWeight: 600 }}>
-                  For Merchants
+            <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 30%' }, maxWidth: 400 }}>
+              <ThemedCard sx={{ height: '100%', textAlign: 'center', p: 3 }}>
+                <Typography variant="h6" component="h4" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>
+                  1. Setup Payment Gateway
                 </Typography>
-                <Stack spacing={2} sx={{ textAlign: 'left' }}>
-                  <Typography variant="body1">
-                    1. Register your business and connect your Lace wallet
-                  </Typography>
-                  <Typography variant="body1">
-                    2. Create subscription plans with custom pricing and billing cycles
-                  </Typography>
-                  <Typography variant="body1">
-                    3. Share payment links with customers or integrate our API
-                  </Typography>
-                  <Typography variant="body1">
-                    4. Receive payments automatically and withdraw earnings anytime
-                  </Typography>
-                </Stack>
-              </Box>
+                <Typography variant="body1" color="textSecondary">
+                  Connect your Lace wallet and either create a new payment gateway or join an existing one
+                </Typography>
+              </ThemedCard>
             </Box>
 
-            <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 45%' }, maxWidth: 500 }}>
-              <Box sx={{ mb: 4 }}>
-                <Typography variant="h5" component="h4" sx={{ mb: 2, fontWeight: 600 }}>
-                  For Customers
+            <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 30%' }, maxWidth: 400 }}>
+              <ThemedCard sx={{ height: '100%', textAlign: 'center', p: 3 }}>
+                <Typography variant="h6" component="h4" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>
+                  2. Choose Your Role
                 </Typography>
-                <Stack spacing={2} sx={{ textAlign: 'left' }}>
-                  <Typography variant="body1">
-                    1. Connect your Lace wallet and deposit funds
-                  </Typography>
-                  <Typography variant="body1">
-                    2. Browse services and authorize subscription payments
-                  </Typography>
-                  <Typography variant="body1">
-                    3. Set spending limits and manage active subscriptions
-                  </Typography>
-                  <Typography variant="body1">
-                    4. Enjoy private, secure payments with full control
-                  </Typography>
-                </Stack>
-              </Box>
+                <Typography variant="body1" color="textSecondary">
+                  Register as a merchant to accept payments or as a customer to make private payments and subscriptions
+                </Typography>
+              </ThemedCard>
+            </Box>
+
+            <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 30%' }, maxWidth: 400 }}>
+              <ThemedCard sx={{ height: '100%', textAlign: 'center', p: 3 }}>
+                <Typography variant="h6" component="h4" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>
+                  3. Start Transacting
+                </Typography>
+                <Typography variant="body1" color="textSecondary">
+                  Process payments, manage subscriptions, or make private purchases - all with zero-knowledge privacy
+                </Typography>
+              </ThemedCard>
             </Box>
           </Box>
         </Box>
@@ -217,26 +192,14 @@ export const Landing: React.FC<LandingProps> = ({
           <Typography variant="body1" color="textSecondary" sx={{ mb: 4 }}>
             Join the privacy-first payment revolution on Midnight Network
           </Typography>
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={3}
-            sx={{ justifyContent: 'center' }}
+          <ThemedButton
+            variant="primary"
+            size="large"
+            onClick={onGetStarted}
+            sx={{ px: 6, py: 2.5 }}
           >
-            <ThemedButton
-              variant="primary"
-              size="large"
-              onClick={onMerchantSignup}
-            >
-              Start Accepting Payments
-            </ThemedButton>
-            <ThemedButton
-              variant="outlined"
-              size="large"
-              onClick={onCustomerSignup}
-            >
-              Make Private Payments
-            </ThemedButton>
-          </Stack>
+            Setup Payment Gateway
+          </ThemedButton>
         </ThemedCard>
       </Container>
     </Box>

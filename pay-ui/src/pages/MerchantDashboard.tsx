@@ -6,6 +6,7 @@ import {
   Container,
   Stack,
   Chip,
+  Alert,
 } from '@mui/material';
 import {
   AccountBalanceWallet,
@@ -17,6 +18,7 @@ import {
 } from '@mui/icons-material';
 import { usePaymentWallet } from '../components/PaymentWallet';
 import { PaymentAPI, MERCHANT_TIER } from '@midnight-pay/pay-api';
+import { usePaymentContract } from '../hooks/usePaymentContract';
 import { take } from 'rxjs/operators';
 import {
   ThemedButton,
@@ -37,11 +39,18 @@ interface MerchantStats {
 }
 
 export const MerchantDashboard: React.FC = () => {
-  const { isConnected, connect, providers } = usePaymentWallet();
+  const { isConnected, connect } = usePaymentWallet();
+  const {
+    contractAddress,
+    paymentAPI,
+    entityId: merchantId,
+    isInitializing,
+    error: contractError,
+    setEntity
+  } = usePaymentContract();
+
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [paymentAPI, setPaymentAPI] = useState<PaymentAPI | null>(null);
-  const [merchantId] = useState(() => `merchant-${Date.now()}`); // In real app, this would be from auth
   const [stats, setStats] = useState<MerchantStats>({
     totalEarnings: '0.00',
     activeSubscriptions: 0,
@@ -62,37 +71,42 @@ export const MerchantDashboard: React.FC = () => {
     }
   };
 
-  // Initialize PaymentAPI when connected
+  // Set up merchant entity when connected but not set
   useEffect(() => {
-    if (isConnected && providers && !paymentAPI) {
-      const initializeAPI = async () => {
+    if (isConnected && !merchantId && !isInitializing) {
+      const setupMerchant = async () => {
         try {
-          setLoading(true);
-          // For demo, use a deployed contract address or deploy if needed
-          const api = await PaymentAPI.build(merchantId, providers);
-          setPaymentAPI(api);
-
-          // Register merchant if not already registered
-          try {
-            await api.registerMerchant(merchantId, 'Demo Merchant Business');
-          } catch (error) {
-            // Merchant might already be registered, which is fine
-            console.log('Merchant already registered or registration failed:', error);
-          }
+          const generatedMerchantId = `merchant-${Date.now()}`;
+          await setEntity(generatedMerchantId, 'merchant');
         } catch (error) {
-          console.error('Failed to initialize PaymentAPI:', error);
-        } finally {
-          setLoading(false);
+          console.error('Failed to set up merchant entity:', error);
         }
       };
 
-      initializeAPI();
+      setupMerchant();
     }
-  }, [isConnected, providers, paymentAPI, merchantId]);
+  }, [isConnected, merchantId, isInitializing, setEntity]);
+
+  // Register merchant when API is ready
+  useEffect(() => {
+    if (paymentAPI && merchantId) {
+      const registerMerchant = async () => {
+        try {
+          await paymentAPI.registerMerchant(merchantId, 'Demo Merchant Business');
+          console.log('✅ Merchant registered successfully');
+        } catch (error) {
+          // Merchant might already be registered, which is fine
+          console.log('Merchant registration result:', error);
+        }
+      };
+
+      registerMerchant();
+    }
+  }, [paymentAPI, merchantId]);
 
   // Fetch real data from PaymentAPI
   useEffect(() => {
-    if (paymentAPI) {
+    if (paymentAPI && merchantId) {
       const fetchMerchantData = async () => {
         try {
           const balance = await paymentAPI.getMerchantBalance(merchantId);
@@ -156,7 +170,8 @@ export const MerchantDashboard: React.FC = () => {
     </ThemedCard>
   );
 
-  if (!isConnected) {
+  // Show setup flow if no contract or entity is set
+  if (!isConnected || !contractAddress || !merchantId) {
     return (
       <GradientBackground>
         <AppHeader />
@@ -164,21 +179,39 @@ export const MerchantDashboard: React.FC = () => {
           <Box textAlign="center" sx={{ py: 8 }}>
             <AccountBalanceWallet sx={{ fontSize: 80, color: 'primary.main', mb: 3 }} />
             <Typography variant="h4" component="h1" sx={{ mb: 3, fontWeight: 'bold' }}>
-              Connect Your Lace Wallet
+              {!isConnected ? 'Connect Your Lace Wallet' : 'Setting Up Payment Gateway'}
             </Typography>
             <Typography variant="body1" color="textSecondary" sx={{ mb: 4, maxWidth: 500, mx: 'auto' }}>
-              To access your merchant dashboard and manage payments, please connect your Lace wallet.
-              This enables secure, private transactions on the Midnight Network.
+              {!isConnected
+                ? 'To access your merchant dashboard and manage payments, please connect your Lace wallet. This enables secure, private transactions on the Midnight Network.'
+                : isInitializing
+                ? 'Initializing your payment gateway contract and merchant account...'
+                : 'Setting up your merchant profile...'
+              }
             </Typography>
+            {contractError && (
+              <Alert severity="error" sx={{ mb: 3, maxWidth: 500, mx: 'auto' }}>
+                Contract Error: {contractError.message}
+              </Alert>
+            )}
             <ThemedButton
               variant="primary"
               size="large"
               onClick={handleConnect}
-              disabled={connecting}
-              startIcon={connecting ? <CircularProgress size={20} /> : <AccountBalanceWallet />}
+              disabled={connecting || isInitializing}
+              startIcon={
+                connecting || isInitializing
+                  ? <CircularProgress size={20} />
+                  : <AccountBalanceWallet />
+              }
               sx={{ px: 4, py: 2 }}
             >
-              {connecting ? 'Connecting...' : 'Connect Lace Wallet'}
+              {connecting
+                ? 'Connecting...'
+                : isInitializing
+                ? 'Setting Up...'
+                : 'Connect Lace Wallet'
+              }
             </ThemedButton>
           </Box>
         </Container>

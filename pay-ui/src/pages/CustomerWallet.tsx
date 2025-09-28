@@ -26,6 +26,7 @@ import {
 } from '@mui/icons-material';
 import { usePaymentWallet } from '../components/PaymentWallet';
 import { PaymentAPI, SUBSCRIPTION_STATUS } from '@midnight-pay/pay-api';
+import { usePaymentContract } from '../hooks/usePaymentContract';
 import { take } from 'rxjs/operators';
 import {
   ThemedButton,
@@ -43,11 +44,17 @@ interface CustomerStats {
 }
 
 export const CustomerWallet: React.FC = () => {
-  const { isConnected, connect, providers } = usePaymentWallet();
+  const { isConnected, connect } = usePaymentWallet();
+  const {
+    contractAddress,
+    paymentAPI,
+    entityId: customerId,
+    isInitializing,
+    error: contractError,
+    setEntity
+  } = usePaymentContract();
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [paymentAPI, setPaymentAPI] = useState<PaymentAPI | null>(null);
-  const [customerId] = useState(() => `customer-${Date.now()}`); // In real app, this would be from auth
   const [stats, setStats] = useState<CustomerStats>({
     availableBalance: '0.00',
     totalSpent: '0.00',
@@ -72,28 +79,25 @@ export const CustomerWallet: React.FC = () => {
     }
   };
 
-  // Initialize PaymentAPI when connected
+  // Set up customer entity when connected but not set
   useEffect(() => {
-    if (isConnected && providers && !paymentAPI) {
-      const initializeAPI = async () => {
+    if (isConnected && !customerId && !isInitializing) {
+      const setupCustomer = async () => {
         try {
-          setLoading(true);
-          const api = await PaymentAPI.build(customerId, providers);
-          setPaymentAPI(api);
+          const generatedCustomerId = `customer-${Date.now()}`;
+          await setEntity(generatedCustomerId, 'customer');
         } catch (error) {
-          console.error('Failed to initialize PaymentAPI:', error);
-        } finally {
-          setLoading(false);
+          console.error('Failed to set up customer entity:', error);
         }
       };
 
-      initializeAPI();
+      setupCustomer();
     }
-  }, [isConnected, providers, paymentAPI, customerId]);
+  }, [isConnected, customerId, isInitializing, setEntity]);
 
   // Fetch real data from PaymentAPI
   useEffect(() => {
-    if (paymentAPI) {
+    if (paymentAPI && customerId) {
       const fetchCustomerData = async () => {
         try {
           const balance = await paymentAPI.getCustomerBalance(customerId);
@@ -128,7 +132,7 @@ export const CustomerWallet: React.FC = () => {
   }, [paymentAPI, customerId]);
 
   const handleDeposit = async () => {
-    if (!paymentAPI || !depositAmount) return;
+    if (!paymentAPI || !depositAmount || !customerId) return;
 
     try {
       setLoading(true);
@@ -144,7 +148,7 @@ export const CustomerWallet: React.FC = () => {
   };
 
   const handleWithdraw = async () => {
-    if (!paymentAPI || !withdrawAmount) return;
+    if (!paymentAPI || !withdrawAmount || !customerId) return;
 
     try {
       setLoading(true);
@@ -184,7 +188,8 @@ export const CustomerWallet: React.FC = () => {
     </ThemedCard>
   );
 
-  if (!isConnected) {
+  // Show setup flow if no contract or entity is set
+  if (!isConnected || !contractAddress || !customerId) {
     return (
       <GradientBackground>
         <AppHeader />
@@ -192,21 +197,39 @@ export const CustomerWallet: React.FC = () => {
           <Box textAlign="center" sx={{ py: 8 }}>
             <AccountBalanceWallet sx={{ fontSize: 80, color: 'primary.main', mb: 3 }} />
             <Typography variant="h4" component="h1" sx={{ mb: 3, fontWeight: 'bold' }}>
-              Connect Your Lace Wallet
+              {!isConnected ? 'Connect Your Lace Wallet' : 'Setting Up Payment Gateway'}
             </Typography>
             <Typography variant="body1" color="textSecondary" sx={{ mb: 4, maxWidth: 500, mx: 'auto' }}>
-              To access your customer wallet and manage payments, please connect your Lace wallet.
-              Enjoy private, secure transactions on the Midnight Network.
+              {!isConnected
+                ? 'To access your customer wallet and manage payments, please connect your Lace wallet. Enjoy private, secure transactions on the Midnight Network.'
+                : isInitializing
+                ? 'Initializing your payment gateway connection and customer account...'
+                : 'Setting up your customer profile...'
+              }
             </Typography>
+            {contractError && (
+              <Alert severity="error" sx={{ mb: 3, maxWidth: 500, mx: 'auto' }}>
+                Contract Error: {contractError.message}
+              </Alert>
+            )}
             <ThemedButton
               variant="primary"
               size="large"
               onClick={handleConnect}
-              disabled={connecting}
-              startIcon={connecting ? <CircularProgress size={20} /> : <AccountBalanceWallet />}
+              disabled={connecting || isInitializing}
+              startIcon={
+                connecting || isInitializing
+                  ? <CircularProgress size={20} />
+                  : <AccountBalanceWallet />
+              }
               sx={{ px: 4, py: 2 }}
             >
-              {connecting ? 'Connecting...' : 'Connect Lace Wallet'}
+              {connecting
+                ? 'Connecting...'
+                : isInitializing
+                ? 'Setting Up...'
+                : 'Connect Lace Wallet'
+              }
             </ThemedButton>
           </Box>
         </Container>
