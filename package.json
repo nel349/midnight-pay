@@ -28,6 +28,8 @@
     "config:local": "cp pay-ui/public/config.local.json pay-ui/public/config.json",
     "build:ui:testnet": "turbo run build --filter=@midnight-pay/pay-api && cd pay-ui && npm run build:testnet",
     "recompile": "turbo run build --filter=@midnight-pay/pay-contract",
+    "update-keys": "cd pay-contract && npm run update-api-resources",
+    "copy-keys-to-ui": "cd pay-api && npm run copy-keys-to-ui",
     "clean": "turbo run clean"
   },
   "dependencies": {

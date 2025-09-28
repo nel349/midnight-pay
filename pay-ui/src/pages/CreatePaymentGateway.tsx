@@ -18,6 +18,7 @@ import {
 } from '../components';
 import { usePaymentContract } from '../hooks/usePaymentContract';
 import { useTheme } from '../theme';
+import { useNotification } from '../contexts/NotificationContext';
 
 export interface CreatePaymentGatewayProps {
   onComplete: (contractAddress: string) => void;
@@ -28,6 +29,7 @@ export const CreatePaymentGateway: React.FC<CreatePaymentGatewayProps> = ({ onCo
   const { isConnected, connect } = usePaymentWallet();
   const { deployNewGateway, isDeploying, error } = usePaymentContract();
   const { theme } = useTheme();
+  const { showSuccess, showError } = useNotification();
 
   const [gatewayLabel, setGatewayLabel] = useState('');
   const [localError, setLocalError] = useState<any>(null);
@@ -36,16 +38,23 @@ export const CreatePaymentGateway: React.FC<CreatePaymentGatewayProps> = ({ onCo
     try {
       setLocalError(null);
 
+      console.log('🚀 Starting gateway deployment...');
       const contractAddress = await deployNewGateway(gatewayLabel.trim() || 'Payment Gateway');
+
+      console.log('✅ Gateway deployed successfully:', contractAddress);
+      showSuccess(`Payment Gateway "${gatewayLabel || 'Payment Gateway'}" deployed successfully!`);
 
       // Small delay to allow notification to show before navigation
       setTimeout(() => {
         onComplete(contractAddress);
-      }, 500);
+      }, 1500);
     } catch (e) {
+      console.error('❌ Gateway deployment failed:', e);
       setLocalError(e);
+      const errorMessage = e instanceof Error ? e.message : 'Unknown deployment error';
+      showError(`Failed to deploy payment gateway: ${errorMessage}`);
     }
-  }, [deployNewGateway, gatewayLabel, onComplete]);
+  }, [deployNewGateway, gatewayLabel, onComplete, showSuccess, showError]);
 
   const displayError = error || localError;
 

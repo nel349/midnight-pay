@@ -27,11 +27,13 @@ import {
 import { useTheme } from '../theme';
 import { listPaymentGateways, type SavedPaymentGateway, touchPaymentGateway } from '../utils/PaymentLocalState';
 import { usePaymentContract } from '../hooks/usePaymentContract';
+import { useNotification } from '../contexts/NotificationContext';
 
 export const PaymentGateways: React.FC = () => {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { connectToGateway, clearContract } = usePaymentContract();
+  const { showSuccess, showError } = useNotification();
   const [gateways, setGateways] = useState<SavedPaymentGateway[]>([]);
   const [connecting, setConnecting] = useState<string | null>(null);
 
@@ -44,6 +46,8 @@ export const PaymentGateways: React.FC = () => {
     try {
       setConnecting(gateway.contractAddress);
 
+      console.log('🔗 Connecting to gateway:', gateway.contractAddress);
+
       // Clear any existing contract state
       clearContract();
 
@@ -53,11 +57,18 @@ export const PaymentGateways: React.FC = () => {
       // Touch the gateway to update lastUsedAt
       touchPaymentGateway(gateway.contractAddress);
 
-      // Navigate to merchant dashboard (or could be a role selection page)
-      navigate('/merchant');
+      console.log('✅ Successfully connected to gateway');
+      showSuccess(`Connected to "${gateway.label || 'Payment Gateway'}" successfully!`);
+
+      // Navigate to merchant dashboard after a short delay
+      setTimeout(() => {
+        navigate('/merchant');
+      }, 1000);
 
     } catch (error) {
-      console.error('Failed to connect to gateway:', error);
+      console.error('❌ Failed to connect to gateway:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown connection error';
+      showError(`Failed to connect to gateway: ${errorMessage}`);
     } finally {
       setConnecting(null);
     }
@@ -66,9 +77,10 @@ export const PaymentGateways: React.FC = () => {
   const handleCopyAddress = async (address: string) => {
     try {
       await navigator.clipboard.writeText(address);
-      // Could add a toast notification here
+      showSuccess('Contract address copied to clipboard!');
     } catch (error) {
       console.error('Failed to copy address:', error);
+      showError('Failed to copy address to clipboard');
     }
   };
 

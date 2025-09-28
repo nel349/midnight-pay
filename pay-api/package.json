@@ -24,7 +24,8 @@
     "test": "RUN_STANDALONE=true vitest run --passWithNoTests",
     "test:watch": "vitest",
     "lint": "eslint src --ext .ts",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "copy-keys-to-ui": "mkdir -p ../pay-ui/public/keys ../pay-ui/public/zkir && cp public/keys/* ../pay-ui/public/keys/ 2>/dev/null || true && cp public/zkir/* ../pay-ui/public/zkir/ 2>/dev/null || true && echo 'Payment circuit keys copied from pay-api to pay-ui'"
   },
   "dependencies": {
     "@midnight-pay/pay-contract": "file:../pay-contract",

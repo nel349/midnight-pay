@@ -16,34 +16,47 @@ import {
 } from '../components';
 import { usePaymentContract } from '../hooks/usePaymentContract';
 import { useTheme } from '../theme';
+import { useNotification } from '../contexts/NotificationContext';
 
 export const JoinPaymentGateway: React.FC = () => {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { connectToGateway, isInitializing, error } = usePaymentContract();
+  const { showSuccess, showError } = useNotification();
   const [contractAddress, setContractAddress] = useState('');
   const [gatewayLabel, setGatewayLabel] = useState('');
   const [localError, setLocalError] = useState<any>(null);
 
   const handleJoinGateway = async () => {
     if (!contractAddress.trim()) {
-      setLocalError(new Error('Please enter a payment gateway contract address'));
+      const error = new Error('Please enter a payment gateway contract address');
+      setLocalError(error);
+      showError('Please enter a payment gateway contract address');
       return;
     }
 
     try {
       setLocalError(null);
 
+      console.log('🔗 Connecting to gateway:', contractAddress.trim());
       await connectToGateway(
         contractAddress.trim(),
         gatewayLabel.trim() || 'Payment Gateway'
       );
 
-      // Navigate to the gateway page
-      navigate(`/gateway/${contractAddress.trim()}`);
+      console.log('✅ Successfully connected to gateway');
+      showSuccess(`Successfully connected to payment gateway!`);
+
+      // Navigate to the gateways page after a short delay
+      setTimeout(() => {
+        navigate('/gateways');
+      }, 1000);
 
     } catch (err) {
+      console.error('❌ Failed to connect to gateway:', err);
       setLocalError(err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown connection error';
+      showError(`Failed to connect to payment gateway: ${errorMessage}`);
     }
   };
 
