@@ -12,6 +12,17 @@ export const parseAmount = (amount: string): bigint => {
   return parsed;
 };
 
+export const parseDecimalAmount = (amount: string): bigint => {
+  // Convert decimal amount (e.g., "100.00") to cents as BigInt
+  const parsed = parseFloat(amount);
+  if (isNaN(parsed) || parsed < 0) {
+    throw new Error('Invalid amount');
+  }
+  // Convert to cents and ensure it's an integer
+  const amountInCents = Math.floor(parsed * 100);
+  return BigInt(amountInCents);
+};
+
 export const formatMerchantId = (merchantId: string): string => {
   return merchantId.startsWith('MCH') ? merchantId : `MCH${merchantId}`;
 };

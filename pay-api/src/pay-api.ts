@@ -28,6 +28,7 @@ import {
   validateBusinessName,
 } from '@midnight-pay/pay-contract';
 import * as utils from './utils/index';
+import { parseDecimalAmount } from './utils/index.js';
 import { combineLatest, concat, defer, firstValueFrom, from, map, type Observable, of, retry, scan, Subject } from 'rxjs';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import type { DetailedPaymentTransaction } from './common-types';
@@ -323,7 +324,7 @@ export class PaymentAPI implements DeployedPaymentAPI {
     }
 
     const merchantIdBytes = this.stringToBytes32(merchantId);
-    const amountBigInt = BigInt(amount);
+    const amountBigInt = parseDecimalAmount(amount);
 
     const transaction = {
       type: TransactionType.SUBSCRIPTION_PAYMENT,
@@ -342,7 +343,7 @@ export class PaymentAPI implements DeployedPaymentAPI {
     }
 
     const customerIdBytes = this.stringToBytes32(customerId);
-    const amountBigInt = BigInt(amount);
+    const amountBigInt = parseDecimalAmount(amount);
 
     const transaction = {
       type: TransactionType.SUBSCRIPTION_PAYMENT,
@@ -360,7 +361,7 @@ export class PaymentAPI implements DeployedPaymentAPI {
     }
 
     const customerIdBytes = this.stringToBytes32(customerId);
-    const amountBigInt = BigInt(amount);
+    const amountBigInt = parseDecimalAmount(amount);
 
     const transaction = {
       type: TransactionType.SUBSCRIPTION_PAYMENT,
@@ -406,8 +407,8 @@ export class PaymentAPI implements DeployedPaymentAPI {
 
     const merchantIdBytes = this.stringToBytes32(merchantId);
     const customerIdBytes = this.stringToBytes32(customerId);
-    const amountBigInt = BigInt(amount);
-    const maxAmountBigInt = BigInt(maxAmount);
+    const amountBigInt = parseDecimalAmount(amount);
+    const maxAmountBigInt = parseDecimalAmount(maxAmount);
     const frequencyBigInt = BigInt(frequencyDays);
 
     const transaction = {

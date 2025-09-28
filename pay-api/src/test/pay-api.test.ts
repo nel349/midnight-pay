@@ -206,138 +206,246 @@ describe('Payment API', () => {
     }, 60000);
 
     test('should handle customer deposit and withdrawal', async () => {
-      // TODO: Implement customer balance management test
-      // const customerId = 'test-customer-1';
-      // const paymentAPI = await PaymentAPI.build(customerId, providers, contractAddress, logger);
-      //
-      // // Deposit funds
-      // await paymentAPI.depositCustomerFunds(customerId, '100.00');
-      //
-      // // Check balance
-      // const balance = await paymentAPI.getCustomerBalance(customerId);
-      // expect(balance.availableBalance).toBe(10000n); // 100.00 in cents
-      // expect(balance.customerId).toBe(customerId);
-      //
-      // // Withdraw funds
-      // await paymentAPI.withdrawCustomerFunds(customerId, '50.00');
-      //
-      // // Check updated balance
-      // const updatedBalance = await paymentAPI.getCustomerBalance(customerId);
-      // expect(updatedBalance.availableBalance).toBe(5000n); // 50.00 in cents
-    });
+      if (!providers) {
+        console.log('Skipping customer balance test - providers not available');
+        return;
+      }
+
+      const customerId = TestData.generateCustomerId();
+      const contractAddress = await PaymentAPI.deploy(providers, logger);
+      const paymentAPI = await PaymentAPI.build(customerId, providers, contractAddress, logger);
+
+      // Deposit funds
+      await paymentAPI.depositCustomerFunds(customerId, '100.00');
+
+      // Wait for state update and check balance
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Allow time for state update
+      const balance = await paymentAPI.getCustomerBalance(customerId);
+      expect(balance.availableBalance).toBe(10000n); // 100.00 in cents
+      expect(balance.customerId).toBe(customerId);
+
+      // Withdraw funds
+      await paymentAPI.withdrawCustomerFunds(customerId, '50.00');
+
+      // Wait and check updated balance
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const updatedBalance = await paymentAPI.getCustomerBalance(customerId);
+      expect(updatedBalance.availableBalance).toBe(5000n); // 50.00 in cents
+    }, 90000);
 
     test('should create and manage subscriptions', async () => {
-      // TODO: Implement subscription management test
-      // const merchantId = 'test-merchant-1';
-      // const customerId = 'test-customer-1';
-      // const amount = '10.00';
-      // const maxAmount = '50.00';
-      // const frequencyDays = 30;
-      //
-      // const paymentAPI = await PaymentAPI.build(customerId, providers, contractAddress, logger);
-      //
-      // // Create subscription
-      // const { subscriptionId } = await paymentAPI.createSubscription(
-      //   merchantId,
-      //   customerId,
-      //   amount,
-      //   maxAmount,
-      //   frequencyDays
-      // );
-      //
-      // expect(subscriptionId).toBeDefined();
-      //
-      // // Get subscription info
-      // const subscriptionInfo = await paymentAPI.getSubscriptionInfo(subscriptionId);
-      // expect(subscriptionInfo.merchantId).toBe(merchantId);
-      // expect(subscriptionInfo.customerId).toBe(customerId);
-      // expect(subscriptionInfo.amount).toBe(1000n); // 10.00 in cents
-      // expect(subscriptionInfo.maxAmount).toBe(5000n); // 50.00 in cents
-      // expect(subscriptionInfo.frequencyDays).toBe(frequencyDays);
-      // expect(subscriptionInfo.status).toBe(SUBSCRIPTION_STATUS.active);
-      //
-      // // Pause subscription
-      // await paymentAPI.pauseSubscription(subscriptionId, customerId);
-      //
-      // const pausedInfo = await paymentAPI.getSubscriptionInfo(subscriptionId);
-      // expect(pausedInfo.status).toBe(SUBSCRIPTION_STATUS.paused);
-      //
-      // // Resume subscription
-      // await paymentAPI.resumeSubscription(subscriptionId, customerId);
-      //
-      // const resumedInfo = await paymentAPI.getSubscriptionInfo(subscriptionId);
-      // expect(resumedInfo.status).toBe(SUBSCRIPTION_STATUS.active);
-      //
-      // // Cancel subscription
-      // await paymentAPI.cancelSubscription(subscriptionId, customerId);
-      //
-      // const cancelledInfo = await paymentAPI.getSubscriptionInfo(subscriptionId);
-      // expect(cancelledInfo.status).toBe(SUBSCRIPTION_STATUS.cancelled);
-    });
+      if (!providers) {
+        console.log('Skipping subscription test - providers not available');
+        return;
+      }
+
+      const merchantId = TestData.generateMerchantId();
+      const customerId = TestData.generateCustomerId();
+      const businessName = TestData.generateBusinessName();
+      const amount = '10.00';
+      const maxAmount = '50.00';
+      const frequencyDays = 30;
+
+      const contractAddress = await PaymentAPI.deploy(providers, logger);
+
+      // Setup merchant first
+      const merchantAPI = await PaymentAPI.build(merchantId, providers, contractAddress, logger);
+      await merchantAPI.registerMerchant(merchantId, businessName);
+
+      // Setup customer with funds
+      const customerAPI = await PaymentAPI.build(customerId, providers, contractAddress, logger);
+      await customerAPI.depositCustomerFunds(customerId, '100.00');
+
+      // Create subscription
+      const { subscriptionId } = await customerAPI.createSubscription(
+        merchantId,
+        customerId,
+        amount,
+        maxAmount,
+        frequencyDays
+      );
+
+      expect(subscriptionId).toBeDefined();
+
+      // Wait for state update
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Get subscription info
+      const subscriptionInfo = await customerAPI.getSubscriptionInfo(subscriptionId);
+      expect(subscriptionInfo.merchantId).toBe(merchantId);
+      expect(subscriptionInfo.customerId).toBe(customerId);
+      expect(subscriptionInfo.amount).toBe(1000n); // 10.00 in cents
+      expect(subscriptionInfo.maxAmount).toBe(5000n); // 50.00 in cents
+      expect(subscriptionInfo.frequencyDays).toBe(BigInt(frequencyDays));
+      expect(subscriptionInfo.status).toBe(SUBSCRIPTION_STATUS.active);
+
+      // Pause subscription
+      await customerAPI.pauseSubscription(subscriptionId, customerId);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const pausedInfo = await customerAPI.getSubscriptionInfo(subscriptionId);
+      expect(pausedInfo.status).toBe(SUBSCRIPTION_STATUS.paused);
+
+      // Resume subscription
+      await customerAPI.resumeSubscription(subscriptionId, customerId);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const resumedInfo = await customerAPI.getSubscriptionInfo(subscriptionId);
+      expect(resumedInfo.status).toBe(SUBSCRIPTION_STATUS.active);
+
+      // Cancel subscription
+      await customerAPI.cancelSubscription(subscriptionId, customerId);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const cancelledInfo = await customerAPI.getSubscriptionInfo(subscriptionId);
+      expect(cancelledInfo.status).toBe(SUBSCRIPTION_STATUS.cancelled);
+    }, 120000);
 
     test('should process subscription payments', async () => {
-      // TODO: Implement subscription payment processing test
-      // const merchantId = 'test-merchant-1';
-      // const customerId = 'test-customer-1';
-      // const serviceProof = 'service-delivered-proof';
-      //
-      // const paymentAPI = await PaymentAPI.build(customerId, providers, contractAddress, logger);
-      //
-      // // Create subscription first
-      // const { subscriptionId } = await paymentAPI.createSubscription(
-      //   merchantId,
-      //   customerId,
-      //   '10.00',
-      //   '50.00',
-      //   30
-      // );
-      //
-      // // Process payment
-      // await paymentAPI.processSubscriptionPayment(subscriptionId, serviceProof);
-      //
-      // // Verify payment was processed
-      // const customerBalance = await paymentAPI.getCustomerBalance(customerId);
-      // const merchantBalance = await paymentAPI.getMerchantBalance(merchantId);
-      //
-      // expect(merchantBalance.availableBalance).toBeGreaterThan(0n);
-      // expect(customerBalance.totalSpent).toBeGreaterThan(0n);
-    });
+      if (!providers) {
+        console.log('Skipping payment processing test - providers not available');
+        return;
+      }
+
+      const merchantId = TestData.generateMerchantId();
+      const customerId = TestData.generateCustomerId();
+      const businessName = TestData.generateBusinessName();
+      const serviceProof = 'service-delivered-proof-' + Date.now();
+
+      const contractAddress = await PaymentAPI.deploy(providers, logger);
+
+      // Setup merchant
+      const merchantAPI = await PaymentAPI.build(merchantId, providers, contractAddress, logger);
+      await merchantAPI.registerMerchant(merchantId, businessName);
+
+      // Setup customer with funds
+      const customerAPI = await PaymentAPI.build(customerId, providers, contractAddress, logger);
+      await customerAPI.depositCustomerFunds(customerId, '100.00');
+
+      // Create subscription
+      const { subscriptionId } = await customerAPI.createSubscription(
+        merchantId,
+        customerId,
+        '10.00',
+        '50.00',
+        30
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Get initial balances
+      const initialCustomerBalance = await customerAPI.getCustomerBalance(customerId);
+      const initialMerchantBalance = await merchantAPI.getMerchantBalance(merchantId);
+
+      // Process payment (merchant processes the payment)
+      await merchantAPI.processSubscriptionPayment(subscriptionId, serviceProof);
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Verify payment was processed
+      const finalCustomerBalance = await customerAPI.getCustomerBalance(customerId);
+      const finalMerchantBalance = await merchantAPI.getMerchantBalance(merchantId);
+
+      // Customer should have 10.00 less (payment amount)
+      expect(finalCustomerBalance.availableBalance).toBe(initialCustomerBalance.availableBalance - 1000n);
+
+      // Merchant should have received the payment (minus any fees)
+      expect(finalMerchantBalance.availableBalance).toBeGreaterThan(initialMerchantBalance.availableBalance);
+
+      // Customer's total spent should increase
+      expect(finalCustomerBalance.totalSpent).toBe(1000n);
+    }, 120000);
 
     test('should get system information', async () => {
-      // TODO: Implement system information tests
-      // const paymentAPI = await PaymentAPI.build('test-user', providers, contractAddress, logger);
-      //
-      // const totalSupply = await paymentAPI.getTotalSupply();
-      // const totalMerchants = await paymentAPI.getTotalMerchants();
-      // const totalSubscriptions = await paymentAPI.getTotalSubscriptions();
-      // const currentTimestamp = await paymentAPI.getCurrentTimestamp();
-      //
-      // expect(typeof totalSupply).toBe('bigint');
-      // expect(typeof totalMerchants).toBe('bigint');
-      // expect(typeof totalSubscriptions).toBe('bigint');
-      // expect(typeof currentTimestamp).toBe('number');
-    });
+      if (!providers) {
+        console.log('Skipping system info test - providers not available');
+        return;
+      }
+
+      const contractAddress = await PaymentAPI.deploy(providers, logger);
+      const paymentAPI = await PaymentAPI.build('test-user-' + Date.now(), providers, contractAddress, logger);
+
+      // Register some test data
+      const merchantId = TestData.generateMerchantId();
+      const customerId = TestData.generateCustomerId();
+
+      await paymentAPI.registerMerchant(merchantId, TestData.generateBusinessName());
+      await paymentAPI.depositCustomerFunds(customerId, '100.00');
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Get system information
+      const totalSupply = await paymentAPI.getTotalSupply();
+      const totalMerchants = await paymentAPI.getTotalMerchants();
+      const totalSubscriptions = await paymentAPI.getTotalSubscriptions();
+      const currentTimestamp = await paymentAPI.getCurrentTimestamp();
+
+      // Verify types and basic values
+      expect(typeof totalSupply).toBe('bigint');
+      expect(typeof totalMerchants).toBe('bigint');
+      expect(typeof totalSubscriptions).toBe('bigint');
+      expect(typeof currentTimestamp).toBe('bigint');
+
+      expect(totalSupply).toBeGreaterThanOrEqual(10000n); // At least the deposited amount
+      expect(totalMerchants).toBe(1n); // We registered one merchant
+      expect(totalSubscriptions).toBeGreaterThanOrEqual(0n);
+      expect(currentTimestamp).toBeGreaterThan(0n);
+    }, 60000);
 
     test('should handle error scenarios', async () => {
-      // TODO: Implement error handling tests
-      // const paymentAPI = await PaymentAPI.build('test-user', providers, contractAddress, logger);
-      //
-      // // Test invalid amounts
-      // await expect(paymentAPI.depositCustomerFunds('customer1', '-10.00'))
-      //   .rejects.toThrow('Invalid amount');
-      //
-      // // Test invalid business names
-      // await expect(paymentAPI.registerMerchant('merchant1', ''))
-      //   .rejects.toThrow('Invalid business name');
-      //
-      // // Test non-existent merchant info
-      // await expect(paymentAPI.getMerchantInfo('non-existent'))
-      //   .rejects.toThrow('Merchant non-existent not found');
-      //
-      // // Test non-existent subscription info
-      // const fakeSubscriptionId = new Uint8Array(32);
-      // await expect(paymentAPI.getSubscriptionInfo(fakeSubscriptionId))
-      //   .rejects.toThrow('Subscription');
-    });
+      if (!providers) {
+        console.log('Skipping error scenarios test - providers not available');
+        return;
+      }
+
+      const contractAddress = await PaymentAPI.deploy(providers, logger);
+      const paymentAPI = await PaymentAPI.build('test-user-' + Date.now(), providers, contractAddress, logger);
+
+      // Test invalid amounts
+      await expect(paymentAPI.depositCustomerFunds('customer1', '-10.00'))
+        .rejects.toThrow('Invalid amount');
+
+      await expect(paymentAPI.depositCustomerFunds('customer1', '0'))
+        .rejects.toThrow('Invalid amount');
+
+      await expect(paymentAPI.depositCustomerFunds('customer1', 'abc'))
+        .rejects.toThrow('Invalid amount');
+
+      await expect(paymentAPI.depositCustomerFunds('customer1', '1000001'))
+        .rejects.toThrow('Invalid amount');
+
+      // Test invalid business names
+      await expect(paymentAPI.registerMerchant('merchant1', ''))
+        .rejects.toThrow('Invalid business name');
+
+      await expect(paymentAPI.registerMerchant('merchant1', 'AB'))
+        .rejects.toThrow('Invalid business name');
+
+      await expect(paymentAPI.registerMerchant('merchant1', 'a'.repeat(51)))
+        .rejects.toThrow('Invalid business name');
+
+      // Test non-existent merchant info
+      await expect(paymentAPI.getMerchantInfo('non-existent-merchant'))
+        .rejects.toThrow('Merchant non-existent-merchant not found');
+
+      // Test non-existent subscription info
+      const fakeSubscriptionId = new Uint8Array(32);
+      fakeSubscriptionId.fill(0);
+      await expect(paymentAPI.getSubscriptionInfo(fakeSubscriptionId))
+        .rejects.toThrow('Subscription');
+
+      // Test withdrawal without balance
+      await expect(paymentAPI.withdrawCustomerFunds('customer-no-balance', '10.00'))
+        .rejects.toThrow();
+
+      // Test subscription without merchant
+      await expect(paymentAPI.createSubscription(
+        'non-existent-merchant',
+        'customer1',
+        '10.00',
+        '50.00',
+        30
+      )).rejects.toThrow();
+    }, 60000);
   });
 });
