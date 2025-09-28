@@ -11,7 +11,7 @@ interface AppHeaderProps {
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({ 
-  title = "Midnight Bank",
+  title = "Midnight Pay",
   subtitle,
   logoSize = 80,
   sx = {} 

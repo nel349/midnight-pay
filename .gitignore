@@ -66,3 +66,6 @@ pay-api/public/zkir/*
 pay-api/managed/*
 
 
+pay-ui/public/zkir/*
+pay-ui/public/keys/*
+pay-ui/managed/*

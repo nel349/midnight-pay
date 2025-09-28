@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Typography,
   Box,
-  Alert,
   CircularProgress,
   Container,
   Stack,
@@ -329,6 +328,13 @@ export const MerchantDashboard: React.FC = () => {
                       label={MERCHANT_TIER[stats.merchantTier] || 'Unverified'}
                       color={stats.merchantTier >= MERCHANT_TIER.verified ? 'success' : 'primary'}
                       size="small"
+                      sx={{
+                        fontSize: '0.875rem',
+                        fontWeight: 500,
+                        px: 1.5,
+                        py: 0.5,
+                        height: 'auto'
+                      }}
                     />
                   </Box>
                   <Box>
