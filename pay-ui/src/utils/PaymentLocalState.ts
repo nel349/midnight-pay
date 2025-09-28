@@ -159,3 +159,38 @@ export function setCurrentEntityType(entityType: 'merchant' | 'customer'): void 
     // Ignore storage errors
   }
 }
+
+// Remove a specific merchant from localStorage (for debugging stale data)
+export function removeMerchantFromStorage(paymentContractAddress: string, entityId: string): void {
+  try {
+    const all = readAllPaymentUsers();
+    const filtered = all.filter(u => !(u.paymentContractAddress === paymentContractAddress && u.entityId === entityId));
+    writeAllPaymentUsers(filtered);
+    console.log('🗑️  Removed merchant from localStorage:', { paymentContractAddress, entityId });
+  } catch (error) {
+    console.error('Failed to remove merchant from localStorage:', error);
+  }
+}
+
+// Development helper: Clear all payment state for fresh start
+export function clearAllPaymentState(): void {
+  try {
+    // Clear localStorage
+    window.localStorage.removeItem(PAYMENT_GATEWAYS_KEY);
+    window.localStorage.removeItem(PAYMENT_USERS_KEY);
+
+    // Clear sessionStorage
+    window.sessionStorage.removeItem('current-payment-gateway');
+    window.sessionStorage.removeItem('current-entity-id');
+    window.sessionStorage.removeItem('current-entity-type');
+
+    console.log('🧹 All payment state cleared - refresh page for fresh start');
+  } catch (error) {
+    console.error('Failed to clear payment state:', error);
+  }
+}
+
+// Make available globally for debugging
+if (typeof window !== 'undefined') {
+  (window as any).clearPaymentState = clearAllPaymentState;
+}

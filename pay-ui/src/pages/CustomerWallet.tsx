@@ -29,6 +29,7 @@ import { PaymentAPI, SUBSCRIPTION_STATUS } from '@midnight-pay/pay-api';
 import { usePaymentContract } from '../hooks/usePaymentContract';
 import { findExistingCustomer, savePaymentUser } from '../utils/PaymentLocalState';
 import { take } from 'rxjs/operators';
+import { useNotification } from '../contexts/NotificationContext';
 import {
   ThemedButton,
   GradientBackground,
@@ -46,6 +47,7 @@ interface CustomerStats {
 
 export const CustomerWallet: React.FC = () => {
   const { isConnected, connect } = usePaymentWallet();
+  const { showSuccess, showError } = useNotification();
   const {
     contractAddress,
     paymentAPI,
@@ -153,14 +155,28 @@ export const CustomerWallet: React.FC = () => {
   const handleDeposit = async () => {
     if (!paymentAPI || !depositAmount || !customerId) return;
 
+    const amount = parseFloat(depositAmount);
+    if (isNaN(amount) || amount <= 0) {
+      showError('Please enter a valid deposit amount greater than $0.00');
+      return;
+    }
+
+    if (amount > 10000) {
+      showError('Maximum deposit amount is $10,000.00');
+      return;
+    }
+
     try {
       setLoading(true);
       await paymentAPI.depositCustomerFunds(customerId, depositAmount);
+      console.log('✅ Deposit successful');
+      showSuccess(`Successfully deposited $${depositAmount} to your wallet!`);
       setDepositDialog(false);
       setDepositAmount('');
     } catch (error) {
-      console.error('Deposit failed:', error);
-      alert('Deposit failed. Please try again.');
+      console.error('❌ Deposit failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown deposit error';
+      showError(`Deposit failed: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -169,14 +185,30 @@ export const CustomerWallet: React.FC = () => {
   const handleWithdraw = async () => {
     if (!paymentAPI || !withdrawAmount || !customerId) return;
 
+    const amount = parseFloat(withdrawAmount);
+    const availableBalance = parseFloat(stats.availableBalance);
+
+    if (isNaN(amount) || amount <= 0) {
+      showError('Please enter a valid withdrawal amount greater than $0.00');
+      return;
+    }
+
+    if (amount > availableBalance) {
+      showError(`Insufficient funds. Available balance: $${stats.availableBalance}`);
+      return;
+    }
+
     try {
       setLoading(true);
       await paymentAPI.withdrawCustomerFunds(customerId, withdrawAmount);
+      console.log('✅ Withdrawal successful');
+      showSuccess(`Successfully withdrew $${withdrawAmount} from your wallet!`);
       setWithdrawDialog(false);
       setWithdrawAmount('');
     } catch (error) {
-      console.error('Withdrawal failed:', error);
-      alert('Withdrawal failed. Please check your balance and try again.');
+      console.error('❌ Withdrawal failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown withdrawal error';
+      showError(`Withdrawal failed: ${errorMessage}`);
     } finally {
       setLoading(false);
     }

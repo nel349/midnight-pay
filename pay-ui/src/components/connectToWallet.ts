@@ -11,7 +11,13 @@ export const connectToWallet = (
   const COMPATIBLE_CONNECTOR_API_VERSION = '1.x';
 
   const obs = (interval(100).pipe(
-    map((): DAppConnectorAPI | undefined => (window as any)?.midnight?.mnLace),
+    map((): DAppConnectorAPI | undefined => {
+      // DEBUG: Log what's actually available
+      const midnight = (window as any)?.midnight;
+      console.log('🔍 DEBUG - Available midnight APIs:', midnight ? Object.keys(midnight) : 'none');
+      console.log('🔍 DEBUG - Looking for mnLace:', midnight?.mnLace);
+      return midnight?.mnLace;
+    }),
       tap((api) => logger.debug(`check_wallet_api: hasApi=${Boolean(api)}`)),
       filter((api): api is DAppConnectorAPI => !!api),
       concatMap((api) =>

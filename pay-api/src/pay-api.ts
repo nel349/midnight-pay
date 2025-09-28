@@ -17,6 +17,7 @@ import {
 } from './common-types';
 import {
   type PaymentPrivateState,
+  type MerchantData,
   Contract,
   createPaymentPrivateState,
   ledger,
@@ -179,7 +180,13 @@ export class PaymentAPI implements DeployedPaymentAPI {
     logger?: Logger,
   ): Promise<PaymentAPI> {
     const defaultLogger = logger ?? { info: console.log, error: console.error } as Logger;
-    const accountId = `payment-${entityId}`;
+    // Use contract address as consistent private state key for shared merchant/customer data
+    const accountId = contractAddress ? `contract-${contractAddress}` : `payment-${entityId}`;
+
+    console.log('🔧 PaymentAPI.build DEBUG:');
+    console.log('🔧 - entityId:', entityId);
+    console.log('🔧 - contractAddress:', contractAddress);
+    console.log('🔧 - accountId:', accountId);
 
     let deployedContract: DeployedPaymentContract;
 
@@ -356,11 +363,93 @@ export class PaymentAPI implements DeployedPaymentAPI {
     };
 
     await this.executeCircuit('register_merchant', [merchantIdBytes, businessNameBytes], transaction);
+
+    // CRITICAL: Manually update private state after registration (like bank does)
+    await this.ensureMerchantInPrivateState(merchantId, businessName);
+    await this.refreshPrivateState();
   }
 
   async getMerchantInfo(merchantId: string): Promise<MerchantInfo> {
+    console.log('🔍 getMerchantInfo DEBUG:');
+    console.log('🔍 - merchantId:', merchantId);
+    console.log('🔍 - this.accountId:', this.accountId);
+
     const privateState = await this.providers.privateStateProvider.get(this.accountId) as PaymentPrivateState;
-    const merchantData = privateState.merchantData.get(merchantId);
+    console.log('🔍 - privateState:', privateState);
+    console.log('🔍 - privateState.merchantData size:', privateState?.merchantData?.size || 0);
+
+    if (privateState?.merchantData) {
+      console.log('🔍 - merchantData keys:', Array.from(privateState.merchantData.keys()));
+    }
+
+    let merchantData = privateState.merchantData.get(merchantId);
+    console.log('🔍 - merchantData found:', merchantData);
+
+    // If merchant not in private state, check if it exists on-chain and populate private state
+    if (!merchantData) {
+      console.log('🔍 - Merchant not found in private state, checking blockchain...');
+      console.log('🔍 - Contract address:', this.deployedContractAddress);
+
+      try {
+        console.log('🔍 - Querying contract state...');
+        const startTime = Date.now();
+        const state = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+        const queryTime = Date.now() - startTime;
+        console.log(`🔍 - Contract state query took ${queryTime}ms`);
+        console.log('🔍 - Contract state:', state ? 'Found' : 'Not found');
+
+        if (state) {
+          console.log('🔍 - Parsing ledger state...');
+          const ledgerState = ledger(state.data);
+          console.log('🔍 - Ledger state:', {
+            totalMerchants: ledgerState.total_merchants,
+            merchantAccountsSize: ledgerState.merchant_accounts.size(),
+            totalSupply: ledgerState.total_supply
+          });
+
+          const merchantIdBytes = this.stringToBytes32(merchantId);
+          console.log('🔍 - Merchant ID bytes:', merchantIdBytes);
+          console.log('🔍 - Checking merchant_accounts.member...');
+
+          const memberCheckStart = Date.now();
+          const merchantExists = ledgerState.merchant_accounts.member(merchantIdBytes);
+          const memberCheckTime = Date.now() - memberCheckStart;
+          console.log(`🔍 - Member check took ${memberCheckTime}ms`);
+          console.log('🔍 - Merchant exists on blockchain:', merchantExists);
+
+          if (merchantExists) {
+            // Get merchant hash from blockchain (business name is in private state)
+            console.log('🔍 - Looking up merchant hash...');
+            const merchantHash = ledgerState.merchant_accounts.lookup(merchantIdBytes);
+            console.log('🔍 - On-chain merchant hash:', merchantHash);
+
+            // Auto-populate private state with blockchain data
+            console.log('🔍 - Auto-populating private state from blockchain...');
+            await this.ensureMerchantInPrivateState(merchantId, 'Registered Business');
+
+            // Refresh and get the updated private state
+            console.log('🔍 - Refreshing private state...');
+            const updatedPrivateState = await this.providers.privateStateProvider.get(this.accountId) as PaymentPrivateState;
+            merchantData = updatedPrivateState.merchantData.get(merchantId);
+            console.log('🔍 - Auto-populated merchant data:', merchantData);
+          } else {
+            console.log('🔍 - Merchant NOT found on blockchain');
+            console.log('🔍 - Total merchants on blockchain:', ledgerState.total_merchants);
+            console.log('🔍 - merchant_accounts size:', ledgerState.merchant_accounts.size());
+          }
+        } else {
+          console.log('🔍 - No contract state found');
+        }
+      } catch (error) {
+        console.log('🔍 - Error checking blockchain:', error);
+        if (error instanceof Error) {
+          console.log('🔍 - Error details:', {
+            message: error.message,
+            stack: error.stack?.substring(0, 200)
+          });
+        }
+      }
+    }
 
     if (!merchantData) {
       throw new Error(`Merchant ${merchantId} not found`);
@@ -760,6 +849,74 @@ export class PaymentAPI implements DeployedPaymentAPI {
   }
 
   // Circuit execution helper
+  // Helper to ensure merchant exists in shared private state (for persistence across sessions)
+  private async ensureMerchantInPrivateState(merchantId: string, businessName: string): Promise<void> {
+    const stateKey = this.accountId;
+    const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createPaymentPrivateState();
+
+    console.log(`DEBUG: ensureMerchantInPrivateState called for ${merchantId}`);
+    console.log(`DEBUG: Current state has merchants:`, Array.from(currentState.merchantData.keys()));
+
+    // Check if merchant already exists in private state
+    if (currentState.merchantData.has(merchantId)) {
+      console.log(`DEBUG: Merchant ${merchantId} already exists in private state`);
+      return;
+    }
+
+    console.log(`DEBUG: Adding merchant ${merchantId} to private state`);
+
+    // Add merchant to private state
+    const updatedState = { ...currentState };
+    updatedState.merchantData = new Map(currentState.merchantData);
+    updatedState.merchantData.set(merchantId, {
+      merchantId,
+      businessName,
+      createdAt: Date.now(),
+    });
+
+    // Save to persistent storage
+    await this.providers.privateStateProvider.set(stateKey, updatedState);
+
+    // Emit updated state to all observers
+    this.privateStates$.next(updatedState);
+
+    console.log(`DEBUG: Merchant ${merchantId} added to private state successfully`);
+  }
+
+  // Helper to manually update merchant-specific private state after operations
+  private async updateMerchantPrivateState(merchantId: string, updates: Partial<MerchantData>): Promise<void> {
+    const stateKey = this.accountId;
+    const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createPaymentPrivateState();
+
+    const existingMerchant = currentState.merchantData.get(merchantId);
+    if (!existingMerchant) {
+      console.log(`DEBUG: Merchant ${merchantId} not found in private state for update`);
+      return;
+    }
+
+    // Update merchant data
+    const updatedState = { ...currentState };
+    updatedState.merchantData = new Map(currentState.merchantData);
+    updatedState.merchantData.set(merchantId, {
+      ...existingMerchant,
+      ...updates,
+    });
+
+    // Save to persistent storage
+    await this.providers.privateStateProvider.set(stateKey, updatedState);
+
+    // Emit updated state to all observers
+    this.privateStates$.next(updatedState);
+  }
+
+  // Force refresh of shared private state for all observers
+  private async refreshPrivateState(): Promise<void> {
+    const stateKey = this.accountId;
+    const currentState = await this.providers.privateStateProvider.get(stateKey) ?? createPaymentPrivateState();
+    console.log(`DEBUG: refreshPrivateState - forcing state refresh with merchants:`, Array.from(currentState.merchantData.keys()));
+    this.privateStates$.next(currentState);
+  }
+
   private async executeCircuit(circuitName: string, args: any[], transaction?: any): Promise<any> {
     try {
       const privateState = await this.providers.privateStateProvider.get(this.accountId) as PaymentPrivateState;

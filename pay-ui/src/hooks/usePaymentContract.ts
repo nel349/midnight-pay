@@ -74,6 +74,14 @@ export const usePaymentContract = (): PaymentContractState => {
     initializeAPI();
   }, [isConnected, providers, contractAddress, entityId, paymentAPI]);
 
+  // Force clear paymentAPI for debugging by clicking browser console command
+  if (typeof window !== 'undefined') {
+    (window as any).clearPaymentAPI = () => {
+      console.log('🔄 Manually clearing PaymentAPI for debugging');
+      setPaymentAPI(null);
+    };
+  }
+
   const deployNewGateway = useCallback(async (label?: string): Promise<string> => {
     if (!isConnected || !providers) {
       throw new Error('Wallet not connected. Please connect your Lace wallet first.');
@@ -187,16 +195,10 @@ export const usePaymentContract = (): PaymentContractState => {
       setEntityIdState(newEntityId);
       setEntityTypeState(newEntityType);
 
-      // Save user to storage if we have a contract
-      if (contractAddress) {
-        savePaymentUser({
-          paymentContractAddress: contractAddress,
-          entityId: newEntityId,
-          entityType: newEntityType,
-          label: `${newEntityType} ${newEntityId}`,
-          createdAt: new Date().toISOString()
-        });
-      }
+      // ⚠️  DO NOT SAVE TO LOCALSTORAGE HERE!
+      // localStorage should only be updated AFTER successful blockchain registration
+      // This prevents the mismatch between localStorage and blockchain state
+      console.log('🔄 Entity set in session, localStorage will be updated after blockchain registration');
 
       console.log('✅ Entity set successfully');
     } catch (err) {

@@ -285,10 +285,8 @@ export const PaymentGateways: React.FC = () => {
           maxWidth="sm"
           fullWidth
         >
-          <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
-            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-              🎯 Choose Your Role
-            </Typography>
+          <DialogTitle sx={{ textAlign: 'center', pb: 1, fontWeight: 'bold' }}>
+            🎯 Choose Your Role
           </DialogTitle>
           <DialogContent sx={{ textAlign: 'center', py: 3 }}>
             <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
