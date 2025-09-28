@@ -93,6 +93,22 @@ export function touchPaymentUser(paymentContractAddress: string, entityId: strin
   }
 }
 
+// Check if a merchant already exists for this gateway
+export function findExistingMerchant(paymentContractAddress: string): SavedPaymentUser | null {
+  const merchants = readAllPaymentUsers().filter(
+    (u) => u.paymentContractAddress === paymentContractAddress && u.entityType === 'merchant'
+  );
+  return merchants.length > 0 ? merchants[0] : null;
+}
+
+// Check if a customer already exists for this gateway
+export function findExistingCustomer(paymentContractAddress: string): SavedPaymentUser | null {
+  const customers = readAllPaymentUsers().filter(
+    (u) => u.paymentContractAddress === paymentContractAddress && u.entityType === 'customer'
+  );
+  return customers.length > 0 ? customers[0] : null;
+}
+
 // Utility functions for current session
 export function getCurrentPaymentGateway(): string | null {
   try {

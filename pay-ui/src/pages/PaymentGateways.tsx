@@ -8,7 +8,11 @@ import {
   Stack,
   Chip,
   Button,
-  Divider
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import {
   Add,
@@ -28,14 +32,17 @@ import { useTheme } from '../theme';
 import { listPaymentGateways, type SavedPaymentGateway, touchPaymentGateway } from '../utils/PaymentLocalState';
 import { usePaymentContract } from '../hooks/usePaymentContract';
 import { useNotification } from '../contexts/NotificationContext';
+import { Store, Person } from '@mui/icons-material';
 
 export const PaymentGateways: React.FC = () => {
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { connectToGateway, clearContract } = usePaymentContract();
+  const { contractAddress, connectToGateway, clearContract } = usePaymentContract();
   const { showSuccess, showError } = useNotification();
   const [gateways, setGateways] = useState<SavedPaymentGateway[]>([]);
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [roleSelectionOpen, setRoleSelectionOpen] = useState(false);
+  const [connectedGatewayName, setConnectedGatewayName] = useState('');
 
   useEffect(() => {
     // Load gateways from storage
@@ -60,10 +67,10 @@ export const PaymentGateways: React.FC = () => {
       console.log('✅ Successfully connected to gateway');
       showSuccess(`Connected to "${gateway.label || 'Payment Gateway'}" successfully!`);
 
-      // Navigate to merchant dashboard after a short delay
-      setTimeout(() => {
-        navigate('/merchant');
-      }, 1000);
+      // Show role selection modal and refresh the gateways list
+      setConnectedGatewayName(gateway.label || 'Payment Gateway');
+      setRoleSelectionOpen(true);
+      setGateways(listPaymentGateways());
 
     } catch (error) {
       console.error('❌ Failed to connect to gateway:', error);
@@ -270,6 +277,75 @@ export const PaymentGateways: React.FC = () => {
             ))}
           </Box>
         )}
+
+        {/* Role Selection Modal */}
+        <Dialog
+          open={roleSelectionOpen}
+          onClose={() => setRoleSelectionOpen(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
+            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+              🎯 Choose Your Role
+            </Typography>
+          </DialogTitle>
+          <DialogContent sx={{ textAlign: 'center', py: 3 }}>
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+              You're connected to "<strong>{connectedGatewayName}</strong>"!
+              <br />Choose how you'd like to use this payment gateway:
+            </Typography>
+
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} justifyContent="center">
+              <ThemedButton
+                variant="primary"
+                size="large"
+                startIcon={<Store />}
+                onClick={() => {
+                  setRoleSelectionOpen(false);
+                  navigate('/merchant');
+                }}
+                sx={{ minWidth: 200, py: 2 }}
+              >
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="button" display="block">
+                    I'm a Merchant
+                  </Typography>
+                  <Typography variant="caption" display="block" sx={{ mt: 0.5, opacity: 0.8 }}>
+                    Accept payments & manage subscriptions
+                  </Typography>
+                </Box>
+              </ThemedButton>
+              <ThemedButton
+                variant="outlined"
+                size="large"
+                startIcon={<Person />}
+                onClick={() => {
+                  setRoleSelectionOpen(false);
+                  navigate('/customer');
+                }}
+                sx={{ minWidth: 200, py: 2 }}
+              >
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="button" display="block">
+                    I'm a Customer
+                  </Typography>
+                  <Typography variant="caption" display="block" sx={{ mt: 0.5, opacity: 0.8 }}>
+                    Make payments & manage subscriptions
+                  </Typography>
+                </Box>
+              </ThemedButton>
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ justifyContent: 'center', pb: 3 }}>
+            <ThemedButton
+              variant="outlined"
+              onClick={() => setRoleSelectionOpen(false)}
+            >
+              Cancel
+            </ThemedButton>
+          </DialogActions>
+        </Dialog>
       </Box>
     </GradientBackground>
   );

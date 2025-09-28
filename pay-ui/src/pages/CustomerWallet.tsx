@@ -27,6 +27,7 @@ import {
 import { usePaymentWallet } from '../components/PaymentWallet';
 import { PaymentAPI, SUBSCRIPTION_STATUS } from '@midnight-pay/pay-api';
 import { usePaymentContract } from '../hooks/usePaymentContract';
+import { findExistingCustomer, savePaymentUser } from '../utils/PaymentLocalState';
 import { take } from 'rxjs/operators';
 import {
   ThemedButton,
@@ -81,11 +82,29 @@ export const CustomerWallet: React.FC = () => {
 
   // Set up customer entity when connected but not set
   useEffect(() => {
-    if (isConnected && !customerId && !isInitializing) {
+    if (isConnected && contractAddress && !customerId && !isInitializing) {
       const setupCustomer = async () => {
         try {
-          const generatedCustomerId = `customer-${Date.now()}`;
-          await setEntity(generatedCustomerId, 'customer');
+          // Check if a customer already exists for this gateway
+          const existingCustomer = findExistingCustomer(contractAddress);
+
+          if (existingCustomer) {
+            console.log('🔄 Using existing customer:', existingCustomer.entityId);
+            await setEntity(existingCustomer.entityId, 'customer');
+          } else {
+            console.log('🆕 Creating new customer account');
+            const generatedCustomerId = `customer-${Date.now()}`;
+            await setEntity(generatedCustomerId, 'customer');
+
+            // Save the new customer to cache
+            savePaymentUser({
+              paymentContractAddress: contractAddress,
+              entityId: generatedCustomerId,
+              entityType: 'customer',
+              label: 'Customer Account',
+              createdAt: new Date().toISOString()
+            });
+          }
         } catch (error) {
           console.error('Failed to set up customer entity:', error);
         }
@@ -93,7 +112,7 @@ export const CustomerWallet: React.FC = () => {
 
       setupCustomer();
     }
-  }, [isConnected, customerId, isInitializing, setEntity]);
+  }, [isConnected, contractAddress, customerId, isInitializing, setEntity]);
 
   // Fetch real data from PaymentAPI
   useEffect(() => {

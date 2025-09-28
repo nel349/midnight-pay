@@ -28,6 +28,7 @@ import {
   ThemedCardContent,
 } from '../components';
 import { useTheme } from '../theme';
+import { findExistingMerchant, savePaymentUser } from '../utils/PaymentLocalState';
 
 interface MerchantStats {
   totalEarnings: string;
@@ -73,11 +74,29 @@ export const MerchantDashboard: React.FC = () => {
 
   // Set up merchant entity when connected but not set
   useEffect(() => {
-    if (isConnected && !merchantId && !isInitializing) {
+    if (isConnected && contractAddress && !merchantId && !isInitializing) {
       const setupMerchant = async () => {
         try {
-          const generatedMerchantId = `merchant-${Date.now()}`;
-          await setEntity(generatedMerchantId, 'merchant');
+          // Check if a merchant already exists for this gateway
+          const existingMerchant = findExistingMerchant(contractAddress);
+
+          if (existingMerchant) {
+            console.log('🔄 Using existing merchant:', existingMerchant.entityId);
+            await setEntity(existingMerchant.entityId, 'merchant');
+          } else {
+            console.log('🆕 Creating new merchant account');
+            const generatedMerchantId = `merchant-${Date.now()}`;
+            await setEntity(generatedMerchantId, 'merchant');
+
+            // Save the new merchant to cache
+            savePaymentUser({
+              paymentContractAddress: contractAddress,
+              entityId: generatedMerchantId,
+              entityType: 'merchant',
+              label: 'Merchant Account',
+              createdAt: new Date().toISOString()
+            });
+          }
         } catch (error) {
           console.error('Failed to set up merchant entity:', error);
         }
@@ -85,7 +104,7 @@ export const MerchantDashboard: React.FC = () => {
 
       setupMerchant();
     }
-  }, [isConnected, merchantId, isInitializing, setEntity]);
+  }, [isConnected, contractAddress, merchantId, isInitializing, setEntity]);
 
   // Register merchant when API is ready
   useEffect(() => {
@@ -183,12 +202,21 @@ export const MerchantDashboard: React.FC = () => {
             </Typography>
             <Typography variant="body1" color="textSecondary" sx={{ mb: 4, maxWidth: 500, mx: 'auto' }}>
               {!isConnected
-                ? 'To access your merchant dashboard and manage payments, please connect your Lace wallet. This enables secure, private transactions on the Midnight Network.'
+                ? 'To access your merchant dashboard and manage payments, please connect your Lace wallet.'
                 : isInitializing
-                ? 'Initializing your payment gateway contract and merchant account...'
-                : 'Setting up your merchant profile...'
+                ? 'Creating your merchant account on the blockchain. This requires a wallet signature to establish your secure merchant identity.'
+                : !contractAddress
+                ? 'Please connect to a payment gateway first.'
+                : 'Setting up your merchant profile. You may need to sign a transaction to create your merchant account.'
               }
             </Typography>
+            {isInitializing && (
+              <Alert severity="info" sx={{ mb: 3, maxWidth: 500, mx: 'auto' }}>
+                <Typography variant="body2">
+                  🔐 <strong>Wallet Signature Required:</strong> Creating your merchant account requires a blockchain transaction. This is a one-time setup to establish your secure identity.
+                </Typography>
+              </Alert>
+            )}
             {contractError && (
               <Alert severity="error" sx={{ mb: 3, maxWidth: 500, mx: 'auto' }}>
                 Contract Error: {contractError.message}

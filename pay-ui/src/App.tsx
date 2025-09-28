@@ -34,7 +34,7 @@ export const App: React.FC = () => {
             {/* Payment Gateway Management */}
             <Route path="/gateways" element={<PaymentGateways />} />
             <Route path="/create-gateway" element={
-              <CreatePaymentGateway onComplete={(address) => window.location.href = '/merchant'} />
+              <CreatePaymentGateway onComplete={(address) => window.location.href = '/gateways'} />
             } />
             <Route path="/join-gateway" element={<JoinPaymentGateway />} />
 
